@@ -1,5 +1,35 @@
 import type { PermissionDecision, ToolRisk } from "@hfq/shared";
 
+/** Claude Code / ZCode-style access modes. */
+export type PermissionMode =
+  | "confirm_before_change"
+  | "auto_edit"
+  | "plan"
+  | "full_access";
+
+export const PERMISSION_MODES: PermissionMode[] = [
+  "confirm_before_change",
+  "auto_edit",
+  "plan",
+  "full_access",
+];
+
+export function isPermissionMode(value: unknown): value is PermissionMode {
+  return (
+    value === "confirm_before_change" ||
+    value === "auto_edit" ||
+    value === "plan" ||
+    value === "full_access"
+  );
+}
+
+export function normalizePermissionMode(value: unknown, fallback: PermissionMode = "confirm_before_change"): PermissionMode {
+  return isPermissionMode(value) ? value : fallback;
+}
+
+/** Tools auto-allowed in `auto_edit` (shell / network still ask). */
+const AUTO_EDIT_TOOLS = new Set(["write_file", "apply_patch"]);
+
 export interface PolicyRule {
   toolName: string;
   decision: PermissionDecision;
@@ -66,14 +96,26 @@ export function resolvePermission(
   config: PolicyConfig,
   toolName: string,
   risk: ToolRisk,
-  detail?: { command?: string },
+  detail?: { command?: string; permissionMode?: PermissionMode },
 ): PermissionDecision {
-  // Dangerous shell always re-prompts — session allow / permanent allow must not skip.
+  const mode = detail?.permissionMode ?? "confirm_before_change";
+
+  // True YOLO: full_access auto-allows everything, including dangerous shell.
+  if (mode === "full_access") return "allow";
+
+  // Plan mode is enforced earlier in the agent loop (hard-deny mutators).
+  // If something still reaches policy while plan is on, keep default ask rules.
+
+  // Dangerous shell always re-prompts outside full_access — session allow must not skip.
   if (toolName === "shell" && detail?.command && isDangerousShell(detail.command)) {
     return "ask";
   }
 
   if (config.sessionAllows.has(toolName)) return "allow";
+
+  if (mode === "auto_edit" && AUTO_EDIT_TOOLS.has(toolName)) {
+    return "allow";
+  }
 
   const rule = config.rules.find((r) => r.toolName === toolName);
   if (rule) return rule.decision;

@@ -127,6 +127,7 @@ async function handle(req: WorkerRequest): Promise<unknown> {
         provider: resolveProvider(p.provider),
         title: p.title,
         planMode: p.planMode,
+        permissionMode: p.permissionMode,
         memoryEnabled: p.memoryEnabled,
         compactMaxChars: p.compactMaxChars,
         parentSessionId: p.parentSessionId,
@@ -146,6 +147,7 @@ async function handle(req: WorkerRequest): Promise<unknown> {
         model: p.model,
         provider: resolveProvider(p.provider),
         planMode: p.planMode,
+        permissionMode: p.permissionMode,
         memoryEnabled: p.memoryEnabled,
         compactMaxChars: p.compactMaxChars,
       });
@@ -199,6 +201,7 @@ async function handle(req: WorkerRequest): Promise<unknown> {
         ok,
         sessionId: req.params.sessionId,
         planMode: mgr.getPlanMode(req.params.sessionId),
+        permissionMode: mgr.getPermissionMode(req.params.sessionId),
       };
     }
 
@@ -206,6 +209,27 @@ async function handle(req: WorkerRequest): Promise<unknown> {
       const mgr = await ensureManager();
       return {
         sessionId: req.params.sessionId,
+        planMode: mgr.getPlanMode(req.params.sessionId),
+        permissionMode: mgr.getPermissionMode(req.params.sessionId),
+      };
+    }
+
+    case "setPermissionMode": {
+      const mgr = await ensureManager();
+      const ok = mgr.setPermissionMode(req.params.sessionId, req.params.mode);
+      return {
+        ok,
+        sessionId: req.params.sessionId,
+        permissionMode: mgr.getPermissionMode(req.params.sessionId),
+        planMode: mgr.getPlanMode(req.params.sessionId),
+      };
+    }
+
+    case "getPermissionMode": {
+      const mgr = await ensureManager();
+      return {
+        sessionId: req.params.sessionId,
+        permissionMode: mgr.getPermissionMode(req.params.sessionId),
         planMode: mgr.getPlanMode(req.params.sessionId),
       };
     }

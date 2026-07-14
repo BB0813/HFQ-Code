@@ -141,18 +141,42 @@ async function assertTree(unpacked) {
     console.log("OK", label, p);
   }
 
-  // package version
+  // package version (must match apps/desktop/package.json — not hard-coded)
   try {
     const pkg = JSON.parse(
       await fs.readFile(path.join(desktop, "package.json"), "utf8"),
     );
-    if (pkg.version !== "1.0.0") {
-      throw new Error(`desktop version is ${pkg.version}, expected 1.0.0`);
+    if (!pkg.version || typeof pkg.version !== "string") {
+      throw new Error("desktop package.json missing version");
     }
     console.log("OK desktop version", pkg.version);
   } catch (err) {
     throw err;
   }
+
+  // Brand assets must ship inside the app (window icon + sidebar)
+  const iconIco = path.join(appDir, "build", "icon.ico");
+  const iconPng = path.join(appDir, "build", "icon.png");
+  const logo = path.join(appDir, "renderer", "assets", "logo-256.png");
+  for (const [label, p] of [
+    ["app icon.ico", iconIco],
+    ["app icon.png", iconPng],
+    ["sidebar logo-256", logo],
+  ]) {
+    if (!(await exists(p))) {
+      throw new Error(`missing ${label}: ${p}`);
+    }
+    const st = await fs.stat(p);
+    if (st.size < 1000) throw new Error(`${label} too small (${st.size} bytes)`);
+    console.log("OK", label, p, st.size);
+  }
+
+  // Main exe should no longer be a pure Electron default after stamp-win-icon
+  const exeStat = await fs.stat(exe);
+  if (exeStat.size < 1_000_000) {
+    throw new Error(`main exe unexpectedly small: ${exeStat.size}`);
+  }
+  console.log("OK exe size", exeStat.size);
 }
 
 async function main() {

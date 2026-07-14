@@ -49,6 +49,48 @@ describe("config store", () => {
     expect(cfg.prefs.compactMaxChars).toBe(48_000);
   });
 
+  it("merges permissionMode and keeps planModeDefault in sync", () => {
+    const cfg = withPrefs(defaultAppConfig(), {
+      permissionMode: "auto_edit",
+    });
+    expect(cfg.prefs.permissionMode).toBe("auto_edit");
+    expect(cfg.prefs.planModeDefault).toBe(false);
+
+    const plan = withPrefs(cfg, { permissionMode: "plan" });
+    expect(plan.prefs.permissionMode).toBe("plan");
+    expect(plan.prefs.planModeDefault).toBe(true);
+
+    const yolo = withPrefs(plan, { permissionMode: "full_access" });
+    expect(yolo.prefs.permissionMode).toBe("full_access");
+    expect(yolo.prefs.planModeDefault).toBe(false);
+  });
+
+  it("soft-migrates legacy planModeDefault into permissionMode on load", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "hfq-cfg-"));
+    temps.push(dir);
+    const file = path.join(dir, "config.json");
+    const raw = defaultAppConfig();
+    await saveAppConfig(file, {
+      ...raw,
+      prefs: {
+        ...raw.prefs,
+        planModeDefault: true,
+        // simulate pre-1.0.2 config without permissionMode field
+      },
+    });
+    // rewrite disk without permissionMode key
+    const disk = JSON.parse(await fs.readFile(file, "utf8")) as {
+      prefs: Record<string, unknown>;
+    };
+    delete disk.prefs.permissionMode;
+    disk.prefs.planModeDefault = true;
+    await fs.writeFile(file, JSON.stringify(disk, null, 2), "utf8");
+
+    const loaded = await loadAppConfig(file);
+    expect(loaded.prefs.planModeDefault).toBe(true);
+    expect(loaded.prefs.permissionMode).toBe("plan");
+  });
+
   it("round-trips save/load and masks secrets in public view", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "hfq-cfg-"));
     temps.push(dir);

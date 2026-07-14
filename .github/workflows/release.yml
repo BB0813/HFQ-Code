@@ -1,5 +1,5 @@
 # Build Windows NSIS + portable on version tags and publish a GitHub Release.
-# Trigger: push tag v1.0.0 (or workflow_dispatch with tag input).
+# Trigger: push tag v1.0.2 (or workflow_dispatch with tag input).
 name: Release
 
 on:
@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to build (e.g. v1.0.0). Leave empty to use package.json version."
+        description: "Tag to build (e.g. v1.0.2). Leave empty to use package.json version."
         required: false
         default: ""
 
@@ -53,11 +53,16 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: pnpm pack:win
 
+      - name: SHA-256 checksums
+        run: pnpm sha256:release
+
       - name: List release artifacts
         shell: bash
         run: |
           ls -lah apps/desktop/release/ || true
-          test -f "apps/desktop/release/HFQ Code-1.0.0-x64.exe" || test -n "$(ls apps/desktop/release/*.exe 2>/dev/null)"
+          test -n "$(ls apps/desktop/release/*.exe 2>/dev/null)"
+          test -f apps/desktop/release/SHA256SUMS.txt
+          cat apps/desktop/release/SHA256SUMS.txt
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -66,6 +71,7 @@ jobs:
           path: |
             apps/desktop/release/*.exe
             apps/desktop/release/*.blockmap
+            apps/desktop/release/SHA256SUMS.txt
             apps/desktop/release/builder-debug.yml
           if-no-files-found: error
           retention-days: 30
@@ -82,6 +88,37 @@ jobs:
             VER=$(node -p "require('./package.json').version")
             echo "tag=v${VER}" >> "$GITHUB_OUTPUT"
           fi
+          VER=$(node -p "require('./package.json').version")
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+
+      - name: Build release notes body
+        id: notes
+        shell: bash
+        run: |
+          SUMS=$(cat apps/desktop/release/SHA256SUMS.txt)
+          {
+            echo "body<<EOF"
+            echo "## HFQ Code ${{ steps.meta.outputs.tag }}"
+            echo ""
+            echo "Windows desktop coding agent."
+            echo ""
+            echo "### Downloads"
+            echo "- **NSIS installer** — \`HFQ Code-*-x64.exe\`"
+            echo "- **Portable** — \`HFQ Code-*-portable.exe\`"
+            echo "- **Checksums** — \`SHA256SUMS.txt\`"
+            echo ""
+            echo "### SHA-256"
+            echo '```'
+            echo "$SUMS"
+            echo '```'
+            echo ""
+            echo "Verify (PowerShell): \`Get-FileHash .\\<file> -Algorithm SHA256\`"
+            echo ""
+            echo "Unsigned builds may trigger SmartScreen. Data lives in \`%APPDATA%/HFQ-Code\`."
+            echo ""
+            echo "See [docs/RELEASE-1.0.2.md](./docs/RELEASE-1.0.2.md) and [docs/PACKAGING.md](./docs/PACKAGING.md)."
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -91,20 +128,10 @@ jobs:
           draft: false
           prerelease: ${{ contains(steps.meta.outputs.tag, '-') }}
           generate_release_notes: true
-          body: |
-            ## HFQ Code ${{ steps.meta.outputs.tag }}
-
-            Windows desktop coding agent.
-
-            ### Downloads
-            - **NSIS installer** — `HFQ Code-*-x64.exe`
-            - **Portable** — `HFQ Code-*-portable.exe`
-
-            Unsigned builds may trigger SmartScreen. Data lives in `%APPDATA%/HFQ-Code`.
-
-            See [docs/RELEASE-1.0.0.md](./docs/RELEASE-1.0.0.md) and [docs/PACKAGING.md](./docs/PACKAGING.md).
+          body: ${{ steps.notes.outputs.body }}
           files: |
             apps/desktop/release/*.exe
             apps/desktop/release/*.blockmap
+            apps/desktop/release/SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

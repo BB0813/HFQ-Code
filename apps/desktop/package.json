@@ -1,6 +1,6 @@
 {
   "name": "@hfq/desktop",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "description": "HFQ Code desktop shell",
   "main": "electron/main.cjs",
@@ -42,6 +42,7 @@
     },
     "electronDist": "node_modules/electron/dist",
     "icon": "build/icon.ico",
+    "afterPack": "../../scripts/stamp-win-icon.mjs",
     "files": [
       "electron/**/*",
       "renderer/**/*",

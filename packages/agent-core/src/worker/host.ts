@@ -331,14 +331,37 @@ export class SessionWorkerHost {
   async setPlanMode(
     sessionId: string,
     enabled: boolean,
-  ): Promise<{ ok: boolean; sessionId: string; planMode: boolean }> {
+  ): Promise<{
+    ok: boolean;
+    sessionId: string;
+    planMode: boolean;
+    permissionMode?: string;
+  }> {
     return this.call("setPlanMode", { sessionId, enabled });
   }
 
   async getPlanMode(
     sessionId: string,
-  ): Promise<{ sessionId: string; planMode: boolean }> {
+  ): Promise<{ sessionId: string; planMode: boolean; permissionMode?: string }> {
     return this.call("getPlanMode", { sessionId });
+  }
+
+  async setPermissionMode(
+    sessionId: string,
+    mode: string,
+  ): Promise<{
+    ok: boolean;
+    sessionId: string;
+    permissionMode: string;
+    planMode: boolean;
+  }> {
+    return this.call("setPermissionMode", { sessionId, mode });
+  }
+
+  async getPermissionMode(
+    sessionId: string,
+  ): Promise<{ sessionId: string; permissionMode: string; planMode: boolean }> {
+    return this.call("getPermissionMode", { sessionId });
   }
 
   async listChildren(sessionId: string): Promise<SessionInfo[]> {

@@ -4,6 +4,7 @@
  */
 
 import type { SessionEvent, SessionInfo } from "@hfq/shared";
+import type { PermissionMode } from "@hfq/policy";
 import type { SessionSnapshot } from "../history.js";
 import type { SubagentProfile } from "../subagent.js";
 import type { PermissionDecision } from "../manager.js";
@@ -45,6 +46,7 @@ export interface WorkerCreateParams {
   provider?: WorkerProviderSpec;
   title?: string;
   planMode?: boolean;
+  permissionMode?: PermissionMode;
   memoryEnabled?: boolean;
   compactMaxChars?: number;
   parentSessionId?: string;
@@ -60,6 +62,7 @@ export interface WorkerOpenParams {
   model?: string;
   provider?: WorkerProviderSpec;
   planMode?: boolean;
+  permissionMode?: PermissionMode;
   memoryEnabled?: boolean;
   compactMaxChars?: number;
 }
@@ -98,6 +101,8 @@ export type WorkerRequestMethod =
   | "rename"
   | "setPlanMode"
   | "getPlanMode"
+  | "setPermissionMode"
+  | "getPermissionMode"
   | "listChildren"
   | "spawnSubagent"
   | "resolvePermission"
@@ -121,6 +126,12 @@ export type WorkerRequest =
   | { id: string; method: "rename"; params: { sessionId: string; title: string } }
   | { id: string; method: "setPlanMode"; params: { sessionId: string; enabled: boolean } }
   | { id: string; method: "getPlanMode"; params: { sessionId: string } }
+  | {
+      id: string;
+      method: "setPermissionMode";
+      params: { sessionId: string; mode: PermissionMode | string };
+    }
+  | { id: string; method: "getPermissionMode"; params: { sessionId: string } }
   | { id: string; method: "listChildren"; params: { sessionId: string } }
   | { id: string; method: "spawnSubagent"; params: WorkerSpawnParams }
   | { id: string; method: "resolvePermission"; params: WorkerPermissionParams }

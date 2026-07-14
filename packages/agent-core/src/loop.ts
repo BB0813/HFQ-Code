@@ -4,8 +4,10 @@ import {
   defaultPolicyConfig,
   grantSessionAllow,
   listSessionAllows,
+  normalizePermissionMode,
   revokeSessionAllow,
   resolvePermission,
+  type PermissionMode,
   type PolicyConfig,
 } from "@hfq/policy";
 import { toAssistantToolCalls, type ChatMessage, type ModelProvider } from "@hfq/providers";
@@ -69,6 +71,11 @@ export interface AgentSessionOptions {
   getExtraTools?: () => ExtraToolsBundle | null | undefined;
   /** Plan mode: deny mutating tools (write/patch/shell). */
   planMode?: boolean;
+  /**
+   * Access mode (Claude Code / ZCode style).
+   * When set, overrides planMode boolean for initial state.
+   */
+  permissionMode?: PermissionMode;
   /** Soft character budget for compaction (prefs). */
   compactMaxChars?: number;
   /** Inject memory into system prompt (prefs). */
@@ -107,6 +114,9 @@ export class AgentSession {
   private titleLocked = false;
   private abortRequested = false;
   private planMode: boolean;
+  private permissionMode: PermissionMode;
+  /** Non-plan mode to restore when leaving plan mode. */
+  private previousNonPlanMode: PermissionMode = "confirm_before_change";
   private toolCallCount = 0;
   private readonly maxToolCalls: number;
   private static readonly EVENT_LOG_MAX = 500;
@@ -122,7 +132,12 @@ export class AgentSession {
       updatedAt: now,
       status: "idle",
     };
-    this.planMode = Boolean(opts.planMode);
+    const initialMode = normalizePermissionMode(
+      opts.permissionMode ?? (opts.planMode ? "plan" : "confirm_before_change"),
+    );
+    this.permissionMode = initialMode;
+    this.planMode = initialMode === "plan";
+    if (initialMode !== "plan") this.previousNonPlanMode = initialMode;
     if (opts.subagentProfile) {
       const budget = defaultBudget(opts.subagentProfile, opts.subagentDepth ?? 1);
       this.maxRounds = opts.maxRounds ?? budget.maxRounds;
@@ -134,11 +149,44 @@ export class AgentSession {
   }
 
   setPlanMode(enabled: boolean): void {
-    this.planMode = Boolean(enabled);
+    if (enabled) {
+      if (this.permissionMode !== "plan") {
+        this.previousNonPlanMode = this.permissionMode;
+      }
+      this.permissionMode = "plan";
+      this.planMode = true;
+    } else {
+      const restore =
+        this.previousNonPlanMode === "plan"
+          ? "confirm_before_change"
+          : this.previousNonPlanMode;
+      this.permissionMode = restore;
+      this.planMode = false;
+    }
   }
 
   getPlanMode(): boolean {
     return this.planMode;
+  }
+
+  setPermissionMode(mode: PermissionMode | string): PermissionMode {
+    const next = normalizePermissionMode(mode);
+    if (next === "plan") {
+      if (this.permissionMode !== "plan") {
+        this.previousNonPlanMode = this.permissionMode;
+      }
+      this.permissionMode = "plan";
+      this.planMode = true;
+    } else {
+      this.previousNonPlanMode = next;
+      this.permissionMode = next;
+      this.planMode = false;
+    }
+    return this.permissionMode;
+  }
+
+  getPermissionMode(): PermissionMode {
+    return this.permissionMode;
   }
 
   getParentSessionId(): string | undefined {
@@ -702,6 +750,7 @@ export class AgentSession {
 
         let decision = resolvePermission(this.policy, call.name, risk, {
           command: call.name === "shell" ? String(call.arguments.command ?? "") : undefined,
+          permissionMode: this.permissionMode,
         });
 
         if (decision === "ask") {

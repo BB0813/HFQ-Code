@@ -32,6 +32,15 @@ export const McpServerConfigSchema = z.object({
 
 export type McpServerConfig = z.infer<typeof McpServerConfigSchema>;
 
+export const PermissionModeSchema = z.enum([
+  "confirm_before_change",
+  "auto_edit",
+  "plan",
+  "full_access",
+]);
+
+export type PermissionMode = z.infer<typeof PermissionModeSchema>;
+
 export const UiPrefsSchema = z.object({
   /** dark is the product default; light is a soft inversion. */
   theme: z.enum(["dark", "light"]).default("dark"),
@@ -44,8 +53,22 @@ export const UiPrefsSchema = z.object({
   /** Optional USD per 1M tokens for usage estimates. */
   usageInputPerMillion: z.number().min(0).max(1_000).default(0),
   usageOutputPerMillion: z.number().min(0).max(1_000).default(0),
-  /** Default plan mode for new sessions. */
+  /**
+   * Legacy boolean default for plan mode. Soft-migrated into permissionMode when missing.
+   * Prefer permissionMode for new code.
+   */
   planModeDefault: z.boolean().default(false),
+  /**
+   * Default access mode for new sessions (Claude Code / ZCode style).
+   * full_access is YOLO (including dangerous shell).
+   */
+  permissionMode: PermissionModeSchema.default("confirm_before_change"),
+  /**
+   * When true, desktop quietly queries GitHub Releases on startup (manual download only).
+   */
+  checkUpdatesOnStartup: z.boolean().default(true),
+  /** ISO timestamp of last successful/attempted update check (best-effort). */
+  lastUpdateCheckAt: z.string().optional(),
 });
 
 export type UiPrefs = z.infer<typeof UiPrefsSchema>;
@@ -68,6 +91,8 @@ export const AppConfigSchema = z.object({
     usageInputPerMillion: 0,
     usageOutputPerMillion: 0,
     planModeDefault: false,
+    permissionMode: "confirm_before_change",
+    checkUpdatesOnStartup: true,
   }),
 });
 
@@ -88,6 +113,8 @@ export function defaultAppConfig(): AppConfig {
       usageInputPerMillion: 0,
       usageOutputPerMillion: 0,
       planModeDefault: false,
+      permissionMode: "confirm_before_change",
+      checkUpdatesOnStartup: true,
     },
     providers: [
       {

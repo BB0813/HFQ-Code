@@ -19,11 +19,33 @@ import {
   stripSecretsForPublicConfig,
 } from "./credentials.js";
 
+function migratePermissionModePrefs(cfg: AppConfig, raw: unknown): AppConfig {
+  const rawPrefs =
+    raw && typeof raw === "object" && raw !== null && "prefs" in raw
+      ? (raw as { prefs?: Record<string, unknown> }).prefs
+      : undefined;
+  const hadExplicitMode =
+    rawPrefs && typeof rawPrefs === "object" && rawPrefs !== null && "permissionMode" in rawPrefs;
+  if (hadExplicitMode) return cfg;
+  // Legacy configs only set planModeDefault=true → promote to plan access mode once.
+  if (cfg.prefs?.planModeDefault && cfg.prefs.permissionMode === "confirm_before_change") {
+    return {
+      ...cfg,
+      prefs: {
+        ...cfg.prefs,
+        permissionMode: "plan",
+      },
+    };
+  }
+  return cfg;
+}
+
 export async function loadAppConfig(configPath: string): Promise<AppConfig> {
   try {
     const raw = await fs.readFile(configPath, "utf8");
     const parsed = JSON.parse(raw) as unknown;
     let cfg = ensureMockProvider(AppConfigSchema.parse(parsed));
+    cfg = migratePermissionModePrefs(cfg, parsed);
     const credPath = credentialsPathFor(configPath);
     let creds = await loadCredentialsFile(credPath);
 
@@ -158,7 +180,23 @@ export function withPrefs(
         patch.usageInputPerMillion ?? cfg.prefs?.usageInputPerMillion ?? 0,
       usageOutputPerMillion:
         patch.usageOutputPerMillion ?? cfg.prefs?.usageOutputPerMillion ?? 0,
-      planModeDefault: patch.planModeDefault ?? cfg.prefs?.planModeDefault ?? false,
+      planModeDefault:
+        patch.planModeDefault ??
+        (patch.permissionMode === "plan"
+          ? true
+          : patch.permissionMode
+            ? false
+            : (cfg.prefs?.planModeDefault ?? false)),
+      permissionMode:
+        patch.permissionMode ??
+        cfg.prefs?.permissionMode ??
+        (cfg.prefs?.planModeDefault ? "plan" : "confirm_before_change"),
+      checkUpdatesOnStartup:
+        patch.checkUpdatesOnStartup ?? cfg.prefs?.checkUpdatesOnStartup ?? true,
+      lastUpdateCheckAt:
+        patch.lastUpdateCheckAt !== undefined
+          ? patch.lastUpdateCheckAt
+          : cfg.prefs?.lastUpdateCheckAt,
     },
   };
 }

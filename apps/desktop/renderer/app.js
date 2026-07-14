@@ -85,15 +85,23 @@ policyMatrix: /** @type {any[] | null} */ (null),
   sessionAllows: [],
   mcp: /** @type {{ servers: any[], tools: any[] } | null} */ (null),
   pendingPermission: /** @type {null | any} */ (null),
+  /** @type {any[]} */
+  permissionQueue: [],
+  /** @type {boolean} */
+  permissionResolving: false,
 /** @type {Array<any>} */
-	  recentSessions: [],
-	  /** @type {any | null} */
-	  appPaths: null,
-	  changeActionNote: /** @type {string | null} */ (null),
-/** @type {{ inputTokens: number, outputTokens: number }} */
-		  usage: { inputTokens: 0, outputTokens: 0 },
-		  planMode: false,
-		  memoryDocs: /** @type {any[]} */ ([]),
+		  recentSessions: [],
+		  /** @type {any | null} */
+		  appPaths: null,
+		  changeActionNote: /** @type {string | null} */ (null),
+	/** @type {{ inputTokens: number, outputTokens: number }} */
+			  usage: { inputTokens: 0, outputTokens: 0 },
+			  planMode: false,
+			  /** @type {"confirm_before_change"|"auto_edit"|"plan"|"full_access"} */
+			  permissionMode: "confirm_before_change",
+			  /** @type {any | null} last update:check result */
+			  updateCheck: null,
+			  memoryDocs: /** @type {any[]} */ ([]),
 		  memoryHits: /** @type {any[]} */ ([]),
 		  memoryQuery: "",
 		  memoryScope: "all",
@@ -373,21 +381,24 @@ function upsertChange(event) {
 	}
 
 function resetLiveSurfaces() {
-				  state.messages = [];
-				  state.changes = [];
-				  state.selectedChangePath = null;
-				  state.changeFilter = "";
-				  state.terminal = [];
-				  state.tasks = [];
-				  state.childSessions = [];
-				  state.audit = [];
-				  state.auditFilter = "all";
-				  state.usage = { inputTokens: 0, outputTokens: 0 };
-				  state.changeActionNote = null;
-				  state.agentsEditor = null;
-				  state.busy = false;
-				  hidePermissionModal();
-				}
+					  state.messages = [];
+					  state.changes = [];
+					  state.selectedChangePath = null;
+					  state.changeFilter = "";
+					  state.terminal = [];
+					  state.tasks = [];
+					  state.childSessions = [];
+					  state.audit = [];
+					  state.auditFilter = "all";
+					  state.usage = { inputTokens: 0, outputTokens: 0 };
+					  state.changeActionNote = null;
+					  state.agentsEditor = null;
+					  state.busy = false;
+					  state.permissionQueue = [];
+					  state.permissionResolving = false;
+					  state.pendingPermission = null;
+					  el("permModal")?.classList.add("hidden");
+					}
 
 		async function refreshChildSessions() {
 		  try {
@@ -471,11 +482,32 @@ state.terminal = Array.isArray(snap.terminal) ? [...snap.terminal] : [];
 			  state.audit = restored.slice().reverse().slice(0, 200);
 			  state.auditFilter = "all";
   state.changeActionNote = null;
-				  state.busy = false;
-				  setSessionBadge();
-				  setCrumb();
-				  void refreshChildSessions();
-				}
+					  state.busy = false;
+					  clearPermissionQueue();
+					  const snapMode =
+					    snap.permissionMode ||
+					    snap.info?.permissionMode ||
+					    (snap.info?.planMode || snap.planMode ? "plan" : null);
+					  applyPermissionModeState(
+					    snapMode || state.permissionMode,
+					    snap.planMode ?? snap.info?.planMode,
+					  );
+					  setSessionBadge();
+					  setCrumb();
+					  void refreshChildSessions();
+					  // Best-effort live mode from worker after open.
+					  if (state.session?.id && window.hfq?.getPermissionMode) {
+					    void window.hfq
+					      .getPermissionMode({ sessionId: state.session.id })
+					      .then((r) => {
+					        if (r?.permissionMode) {
+					          applyPermissionModeState(r.permissionMode, r.planMode);
+					          if (state.page === "chat") renderPage("chat");
+					        }
+					      })
+					      .catch(() => {});
+					  }
+					}
 
 	async function refreshSessions() {
 	  try {
@@ -584,24 +616,34 @@ async function openRecentSession(sessionId) {
 		}
 
 async function createFreshSession() {
-		  if (!state.workspacePath) throw new Error("请先打开工作区");
-		  setStatus("正在创建会话…", "busy");
-		  const info = await window.hfq.createSession({ workspacePath: state.workspacePath });
-		  resetLiveSurfaces();
-		  state.session = info;
-		  state.planMode = Boolean(info.planMode);
-		  setSessionBadge();
-		  const providerLabel = info.providerId || state.config?.activeProviderId || "mock";
-		  setStatus(`就绪 · ${providerLabel}`, "live");
-		  pushMessage({
-		    role: "system",
-		    text: `会话 ${info.id.slice(0, 8)}\n工作区: ${info.workspacePath}\n提供方: ${providerLabel}\n模型: ${info.model || "mock"}${
-		      state.planMode ? "\n计划模式: 开" : ""
-		    }`,
-		  });
-		  void refreshSessions();
-		  return info;
-		}
+			  if (!state.workspacePath) throw new Error("请先打开工作区");
+			  setStatus("正在创建会话…", "busy");
+			  const prefMode = normalizePermissionMode(
+			    state.config?.prefs?.permissionMode ||
+			      (state.config?.prefs?.planModeDefault ? "plan" : "confirm_before_change"),
+			  );
+			  const info = await window.hfq.createSession({
+			    workspacePath: state.workspacePath,
+			    permissionMode: prefMode,
+			  });
+			  resetLiveSurfaces();
+			  clearPermissionQueue();
+			  state.session = info;
+			  applyPermissionModeState(
+			    info.permissionMode || prefMode,
+			    info.planMode,
+			  );
+			  setSessionBadge();
+			  const providerLabel = info.providerId || state.config?.activeProviderId || "mock";
+			  const modeMeta = permissionModeMeta(state.permissionMode);
+			  setStatus(`就绪 · ${providerLabel}`, "live");
+			  pushMessage({
+			    role: "system",
+			    text: `会话 ${info.id.slice(0, 8)}\n工作区: ${info.workspacePath}\n提供方: ${providerLabel}\n模型: ${info.model || "mock"}\n访问模式: ${modeMeta.label}`,
+			  });
+			  void refreshSessions();
+			  return info;
+			}
 
 function collectSelectedHunkIds(path) {
 		  const change = state.changes.find((c) => c.path === path);
@@ -852,9 +894,91 @@ return `<div class="msg ${role}${m.streaming ? " streaming" : ""}"><div class="m
 	    .join("");
 	}
 
+const PERMISSION_MODES = [
+  {
+    id: "confirm_before_change",
+    label: "变更前确认",
+    short: "确认",
+    hint: "写入、补丁、Shell、网络等变更前询问",
+  },
+  {
+    id: "auto_edit",
+    label: "自动编辑",
+    short: "自动编辑",
+    hint: "自动允许写文件/补丁；Shell 与网络仍询问",
+  },
+  {
+    id: "plan",
+    label: "计划模式",
+    short: "计划",
+    hint: "只读规划；禁止写文件、补丁与 Shell",
+  },
+  {
+    id: "full_access",
+    label: "完全访问",
+    short: "完全访问",
+    hint: "全部放行（含危险 Shell）· 真·YOLO",
+    warn: true,
+  },
+];
+
+function normalizePermissionMode(mode) {
+  const id = String(mode || "");
+  if (PERMISSION_MODES.some((m) => m.id === id)) return id;
+  return "confirm_before_change";
+}
+
+function permissionModeMeta(mode) {
+  const id = normalizePermissionMode(mode);
+  return PERMISSION_MODES.find((m) => m.id === id) || PERMISSION_MODES[0];
+}
+
+function applyPermissionModeState(mode, planMode) {
+  const next = normalizePermissionMode(mode);
+  state.permissionMode = next;
+  state.planMode = planMode == null ? next === "plan" : Boolean(planMode);
+  if (state.session) {
+    state.session = {
+      ...state.session,
+      permissionMode: next,
+      planMode: state.planMode,
+    };
+  }
+}
+
+function enqueuePermissionRequest(req) {
+  if (!req?.requestId) return;
+  const exists = state.permissionQueue.some((r) => r.requestId === req.requestId);
+  if (exists) return;
+  if (state.pendingPermission?.requestId === req.requestId) return;
+  // Prefer active-session requests at the front of the queue.
+  const isActive = state.session?.id && req.sessionId === state.session.id;
+  if (isActive) state.permissionQueue.unshift(req);
+  else state.permissionQueue.push(req);
+  presentNextPermission();
+}
+
+function presentNextPermission() {
+  if (state.permissionResolving) return;
+  if (state.pendingPermission) return;
+  const next = state.permissionQueue.shift();
+  if (!next) {
+    el("permModal")?.classList.add("hidden");
+    return;
+  }
+  showPermissionModal(next);
+}
+
 function showPermissionModal(req) {
   state.pendingPermission = req;
-  el("permSummary").textContent = req.summary || "";
+  const summary = req.summary || "";
+  const sessionHint =
+    req.sessionId && state.session?.id && req.sessionId !== state.session.id
+      ? `\n（来自会话 ${String(req.sessionId).slice(0, 8)}…）`
+      : "";
+  const queueHint =
+    state.permissionQueue.length > 0 ? `\n队列中还有 ${state.permissionQueue.length} 项` : "";
+  el("permSummary").textContent = summary + sessionHint + queueHint;
   el("permTool").textContent = req.toolName || "工具";
   el("permRisk").textContent = riskLabel(req.risk);
   el("permModal").classList.remove("hidden");
@@ -863,6 +987,62 @@ function showPermissionModal(req) {
 function hidePermissionModal() {
   state.pendingPermission = null;
   el("permModal").classList.add("hidden");
+}
+
+function clearPermissionQueue(reason) {
+  state.permissionQueue = [];
+  state.permissionResolving = false;
+  if (state.pendingPermission) {
+    hidePermissionModal();
+    if (reason) {
+      pushMessage({ role: "system", text: reason });
+    }
+  } else {
+    el("permModal")?.classList.add("hidden");
+  }
+}
+
+async function resolveCurrentPermission(decision) {
+  const pending = state.pendingPermission;
+  if (!pending?.requestId || state.permissionResolving) return;
+  const requestId = pending.requestId;
+  state.permissionResolving = true;
+  const actions = el("permModal")?.querySelectorAll("[data-perm]");
+  actions?.forEach((btn) => {
+    if (btn instanceof HTMLButtonElement) btn.disabled = true;
+  });
+  try {
+    const res = await window.hfq.resolvePermission({ requestId, decision });
+    const ok = res === true || res?.ok === true || res == null;
+    // Main returns boolean; treat explicit false as failure.
+    if (res === false || res?.ok === false) {
+      throw new Error("授权请求已失效或会话已结束");
+    }
+    void ok;
+    // Only hide after successful resolve — avoids orphaned waiter / stuck busy.
+    if (state.pendingPermission?.requestId === requestId) {
+      hidePermissionModal();
+    }
+    state.permissionResolving = false;
+    actions?.forEach((btn) => {
+      if (btn instanceof HTMLButtonElement) btn.disabled = false;
+    });
+    presentNextPermission();
+  } catch (err) {
+    state.permissionResolving = false;
+    actions?.forEach((btn) => {
+      if (btn instanceof HTMLButtonElement) btn.disabled = false;
+    });
+    // Keep modal visible so the user can retry or deny.
+    pushMessage({
+      role: "error",
+      text: `授权提交失败: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    setStatus("授权提交失败，请重试或拒绝", "warn");
+    if (state.pendingPermission?.requestId === requestId) {
+      el("permModal")?.classList.remove("hidden");
+    }
+  }
 }
 
 async function ensureSession() {
@@ -938,14 +1118,15 @@ if (state.session && event.sessionId === state.session.id) {
 	      else if (event.type === "session.aborted") setStatus("已停止", "warn");
 	      else setStatus("空闲", "live");
 	    }
-	    if (event.type === "session.failed") {
-	      pushMessage({ role: "error", text: event.error || "会话失败" });
-	    }
-	    if (event.type === "session.aborted") {
-	      hidePermissionModal();
-	      pushMessage({ role: "system", text: "会话已由用户停止" });
-	    }
-	  }
+if (event.type === "session.failed") {
+		      clearPermissionQueue("会话失败，已取消待处理授权");
+		      pushMessage({ role: "error", text: event.error || "会话失败" });
+		    }
+		    if (event.type === "session.aborted") {
+		      clearPermissionQueue();
+		      pushMessage({ role: "system", text: "会话已由用户停止" });
+		    }
+		  }
 
 switch (event.type) {
 	    case "message.delta":
@@ -973,16 +1154,27 @@ case "tool.completed":
 	      }
 	      break;
     case "permission.requested":
-      showPermissionModal(event);
+      enqueuePermissionRequest(event);
       setStatus("等待授权…", "warn");
-      if (state.session) {
+      if (state.session && event.sessionId === state.session.id) {
         state.session = { ...state.session, status: "waiting_permission" };
         setSessionBadge();
       }
       break;
     case "permission.resolved": {
-      const pendingTool = state.pendingPermission?.toolName;
-      hidePermissionModal();
+      const pendingTool =
+        state.pendingPermission?.requestId === event.requestId
+          ? state.pendingPermission?.toolName
+          : state.permissionQueue.find((r) => r.requestId === event.requestId)?.toolName;
+      // Drop from queue if still waiting; only hide modal when this request is front.
+      state.permissionQueue = state.permissionQueue.filter(
+        (r) => r.requestId !== event.requestId,
+      );
+      if (state.pendingPermission?.requestId === event.requestId) {
+        hidePermissionModal();
+        state.permissionResolving = false;
+        presentNextPermission();
+      }
       const decisionMap = {
         allow: "允许一次",
         deny: "拒绝",
@@ -1185,28 +1377,61 @@ return `<div class="session-item ${active}">
 	}
 
 function pageChat() {
-			  const provider = state.config?.activeProviderId || "mock";
-			  const model = state.session?.model || state.config?.activeModel || "mock-hfq";
-			  const title = state.session?.title || "未创建会话";
-			  const usageText = `累计 tokens 入 ${state.usage?.inputTokens || 0} / 出 ${state.usage?.outputTokens || 0}`;
-			  const planOn = Boolean(state.planMode);
-			  return `
-			    <div class="chat-layout">
-			      <div class="chat-toolbar">
-			        <div class="row" style="gap:8px;flex-wrap:wrap">
-			          <button type="button" class="btn primary sm" id="startSessionBtn">新建会话</button>
-			          <button type="button" class="btn ghost sm" id="clearChatBtn">清空视图</button>
-			          <button type="button" class="btn ghost sm" id="stopSessionBtn" ${state.busy ? "" : "disabled"}>停止</button>
-			          <button type="button" class="btn ghost sm" id="renameSessionBtn" ${
-			            state.session?.id ? "" : "disabled"
-			          }>重命名</button>
-			          <button type="button" class="btn ${planOn ? "primary" : "ghost"} sm" id="planModeBtn" title="计划模式：禁止写文件/补丁/shell">
-			            ${planOn ? "计划模式 · 开" : "计划模式"}
-			          </button>
-			          <button type="button" class="btn ghost sm" id="spawnExploreBtn" ${
-			            state.session?.id && !state.busy ? "" : "disabled"
-			          }>派生子代理(调研)</button>
-			        </div>
+				  const provider = state.config?.activeProviderId || "mock";
+				  const model = state.session?.model || state.config?.activeModel || "mock-hfq";
+				  const title = state.session?.title || "未创建会话";
+				  const usageText = `累计 tokens 入 ${state.usage?.inputTokens || 0} / 出 ${state.usage?.outputTokens || 0}`;
+				  const mode = permissionModeMeta(state.permissionMode);
+				  const modeBtnClass =
+				    mode.id === "full_access"
+				      ? "warn"
+				      : mode.id === "plan" || mode.id === "auto_edit"
+				        ? "primary"
+				        : "ghost";
+				  const modeMenu = PERMISSION_MODES.map((m) => {
+				    const active = m.id === mode.id;
+				    return `<button type="button" class="mode-menu-item${active ? " active" : ""}${
+				      m.warn ? " warn" : ""
+				    }" data-set-mode="${m.id}" role="menuitem">
+				      <span class="mode-menu-check">${active ? "✓" : ""}</span>
+				      <span class="mode-menu-text">
+				        <span class="mode-menu-label">${escapeHtml(m.label)}</span>
+				        <span class="mode-menu-hint">${escapeHtml(m.hint)}</span>
+				      </span>
+				    </button>`;
+				  }).join("");
+				  return `
+				    <div class="chat-layout">
+				      <div class="chat-toolbar">
+				        <div class="row" style="gap:8px;flex-wrap:wrap">
+				          <button type="button" class="btn primary sm" id="startSessionBtn">新建会话</button>
+				          <button type="button" class="btn ghost sm" id="clearChatBtn">清空视图</button>
+				          <button type="button" class="btn ghost sm" id="stopSessionBtn" ${state.busy ? "" : "disabled"}>停止</button>
+				          <button type="button" class="btn ghost sm" id="renameSessionBtn" ${
+				            state.session?.id ? "" : "disabled"
+				          }>重命名</button>
+				          <div class="mode-menu" id="accessModeMenu">
+				            <button type="button" class="btn ${modeBtnClass} sm" id="accessModeBtn" title="${escapeHtml(
+				              mode.hint,
+				            )}" ${state.session?.id ? "" : "disabled"} aria-haspopup="menu" aria-expanded="false">
+				              访问 · ${escapeHtml(mode.short)} ▾
+				            </button>
+				            <div class="mode-menu-panel hidden" id="accessModePanel" role="menu">
+				              ${modeMenu}
+				              <div class="mode-menu-sep"></div>
+				              <button type="button" class="mode-menu-item" id="accessModeSetDefault" role="menuitem">
+				                <span class="mode-menu-check"></span>
+				                <span class="mode-menu-text">
+				                  <span class="mode-menu-label">设为默认</span>
+				                  <span class="mode-menu-hint">写入全局偏好，新建会话沿用当前模式</span>
+				                </span>
+				              </button>
+				            </div>
+				          </div>
+				          <button type="button" class="btn ghost sm" id="spawnExploreBtn" ${
+				            state.session?.id && !state.busy ? "" : "disabled"
+				          }>派生子代理(调研)</button>
+				        </div>
 			        <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
 			          <div class="pill ${state.session ? "live" : ""}" title="${escapeHtml(title)}">
 			            <span class="dot"></span>
@@ -1318,17 +1543,68 @@ function pageChanges() {
 			  </div>`;
 			}
 
+function formatUpdateStatus(result, currentVersionFallback) {
+  const current =
+    result?.currentVersion || currentVersionFallback || state.appPaths?.version || "—";
+  if (!result) {
+    return `当前版本 ${current} · 尚未检查`;
+  }
+  if (result.skipped && result.reason === "throttled") {
+    return `当前版本 ${current} · 距上次检查不足 6 小时（可点「检查新版本」强制查询）`;
+  }
+  if (!result.ok) {
+    return `当前版本 ${current} · 检查失败：${result.error || "网络错误"}`;
+  }
+  if (result.updateAvailable && result.latestVersion) {
+    return `发现新版本 ${result.latestVersion}（当前 ${current}）· 请下载安装包覆盖安装`;
+  }
+  if (result.latestVersion) {
+    return `已是最新 · 当前 ${current} · 远端 ${result.latestVersion}`;
+  }
+  return `当前版本 ${current} · ${result.message || "暂无远端版本信息"}`;
+}
+
+function renderUpdateAssetsHtml(result) {
+  if (!result?.updateAvailable || !Array.isArray(result.assets) || !result.assets.length) {
+    return "";
+  }
+  const rows = result.assets
+    .filter((a) => /\.exe$/i.test(a.name || ""))
+    .slice(0, 6)
+    .map((a) => {
+      const mb = a.size ? `${(a.size / (1024 * 1024)).toFixed(1)} MB` : "";
+      return `<li class="faint mono" style="margin:4px 0">${escapeHtml(a.name)}${
+        mb ? ` · ${mb}` : ""
+      }</li>`;
+    })
+    .join("");
+  if (!rows) return "";
+  return `<ul style="margin:8px 0 0;padding-left:18px">${rows}</ul>
+    <p class="faint" style="margin-top:6px">在浏览器中打开发布页后选择 NSIS 或 portable 下载。</p>`;
+}
+
 function pageSettings() {
 			  const paths = state.appPaths || {};
 const prefs = state.config?.prefs || {
-				    theme: "dark",
-				    proxyUrl: "",
-				    memoryEnabled: true,
-				    compactMaxChars: 48000,
-				    usageInputPerMillion: 0,
-				    usageOutputPerMillion: 0,
-				    planModeDefault: false,
-				  };
+					    theme: "dark",
+					    proxyUrl: "",
+					    memoryEnabled: true,
+					    compactMaxChars: 48000,
+					    usageInputPerMillion: 0,
+					    usageOutputPerMillion: 0,
+					    planModeDefault: false,
+					    permissionMode: "confirm_before_change",
+					    checkUpdatesOnStartup: true,
+					  };
+				  const prefPermissionMode = normalizePermissionMode(
+				    prefs.permissionMode || (prefs.planModeDefault ? "plan" : "confirm_before_change"),
+				  );
+				  const prefModeOptions = PERMISSION_MODES.map(
+				    (m) =>
+				      `<option value="${m.id}" ${prefPermissionMode === m.id ? "selected" : ""}>${escapeHtml(
+				        m.label,
+				      )}${m.warn ? " ⚠" : ""}</option>`,
+				  ).join("");
   const pathDefs = [
 				    ["数据根目录", paths.root || "%APPDATA%/HFQ-Code", paths.root, "dir"],
 				    ["会话 JSONL", paths.sessions || "…/sessions", paths.sessions, "dir"],
@@ -1430,14 +1706,14 @@ return `
 			          )}" />
 			        </label>
 <label class="field row" style="align-items:center;gap:10px;margin-top:22px">
-				          <input id="prefMemory" type="checkbox" ${prefs.memoryEnabled !== false ? "checked" : ""} />
-				          <span>将会话提示注入本机记忆笔记</span>
-				        </label>
-				        <label class="field row" style="align-items:center;gap:10px;margin-top:22px">
-				          <input id="prefPlanDefault" type="checkbox" ${prefs.planModeDefault ? "checked" : ""} />
-				          <span>新建会话默认开启计划模式</span>
-				        </label>
-				        <label class="field"><span>用量单价 · Input $/1M</span>
+					          <input id="prefMemory" type="checkbox" ${prefs.memoryEnabled !== false ? "checked" : ""} />
+					          <span>将会话提示注入本机记忆笔记</span>
+					        </label>
+					        <label class="field"><span>默认访问模式</span>
+					          <select id="prefPermissionMode">${prefModeOptions}</select>
+					        </label>
+					        <p class="faint" style="grid-column:1/-1;margin:0">完全访问会自动允许危险 Shell（如删除命令），仅在你信任工作区时使用。会话工具栏可临时切换，不影响默认值。</p>
+					        <label class="field"><span>用量单价 · Input $/1M</span>
 				          <input id="prefInPrice" type="number" min="0" step="0.01" value="${escapeHtml(
 				            String(prefs.usageInputPerMillion ?? 0),
 				          )}" />
@@ -1452,21 +1728,43 @@ return `
 				      <p class="form-status" id="prefsStatus"></p>
 				    </div>
 <div class="panel" style="margin-top:14px">
-						      <div class="panel-head">
-						        <div>
-						          <h2>诊断与发版</h2>
-						          <p>导出脱敏配置与会话索引；安装包见 <code>pnpm pack:win</code>（需本机 electron-builder）</p>
-						        </div>
-						        <button type="button" class="btn sm" id="diagExportBtn">导出诊断包</button>
-						      </div>
-						      <p class="form-status" id="diagStatus"></p>
-						      <div class="steps" style="margin-top:10px">
-						        <div class="step"><div class="step-n">1</div><div><strong>打包</strong><span><code>pnpm pack:win</code> → NSIS + portable（apps/desktop/release）</span></div></div>
-						        <div class="step"><div class="step-n">2</div><div><strong>更新策略（1.0）</strong><span>手动下载下一版 NSIS/portable 覆盖安装；不内置自动更新客户端</span></div></div>
-						        <div class="step"><div class="step-n">3</div><div><strong>校验</strong><span><code>pnpm release:check</code> · <code>pnpm pack:verify</code>（解包冒烟）</span></div></div>
-						        <div class="step"><div class="step-n">4</div><div><strong>签名</strong><span>SmartScreen 需代码签名证书（可选）</span></div></div>
-						      </div>
-						    </div>
+							      <div class="panel-head">
+							        <div>
+							          <h2>检查更新</h2>
+							          <p>查询 GitHub Releases 最新版；仅提示并打开下载页，不会自动安装</p>
+							        </div>
+							        <div class="row" style="gap:6px">
+							          <button type="button" class="btn sm" id="updateCheckBtn">检查新版本</button>
+							          <button type="button" class="btn sm primary" id="updateOpenBtn" ${
+							            state.updateCheck?.releaseUrl || state.appPaths?.version ? "" : ""
+							          }>打开发布页</button>
+							        </div>
+							      </div>
+							      <label class="field row" style="align-items:center;gap:10px;margin:4px 0 8px">
+							        <input id="prefCheckUpdates" type="checkbox" ${
+							          prefs.checkUpdatesOnStartup !== false ? "checked" : ""
+							        } />
+							        <span>启动时自动检查（有新版本才提示）</span>
+							      </label>
+							      <p class="form-status" id="updateStatus">${escapeHtml(formatUpdateStatus(state.updateCheck, paths.version))}</p>
+							      ${renderUpdateAssetsHtml(state.updateCheck)}
+							    </div>
+	<div class="panel" style="margin-top:14px">
+							      <div class="panel-head">
+							        <div>
+							          <h2>诊断与发版</h2>
+							          <p>导出脱敏配置与会话索引；安装包见 <code>pnpm pack:win</code>（需本机 electron-builder）</p>
+							        </div>
+							        <button type="button" class="btn sm" id="diagExportBtn">导出诊断包</button>
+							      </div>
+							      <p class="form-status" id="diagStatus"></p>
+							      <div class="steps" style="margin-top:10px">
+							        <div class="step"><div class="step-n">1</div><div><strong>打包</strong><span><code>pnpm pack:win</code> → NSIS + portable（apps/desktop/release）</span></div></div>
+							        <div class="step"><div class="step-n">2</div><div><strong>更新策略</strong><span>设置页可检查 GitHub 新版本；手动下载 NSIS/portable 覆盖安装（无静默自动安装）</span></div></div>
+							        <div class="step"><div class="step-n">3</div><div><strong>校验</strong><span><code>pnpm release:check</code> · <code>pnpm pack:verify</code>（解包冒烟）</span></div></div>
+							        <div class="step"><div class="step-n">4</div><div><strong>签名</strong><span>SmartScreen 需代码签名证书（可选）</span></div></div>
+							      </div>
+							    </div>
 
 					    <div class="panel" style="margin-top:14px">
 					      <div class="panel-head">
@@ -2621,24 +2919,78 @@ function bindChatHandlers() {
 				    if (!state.session?.id) return;
 				    void renameRecentSession(state.session.id, state.session.title || "");
 				  });
-				  el("planModeBtn")?.addEventListener("click", async () => {
-				    if (!state.session?.id) {
-				      setStatus("请先创建会话", "warn");
-				      return;
-				    }
-				    try {
-				      const next = !state.planMode;
-				      const res = await window.hfq.setPlanMode({
-				        sessionId: state.session.id,
-				        enabled: next,
-				      });
-				      state.planMode = Boolean(res?.planMode);
-				      setStatus(state.planMode ? "计划模式已开启（只读）" : "计划模式已关闭", "live");
-				      renderPage("chat");
-				    } catch (err) {
-				      setStatus(err instanceof Error ? err.message : String(err), "warn");
-				    }
-				  });
+const modeBtn = el("accessModeBtn");
+					  const modePanel = el("accessModePanel");
+					  const closeModeMenu = () => {
+					    modePanel?.classList.add("hidden");
+					    modeBtn?.setAttribute("aria-expanded", "false");
+					  };
+					  modeBtn?.addEventListener("click", (e) => {
+					    e.stopPropagation();
+					    if (!state.session?.id) {
+					      setStatus("请先创建会话", "warn");
+					      return;
+					    }
+					    const willOpen = modePanel?.classList.contains("hidden");
+					    if (willOpen) {
+					      modePanel?.classList.remove("hidden");
+					      modeBtn?.setAttribute("aria-expanded", "true");
+					      const onDoc = () => {
+					        closeModeMenu();
+					        document.removeEventListener("click", onDoc);
+					      };
+					      setTimeout(() => document.addEventListener("click", onDoc), 0);
+					    } else {
+					      closeModeMenu();
+					    }
+					  });
+					  modePanel?.addEventListener("click", (e) => e.stopPropagation());
+					  el("content")?.querySelectorAll("[data-set-mode]").forEach((btn) => {
+					    btn.addEventListener("click", async () => {
+					      if (!state.session?.id) return;
+					      const mode = btn.getAttribute("data-set-mode");
+					      if (!mode) return;
+					      if (
+					        mode === "full_access" &&
+					        !window.confirm(
+					          "开启「完全访问」？\n\n将自动允许全部工具，包括危险 Shell（如 rm / del）。仅在你完全信任当前工作区时继续。",
+					        )
+					      ) {
+					        closeModeMenu();
+					        return;
+					      }
+					      try {
+					        const res = await window.hfq.setPermissionMode({
+					          sessionId: state.session.id,
+					          mode,
+					        });
+					        applyPermissionModeState(
+					          res?.permissionMode || mode,
+					          res?.planMode,
+					        );
+					        const meta = permissionModeMeta(state.permissionMode);
+					        setStatus(`访问模式 · ${meta.label}`, meta.warn ? "warn" : "live");
+					        closeModeMenu();
+					        renderPage("chat");
+					      } catch (err) {
+					        setStatus(err instanceof Error ? err.message : String(err), "warn");
+					      }
+					    });
+					  });
+					  el("accessModeSetDefault")?.addEventListener("click", async () => {
+					    try {
+					      if (!window.hfq?.setPrefs) throw new Error("setPrefs unavailable");
+					      const next = await window.hfq.setPrefs({
+					        permissionMode: state.permissionMode,
+					      });
+					      state.config = next;
+					      const meta = permissionModeMeta(state.permissionMode);
+					      setStatus(`已设为默认 · ${meta.label}`, "live");
+					      closeModeMenu();
+					    } catch (err) {
+					      setStatus(err instanceof Error ? err.message : String(err), "warn");
+					    }
+					  });
 				  el("spawnExploreBtn")?.addEventListener("click", async () => {
 				    if (!state.session?.id) return;
 				    const goal =
@@ -2906,24 +3258,38 @@ el("prefsSaveBtn")?.addEventListener("click", async () => {
 				      const proxyUrl = /** @type {HTMLInputElement | null} */ (el("prefProxy"))?.value || "";
 				      const compactRaw = /** @type {HTMLInputElement | null} */ (el("prefCompact"))?.value;
 				      const memoryEnabled = /** @type {HTMLInputElement | null} */ (el("prefMemory"))?.checked !== false;
-				      const planModeDefault = /** @type {HTMLInputElement | null} */ (el("prefPlanDefault"))?.checked === true;
-				      const compactMaxChars = Number(compactRaw || 48000);
-				      const usageInputPerMillion = Number(
-				        /** @type {HTMLInputElement | null} */ (el("prefInPrice"))?.value || 0,
-				      );
-				      const usageOutputPerMillion = Number(
-				        /** @type {HTMLInputElement | null} */ (el("prefOutPrice"))?.value || 0,
-				      );
-				      if (!window.hfq?.setPrefs) throw new Error("setPrefs unavailable");
-				      const next = await window.hfq.setPrefs({
-				        theme,
-				        proxyUrl,
-				        memoryEnabled,
-				        compactMaxChars,
-				        planModeDefault,
-				        usageInputPerMillion,
-				        usageOutputPerMillion,
-				      });
+const permissionMode = normalizePermissionMode(
+					        /** @type {HTMLSelectElement | null} */ (el("prefPermissionMode"))?.value,
+					      );
+					      if (
+					        permissionMode === "full_access" &&
+					        !window.confirm(
+					          "将默认访问模式设为「完全访问」？\n\n新建会话将自动允许全部工具（含危险 Shell）。",
+					        )
+					      ) {
+					        return;
+					      }
+					      const checkUpdatesOnStartup =
+					        /** @type {HTMLInputElement | null} */ (el("prefCheckUpdates"))?.checked !== false;
+					      const compactMaxChars = Number(compactRaw || 48000);
+					      const usageInputPerMillion = Number(
+					        /** @type {HTMLInputElement | null} */ (el("prefInPrice"))?.value || 0,
+					      );
+					      const usageOutputPerMillion = Number(
+					        /** @type {HTMLInputElement | null} */ (el("prefOutPrice"))?.value || 0,
+					      );
+					      if (!window.hfq?.setPrefs) throw new Error("setPrefs unavailable");
+					      const next = await window.hfq.setPrefs({
+					        theme,
+					        proxyUrl,
+					        memoryEnabled,
+					        compactMaxChars,
+					        permissionMode,
+					        planModeDefault: permissionMode === "plan",
+					        checkUpdatesOnStartup,
+					        usageInputPerMillion,
+					        usageOutputPerMillion,
+					      });
 				      state.config = next;
 				      applyTheme(next?.prefs?.theme || theme);
 				      if (status) status.textContent = "偏好已保存";
@@ -2948,6 +3314,57 @@ el("prefsSaveBtn")?.addEventListener("click", async () => {
 				      }
 				    } catch (err) {
 				      if (status) status.textContent = err instanceof Error ? err.message : String(err);
+				    }
+				  });
+				  el("updateCheckBtn")?.addEventListener("click", async () => {
+				    const status = el("updateStatus");
+				    const btn = el("updateCheckBtn");
+				    if (btn instanceof HTMLButtonElement) btn.disabled = true;
+				    if (status) status.textContent = "正在查询 GitHub Releases…";
+				    try {
+				      if (!window.hfq?.checkForUpdates) throw new Error("checkForUpdates unavailable");
+				      const res = await window.hfq.checkForUpdates({ force: true });
+				      state.updateCheck = res;
+				      if (status) {
+				        status.textContent = formatUpdateStatus(res, state.appPaths?.version);
+				      }
+				      if (res?.updateAvailable) {
+				        setStatus(`发现新版本 ${res.latestVersion}`, "warn");
+				      } else if (res?.ok) {
+				        setStatus(res.skipped ? "更新检查已节流" : "已是最新版本", "live");
+				      } else {
+				        setStatus(res?.error || "检查更新失败", "warn");
+				      }
+				      if (state.page === "settings") renderPage("settings");
+				    } catch (err) {
+				      const msg = err instanceof Error ? err.message : String(err);
+				      if (status) status.textContent = msg;
+				      setStatus(msg, "warn");
+				    } finally {
+				      if (btn instanceof HTMLButtonElement) btn.disabled = false;
+				    }
+				  });
+				  el("updateOpenBtn")?.addEventListener("click", async () => {
+				    try {
+				      const url =
+				        state.updateCheck?.releaseUrl ||
+				        "https://github.com/BB0813/HFQ-Code/releases";
+				      await window.hfq.openReleasePage({ url });
+				      setStatus("已在浏览器打开发布页", "live");
+				    } catch (err) {
+				      setStatus(err instanceof Error ? err.message : String(err), "warn");
+				    }
+				  });
+				  el("prefCheckUpdates")?.addEventListener("change", async () => {
+				    const checked =
+				      /** @type {HTMLInputElement | null} */ (el("prefCheckUpdates"))?.checked !== false;
+				    try {
+				      if (!window.hfq?.setPrefs) return;
+				      const next = await window.hfq.setPrefs({ checkUpdatesOnStartup: checked });
+				      state.config = next;
+				      setStatus(checked ? "已开启启动时检查更新" : "已关闭启动时检查更新", "live");
+				    } catch (err) {
+				      setStatus(err instanceof Error ? err.message : String(err), "warn");
 				    }
 				  });
 			  el("prefTheme")?.addEventListener("change", () => {
@@ -3621,14 +4038,8 @@ el("openWs").addEventListener("click", async () => {
     const target = e.target;
     if (!(target instanceof HTMLElement)) return;
     const decision = target.getAttribute("data-perm");
-    if (!decision || !state.pendingPermission) return;
-    const requestId = state.pendingPermission.requestId;
-    hidePermissionModal();
-    try {
-      await window.hfq.resolvePermission({ requestId, decision });
-    } catch (err) {
-      pushMessage({ role: "error", text: err instanceof Error ? err.message : String(err) });
-    }
+    if (!decision || !state.pendingPermission || state.permissionResolving) return;
+    await resolveCurrentPermission(decision);
   });
 
   window.hfq.onSessionEvent(handleSessionEvent);
@@ -3636,6 +4047,12 @@ el("openWs").addEventListener("click", async () => {
     state.workspacePath = data.workspacePath;
     el("wsPath").textContent = data.workspacePath || "尚未选择文件夹";
     setCrumb();
+  });
+  window.hfq.onUpdateAvailable?.((result) => {
+    state.updateCheck = result;
+    if (result?.updateAvailable && result.latestVersion) {
+      setStatus(`发现新版本 ${result.latestVersion} · 可到设置页下载`, "warn");
+    }
   });
 
   const info = await window.hfq.getInfo();

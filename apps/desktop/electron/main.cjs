@@ -1,7 +1,13 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell, net } = require("electron");
 const path = require("node:path");
 const os = require("node:os");
 const fs = require("node:fs/promises");
+
+/** Public GitHub repo used for release checks (manual download channel). */
+const UPDATE_REPO = { owner: "BB0813", name: "HFQ-Code" };
+const UPDATE_RELEASES_URL = `https://github.com/${UPDATE_REPO.owner}/${UPDATE_REPO.name}/releases`;
+const UPDATE_API_LATEST = `https://api.github.com/repos/${UPDATE_REPO.owner}/${UPDATE_REPO.name}/releases/latest`;
+const UPDATE_CHECK_MIN_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
@@ -302,6 +308,12 @@ function workerFacade(host) {
     getPlanMode(sessionId) {
       return host.getPlanMode(sessionId).then((r) => r.planMode);
     },
+    setPermissionMode(sessionId, mode) {
+      return host.setPermissionMode(sessionId, mode).then((r) => r.ok);
+    },
+    getPermissionMode(sessionId) {
+      return host.getPermissionMode(sessionId).then((r) => r.permissionMode);
+    },
     listChildren(sessionId) {
       return host.listChildren(sessionId);
     },
@@ -388,6 +400,238 @@ function resolveAppIcon() {
   return undefined;
 }
 
+function stripVersionNoise(raw) {
+  let s = String(raw || "").trim();
+  if (s.startsWith("v") || s.startsWith("V")) s = s.slice(1);
+  const plus = s.indexOf("+");
+  if (plus >= 0) s = s.slice(0, plus);
+  const dash = s.indexOf("-");
+  if (dash >= 0) s = s.slice(0, dash);
+  return s.trim();
+}
+
+function parseSemver(raw) {
+  const s = stripVersionNoise(raw);
+  const parts = s.split(".").map((p) => {
+    const n = Number.parseInt(p, 10);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  });
+  return [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0];
+}
+
+function compareSemver(a, b) {
+  const A = parseSemver(a);
+  const B = parseSemver(b);
+  for (let i = 0; i < 3; i++) {
+    if (A[i] !== B[i]) return A[i] - B[i];
+  }
+  return 0;
+}
+
+/**
+ * Fetch JSON via Electron net (uses Chromium network stack / system proxy).
+ * @param {string} url
+ * @param {number} [timeoutMs]
+ */
+function netFetchJson(url, timeoutMs = 12_000) {
+  return new Promise((resolve, reject) => {
+    const request = net.request({
+      method: "GET",
+      url,
+      redirect: "follow",
+    });
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try {
+        request.abort();
+      } catch {
+        /* ignore */
+      }
+      reject(new Error("update check timed out"));
+    }, timeoutMs);
+
+    request.setHeader("Accept", "application/vnd.github+json");
+    request.setHeader("User-Agent", `HFQ-Code/${app.getVersion() || "desktop"}`);
+    request.setHeader("X-GitHub-Api-Version", "2022-11-28");
+
+    request.on("response", (response) => {
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+      response.on("end", () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        const body = Buffer.concat(chunks).toString("utf8");
+        const status = response.statusCode || 0;
+        if (status === 404) {
+          resolve({ status, json: null, body });
+          return;
+        }
+        if (status < 200 || status >= 300) {
+          reject(new Error(`GitHub API HTTP ${status}`));
+          return;
+        }
+        try {
+          resolve({ status, json: JSON.parse(body), body });
+        } catch (err) {
+          reject(err instanceof Error ? err : new Error(String(err)));
+        }
+      });
+      response.on("error", (err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(err);
+      });
+    });
+    request.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(err);
+    });
+    request.end();
+  });
+}
+
+/**
+ * Query GitHub Releases latest. Manual channel only — never downloads installers.
+ * @param {{ force?: boolean, silent?: boolean }} [opts]
+ */
+async function checkForUpdates(opts = {}) {
+  const force = Boolean(opts.force);
+  const currentVersion = app.getVersion() || "0.0.0";
+  const checkedAt = new Date().toISOString();
+  let cfg = null;
+  try {
+    cfg = await readConfig();
+  } catch {
+    /* ignore */
+  }
+
+  if (!force && cfg?.prefs?.lastUpdateCheckAt) {
+    const last = Date.parse(cfg.prefs.lastUpdateCheckAt);
+    if (Number.isFinite(last) && Date.now() - last < UPDATE_CHECK_MIN_INTERVAL_MS) {
+      return {
+        ok: true,
+        skipped: true,
+        reason: "throttled",
+        currentVersion,
+        latestVersion: null,
+        updateAvailable: false,
+        releaseUrl: UPDATE_RELEASES_URL,
+        releaseNotes: null,
+        publishedAt: null,
+        assets: [],
+        checkedAt: cfg.prefs.lastUpdateCheckAt,
+      };
+    }
+  }
+
+  try {
+    const { status, json } = await netFetchJson(UPDATE_API_LATEST);
+    if (status === 404 || !json) {
+      const result = {
+        ok: true,
+        skipped: false,
+        currentVersion,
+        latestVersion: null,
+        updateAvailable: false,
+        releaseUrl: UPDATE_RELEASES_URL,
+        releaseNotes: null,
+        publishedAt: null,
+        assets: [],
+        checkedAt,
+        message: "暂无已发布的 Release",
+      };
+      await persistUpdateCheckStamp(checkedAt).catch(() => {});
+      return result;
+    }
+
+    const tag = String(json.tag_name || json.name || "").trim();
+    const latestVersion = stripVersionNoise(tag);
+    const updateAvailable =
+      Boolean(latestVersion) && compareSemver(latestVersion, currentVersion) > 0;
+    const assets = Array.isArray(json.assets)
+      ? json.assets
+          .filter((a) => a && a.browser_download_url)
+          .map((a) => ({
+            name: String(a.name || ""),
+            url: String(a.browser_download_url),
+            size: Number(a.size) || 0,
+            contentType: a.content_type ? String(a.content_type) : "",
+          }))
+      : [];
+    const releaseUrl = String(json.html_url || UPDATE_RELEASES_URL);
+    const releaseNotes = typeof json.body === "string" ? json.body.slice(0, 4000) : null;
+    const publishedAt = json.published_at ? String(json.published_at) : null;
+
+    await persistUpdateCheckStamp(checkedAt).catch(() => {});
+
+    return {
+      ok: true,
+      skipped: false,
+      currentVersion,
+      latestVersion,
+      updateAvailable,
+      releaseUrl,
+      releaseNotes,
+      publishedAt,
+      assets,
+      checkedAt,
+      tagName: tag,
+      prerelease: Boolean(json.prerelease),
+      draft: Boolean(json.draft),
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      skipped: false,
+      currentVersion,
+      latestVersion: null,
+      updateAvailable: false,
+      releaseUrl: UPDATE_RELEASES_URL,
+      releaseNotes: null,
+      publishedAt: null,
+      assets: [],
+      checkedAt,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+async function persistUpdateCheckStamp(checkedAt) {
+  try {
+    const { configMod } = await loadModules();
+    const cfg = await readConfig();
+    const next = configMod.withPrefs(cfg, { lastUpdateCheckAt: checkedAt });
+    await writeConfig(next);
+  } catch {
+    /* non-fatal */
+  }
+}
+
+async function maybeCheckUpdatesOnStartup() {
+  try {
+    const cfg = await readConfig();
+    if (cfg.prefs?.checkUpdatesOnStartup === false) return;
+    // Delay so UI can paint; silent — only notify when a newer release exists.
+    setTimeout(() => {
+      void checkForUpdates({ force: false, silent: true })
+        .then((result) => {
+          if (result?.updateAvailable && result.latestVersion) {
+            broadcast("update:available", result);
+          }
+        })
+        .catch(() => {});
+    }, 8_000);
+  } catch {
+    /* ignore */
+  }
+}
+
 function createWindow() {
   const icon = resolveAppIcon();
   mainWindow = new BrowserWindow({
@@ -436,7 +680,37 @@ function registerIpc() {
       activeProviderId,
       activeModel,
       bootError: bootError?.message ?? null,
+      updateRepo: `${UPDATE_REPO.owner}/${UPDATE_REPO.name}`,
+      updateReleasesUrl: UPDATE_RELEASES_URL,
     };
+  });
+
+  ipcMain.handle("update:check", async (_evt, payload = {}) => {
+    return checkForUpdates({ force: payload?.force !== false });
+  });
+
+  ipcMain.handle("update:openRelease", async (_evt, payload = {}) => {
+    const raw = String(payload?.url || UPDATE_RELEASES_URL).trim();
+    let url;
+    try {
+      url = new URL(raw);
+    } catch {
+      throw new Error("invalid release URL");
+    }
+    if (url.protocol !== "https:") throw new Error("only https release URLs allowed");
+    const host = url.hostname.toLowerCase();
+    if (host !== "github.com" && host !== "api.github.com" && host !== "objects.githubusercontent.com") {
+      throw new Error("release URL host not allowed");
+    }
+    // Prefer repo path for github.com
+    if (host === "github.com") {
+      const allowedPrefix = `/${UPDATE_REPO.owner}/${UPDATE_REPO.name}`.toLowerCase();
+      if (!url.pathname.toLowerCase().startsWith(allowedPrefix)) {
+        throw new Error("release URL outside HFQ-Code repository");
+      }
+    }
+    await shell.openExternal(url.toString());
+    return { ok: true, url: url.toString() };
   });
 
   ipcMain.handle("nav:listPages", async () => [
@@ -707,22 +981,39 @@ function registerIpc() {
     workspacePath = ws;
 
     const resolved = await resolveActiveProvider();
-    let planMode = Boolean(payload.planMode);
+    const MODES = new Set(["confirm_before_change", "auto_edit", "plan", "full_access"]);
+    let permissionMode = MODES.has(payload.permissionMode)
+      ? payload.permissionMode
+      : null;
+    let planMode = payload.planMode == null ? null : Boolean(payload.planMode);
     let memoryEnabled;
     let compactMaxChars;
     try {
       const cfg = await readConfig();
-      if (payload.planMode == null) planMode = Boolean(cfg.prefs?.planModeDefault);
+      if (!permissionMode) {
+        const prefMode = cfg.prefs?.permissionMode;
+        if (MODES.has(prefMode)) permissionMode = prefMode;
+        else if (cfg.prefs?.planModeDefault) permissionMode = "plan";
+        else permissionMode = "confirm_before_change";
+      }
+      if (planMode == null) planMode = permissionMode === "plan";
       memoryEnabled = cfg.prefs?.memoryEnabled;
       compactMaxChars = cfg.prefs?.compactMaxChars;
     } catch {
-      /* ignore */
+      if (!permissionMode) permissionMode = planMode ? "plan" : "confirm_before_change";
+      if (planMode == null) planMode = permissionMode === "plan";
+    }
+    if (permissionMode === "plan") planMode = true;
+    else if (planMode && permissionMode === "confirm_before_change" && payload.permissionMode == null) {
+      // explicit planMode true without mode still maps to plan
+      permissionMode = "plan";
     }
     const createParams = {
       workspacePath: ws,
       model: payload.model || resolved.model,
       title: payload.title,
-      planMode,
+      planMode: Boolean(planMode),
+      permissionMode,
       memoryEnabled,
       compactMaxChars,
     };
@@ -731,7 +1022,26 @@ function registerIpc() {
         ? await backend.host.create({ ...createParams, provider: resolved.providerSpec })
         : await backend.mgr.create({ ...createParams, provider: resolved.provider });
     activeSessionId = info.id;
-    return { ...info, providerId: resolved.providerId, planMode, sessionBackend: backend.kind };
+    let liveMode = permissionMode;
+    let livePlan = Boolean(planMode);
+    try {
+      if (backend.kind === "worker") {
+        liveMode = (await backend.host.getPermissionMode(info.id)).permissionMode;
+        livePlan = (await backend.host.getPlanMode(info.id)).planMode;
+      } else {
+        liveMode = backend.mgr.getPermissionMode(info.id);
+        livePlan = backend.mgr.getPlanMode(info.id);
+      }
+    } catch {
+      /* ignore */
+    }
+    return {
+      ...info,
+      providerId: resolved.providerId,
+      planMode: livePlan,
+      permissionMode: liveMode,
+      sessionBackend: backend.kind,
+    };
   });
 
   ipcMain.handle("session:get", async (_evt, sessionId) => {
@@ -752,10 +1062,26 @@ function registerIpc() {
     const sessionId = payload.sessionId;
     if (!sessionId) throw new Error("sessionId required");
     const resolved = await resolveActiveProvider();
+    const MODES = new Set(["confirm_before_change", "auto_edit", "plan", "full_access"]);
+    let permissionMode = MODES.has(payload.permissionMode) ? payload.permissionMode : null;
+    let planMode = payload.planMode == null ? undefined : Boolean(payload.planMode);
+    try {
+      const cfg = await readConfig();
+      if (!permissionMode) {
+        const prefMode = cfg.prefs?.permissionMode;
+        if (MODES.has(prefMode)) permissionMode = prefMode;
+        else if (cfg.prefs?.planModeDefault) permissionMode = "plan";
+      }
+    } catch {
+      /* ignore */
+    }
+    if (permissionMode === "plan") planMode = true;
     const openParams = {
       sessionId: String(sessionId),
       workspacePath: payload.workspacePath || workspacePath || undefined,
       model: payload.model || resolved.model,
+      planMode,
+      permissionMode: permissionMode || undefined,
     };
     const snap =
       backend.kind === "worker"
@@ -766,10 +1092,30 @@ function registerIpc() {
       workspacePath = snap.info.workspacePath;
       broadcast("workspace:changed", { workspacePath });
     }
+    let liveMode = permissionMode || "confirm_before_change";
+    let livePlan = Boolean(planMode);
+    try {
+      if (backend.kind === "worker") {
+        liveMode = (await backend.host.getPermissionMode(snap.info.id)).permissionMode;
+        livePlan = (await backend.host.getPlanMode(snap.info.id)).planMode;
+      } else {
+        liveMode = backend.mgr.getPermissionMode(snap.info.id);
+        livePlan = backend.mgr.getPlanMode(snap.info.id);
+      }
+    } catch {
+      /* ignore */
+    }
     return {
       ...snap,
-      info: { ...snap.info, providerId: resolved.providerId },
+      info: {
+        ...snap.info,
+        providerId: resolved.providerId,
+        planMode: livePlan,
+        permissionMode: liveMode,
+      },
       providerId: resolved.providerId,
+      planMode: livePlan,
+      permissionMode: liveMode,
       sessionBackend: backend.kind,
     };
   });
@@ -880,6 +1226,17 @@ function registerIpc() {
     if (typeof payload.proxyUrl === "string") patch.proxyUrl = payload.proxyUrl.trim();
     if (typeof payload.memoryEnabled === "boolean") patch.memoryEnabled = payload.memoryEnabled;
     if (typeof payload.planModeDefault === "boolean") patch.planModeDefault = payload.planModeDefault;
+    const MODES = new Set(["confirm_before_change", "auto_edit", "plan", "full_access"]);
+    if (MODES.has(payload.permissionMode)) {
+      patch.permissionMode = payload.permissionMode;
+      patch.planModeDefault = payload.permissionMode === "plan";
+    }
+    if (typeof payload.checkUpdatesOnStartup === "boolean") {
+      patch.checkUpdatesOnStartup = payload.checkUpdatesOnStartup;
+    }
+    if (typeof payload.lastUpdateCheckAt === "string") {
+      patch.lastUpdateCheckAt = payload.lastUpdateCheckAt;
+    }
     if (payload.compactMaxChars != null) {
       const n = Number(payload.compactMaxChars);
       if (Number.isFinite(n)) patch.compactMaxChars = Math.max(8_000, Math.min(200_000, Math.floor(n)));
@@ -903,14 +1260,43 @@ function registerIpc() {
     if (!sessionId) throw new Error("no active session");
     const ok = await mgr.setPlanMode(sessionId, Boolean(payload.enabled));
     const planMode = await mgr.getPlanMode(sessionId);
-    return { ok, sessionId, planMode };
+    const permissionMode = await mgr.getPermissionMode(sessionId);
+    return { ok, sessionId, planMode, permissionMode };
   });
 
   ipcMain.handle("session:getPlanMode", async (_evt, payload = {}) => {
     const mgr = await ensureSessionManager();
     const sessionId = payload?.sessionId || activeSessionId;
-    if (!sessionId) return { sessionId: null, planMode: false };
-    return { sessionId, planMode: await mgr.getPlanMode(sessionId) };
+    if (!sessionId) return { sessionId: null, planMode: false, permissionMode: "confirm_before_change" };
+    return {
+      sessionId,
+      planMode: await mgr.getPlanMode(sessionId),
+      permissionMode: await mgr.getPermissionMode(sessionId),
+    };
+  });
+
+  ipcMain.handle("session:setPermissionMode", async (_evt, payload = {}) => {
+    const mgr = await ensureSessionManager();
+    const sessionId = payload?.sessionId || activeSessionId;
+    if (!sessionId) throw new Error("no active session");
+    const mode = String(payload?.mode || "confirm_before_change");
+    const ok = await mgr.setPermissionMode(sessionId, mode);
+    const permissionMode = await mgr.getPermissionMode(sessionId);
+    const planMode = await mgr.getPlanMode(sessionId);
+    return { ok, sessionId, permissionMode, planMode };
+  });
+
+  ipcMain.handle("session:getPermissionMode", async (_evt, payload = {}) => {
+    const mgr = await ensureSessionManager();
+    const sessionId = payload?.sessionId || activeSessionId;
+    if (!sessionId) {
+      return { sessionId: null, permissionMode: "confirm_before_change", planMode: false };
+    }
+    return {
+      sessionId,
+      permissionMode: await mgr.getPermissionMode(sessionId),
+      planMode: await mgr.getPlanMode(sessionId),
+    };
   });
 
   ipcMain.handle("session:listChildren", async (_evt, payload = {}) => {
@@ -1245,6 +1631,7 @@ if (!gotLock) {
   app.whenReady().then(async () => {
     registerIpc();
     createWindow();
+    void maybeCheckUpdatesOnStartup();
     void ensureSessionBackend().catch(() => undefined);
     void readConfig().catch(() => undefined);
 

@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.0.2 — 2026-07-14
+
+Access modes (Claude/ZCode-style) + permission modal reliability + Windows app icon stamp.
+
+### Brand / packaging
+- **Fix**: Windows 安装包 / 快捷方式 / 任务栏图标未换成 HFQ logo  
+  根因：`win.signAndEditExecutable: false` 会跳过 electron-builder 的 exe 资源写入，主程序仍是 Electron 默认图标
+- `afterPack` 钩子 `scripts/stamp-win-icon.mjs` 用 `resedit` 把 `build/icon.ico` 写入 `HFQ Code.exe`
+- `pnpm icons:gen` 从 `brand/hfq-code-logo.png` 重新生成 ico/png/sidebar logo
+- `pack:verify` 断言安装树内含 `build/icon.*` 与 `logo-256.png`
+
+### 检查更新（手动下载通道）
+- 设置页 **检查更新**：查询 `BB0813/HFQ-Code` GitHub Releases latest
+- 启动后静默检查（可关）；有新版本时状态栏提示
+- **不**内置静默下载/安装（仍符合 1.0 手动更新策略）；「打开发布页」仅打开浏览器
+- 6 小时节流；`prefs.checkUpdatesOnStartup` / `lastUpdateCheckAt`
+
+### Access modes
+- Four modes: **变更前确认** · **自动编辑** · **计划模式** · **完全访问**
+- Global default in Settings (`prefs.permissionMode`); Chat toolbar can switch per session
+- **自动编辑**: auto-allow `write_file` / `apply_patch`; still ask shell / network / mcp
+- **完全访问**: true YOLO — auto-allow all tools including dangerous shell (UI warns on select)
+- Soft-migrate legacy `planModeDefault=true` → `permissionMode: plan`
+- Worker + in-process backends expose `setPermissionMode` / `getPermissionMode`
+
+### Permission modal fix
+- Hide modal **only after** successful `resolvePermission` (no orphaned waiter / stuck busy)
+- Queue concurrent permission requests; match by `requestId`
+- Clear queue on session fail / abort / surface reset
+- Retry-friendly: failed resolve keeps modal open with error status
+
+### Notes
+- Default for existing users remains **变更前确认**
+- Session “设为默认” writes current mode into prefs
+
+---
+
 ## 1.0.1 — 2026-07-15
 
 Patch release: product logo + agent identity accuracy + test/eval data isolation.

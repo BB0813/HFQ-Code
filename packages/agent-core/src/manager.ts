@@ -17,6 +17,7 @@ import {
   formatSubagentSummary,
   type SubagentProfile,
 } from "./subagent.js";
+import type { PermissionMode } from "@hfq/policy";
 
 export type PermissionDecision = "allow" | "deny" | "allow_session";
 
@@ -27,6 +28,7 @@ export interface CreateSessionParams {
   title?: string;
   bundledSkillsDir?: string;
   planMode?: boolean;
+  permissionMode?: PermissionMode;
   memoryEnabled?: boolean;
   compactMaxChars?: number;
   parentSessionId?: string;
@@ -43,6 +45,7 @@ export interface OpenSessionParams {
   provider?: ModelProvider;
   bundledSkillsDir?: string;
   planMode?: boolean;
+  permissionMode?: PermissionMode;
   memoryEnabled?: boolean;
   compactMaxChars?: number;
 }
@@ -154,6 +157,7 @@ export class SessionManager {
       sharedAgentsDir,
       getExtraTools: this.opts.getExtraTools,
       planMode: params.planMode,
+      permissionMode: params.permissionMode,
       memoryEnabled: params.memoryEnabled ?? this.opts.memoryEnabled,
       compactMaxChars: params.compactMaxChars ?? this.opts.compactMaxChars,
       parentSessionId: params.parentSessionId,
@@ -280,6 +284,17 @@ export class SessionManager {
     return this.sessions.get(sessionId)?.getPlanMode() ?? false;
   }
 
+  setPermissionMode(sessionId: string, mode: PermissionMode | string): boolean {
+    const session = this.sessions.get(sessionId);
+    if (!session) return false;
+    session.setPermissionMode(mode);
+    return true;
+  }
+
+  getPermissionMode(sessionId: string): PermissionMode {
+    return this.sessions.get(sessionId)?.getPermissionMode() ?? "confirm_before_change";
+  }
+
   /**
    * Resume a session from JSONL into memory (or return live one).
    */
@@ -321,6 +336,7 @@ export class SessionManager {
       sharedAgentsDir,
       getExtraTools: this.opts.getExtraTools,
       planMode: params.planMode,
+      permissionMode: params.permissionMode,
       memoryEnabled: params.memoryEnabled ?? this.opts.memoryEnabled,
       compactMaxChars: params.compactMaxChars ?? this.opts.compactMaxChars,
       onSpawnSubagent: async ({ goal, profile, parentSessionId }) => {

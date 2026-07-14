@@ -30,6 +30,8 @@ contextBridge.exposeInMainWorld("hfq", {
   renameSession: (payload) => ipcRenderer.invoke("session:rename", payload ?? {}),
   setPlanMode: (payload) => ipcRenderer.invoke("session:setPlanMode", payload ?? {}),
   getPlanMode: (payload) => ipcRenderer.invoke("session:getPlanMode", payload ?? {}),
+  setPermissionMode: (payload) => ipcRenderer.invoke("session:setPermissionMode", payload ?? {}),
+  getPermissionMode: (payload) => ipcRenderer.invoke("session:getPermissionMode", payload ?? {}),
   listChildSessions: (payload) => ipcRenderer.invoke("session:listChildren", payload ?? {}),
   spawnSubagent: (payload) => ipcRenderer.invoke("session:spawnSubagent", payload ?? {}),
   resolvePermission: (payload) => ipcRenderer.invoke("permission:resolve", payload),
@@ -57,6 +59,8 @@ contextBridge.exposeInMainWorld("hfq", {
   importScan: (payload) => ipcRenderer.invoke("import:scan", payload ?? {}),
   importApply: (payload) => ipcRenderer.invoke("import:apply", payload ?? {}),
   exportDiagnostics: () => ipcRenderer.invoke("diagnostics:export"),
+  checkForUpdates: (payload) => ipcRenderer.invoke("update:check", payload ?? {}),
+  openReleasePage: (payload) => ipcRenderer.invoke("update:openRelease", payload ?? {}),
 
   onSessionEvent: (handler) => {
     const listener = (_event, data) => handler(data);
@@ -67,5 +71,10 @@ contextBridge.exposeInMainWorld("hfq", {
     const listener = (_event, data) => handler(data);
     ipcRenderer.on("workspace:changed", listener);
     return () => ipcRenderer.removeListener("workspace:changed", listener);
+  },
+  onUpdateAvailable: (handler) => {
+    const listener = (_event, data) => handler(data);
+    ipcRenderer.on("update:available", listener);
+    return () => ipcRenderer.removeListener("update:available", listener);
   },
 });
