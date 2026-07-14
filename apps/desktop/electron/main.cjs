@@ -8,6 +8,60 @@ const UPDATE_REPO = { owner: "BB0813", name: "HFQ-Code" };
 const UPDATE_RELEASES_URL = `https://github.com/${UPDATE_REPO.owner}/${UPDATE_REPO.name}/releases`;
 const UPDATE_API_LATEST = `https://api.github.com/repos/${UPDATE_REPO.owner}/${UPDATE_REPO.name}/releases/latest`;
 const UPDATE_CHECK_MIN_INTERVAL_MS = 6 * 60 * 60 * 1000;
+/** Default public mirror for CN networks (wraps full https://… URL). */
+const DEFAULT_GHPROXY_BASE = "https://ghproxy.com/";
+
+/**
+ * Normalize a ghproxy-style base to end with exactly one trailing slash.
+ * @param {string | undefined | null} base
+ */
+function normalizeGhproxyBase(base) {
+  const raw = String(base || DEFAULT_GHPROXY_BASE).trim() || DEFAULT_GHPROXY_BASE;
+  try {
+    const u = new URL(raw.includes("://") ? raw : `https://${raw}`);
+    if (u.protocol !== "https:" && u.protocol !== "http:") {
+      return DEFAULT_GHPROXY_BASE;
+    }
+    const href = u.href.endsWith("/") ? u.href : `${u.href}/`;
+    return href;
+  } catch {
+    return DEFAULT_GHPROXY_BASE;
+  }
+}
+
+/**
+ * Build the Releases latest API URL, optionally via ghproxy.
+ * ghproxy expects: {base}https://api.github.com/repos/.../releases/latest
+ * @param {{ source?: string, proxyBase?: string }} [opts]
+ */
+function resolveUpdateApiUrl(opts = {}) {
+  const source = opts.source === "direct" ? "direct" : "ghproxy";
+  if (source === "direct") {
+    return { url: UPDATE_API_LATEST, source: "direct", proxyBase: null };
+  }
+  const proxyBase = normalizeGhproxyBase(opts.proxyBase);
+  return {
+    url: `${proxyBase}${UPDATE_API_LATEST}`,
+    source: "ghproxy",
+    proxyBase,
+  };
+}
+
+/**
+ * Hostnames allowed when opening release / download links from the update UI.
+ * Includes common ghproxy mirrors so download pages can open when mirrored.
+ */
+const UPDATE_OPEN_HOST_ALLOW = new Set([
+  "github.com",
+  "api.github.com",
+  "objects.githubusercontent.com",
+  "release-assets.githubusercontent.com",
+  "ghproxy.com",
+  "mirror.ghproxy.com",
+  "gh.ddlc.top",
+  "ghproxy.net",
+  "gitclone.com",
+]);
 
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
@@ -511,6 +565,14 @@ async function checkForUpdates(opts = {}) {
     /* ignore */
   }
 
+  const updateSource =
+    cfg?.prefs?.updateSource === "direct" ? "direct" : "ghproxy";
+  const updateProxyBase = normalizeGhproxyBase(cfg?.prefs?.updateProxyBase);
+  const endpoint = resolveUpdateApiUrl({
+    source: updateSource,
+    proxyBase: updateProxyBase,
+  });
+
   if (!force && cfg?.prefs?.lastUpdateCheckAt) {
     const last = Date.parse(cfg.prefs.lastUpdateCheckAt);
     if (Number.isFinite(last) && Date.now() - last < UPDATE_CHECK_MIN_INTERVAL_MS) {
@@ -526,12 +588,15 @@ async function checkForUpdates(opts = {}) {
         publishedAt: null,
         assets: [],
         checkedAt: cfg.prefs.lastUpdateCheckAt,
+        source: endpoint.source,
+        proxyBase: endpoint.proxyBase,
+        apiUrl: endpoint.url,
       };
     }
   }
 
   try {
-    const { status, json } = await netFetchJson(UPDATE_API_LATEST);
+    const { status, json } = await netFetchJson(endpoint.url);
     if (status === 404 || !json) {
       const result = {
         ok: true,
@@ -545,6 +610,9 @@ async function checkForUpdates(opts = {}) {
         assets: [],
         checkedAt,
         message: "暂无已发布的 Release",
+        source: endpoint.source,
+        proxyBase: endpoint.proxyBase,
+        apiUrl: endpoint.url,
       };
       await persistUpdateCheckStamp(checkedAt).catch(() => {});
       return result;
@@ -557,12 +625,21 @@ async function checkForUpdates(opts = {}) {
     const assets = Array.isArray(json.assets)
       ? json.assets
           .filter((a) => a && a.browser_download_url)
-          .map((a) => ({
-            name: String(a.name || ""),
-            url: String(a.browser_download_url),
-            size: Number(a.size) || 0,
-            contentType: a.content_type ? String(a.content_type) : "",
-          }))
+          .map((a) => {
+            const direct = String(a.browser_download_url);
+            // When using ghproxy for API, also surface mirrored download URLs for convenience.
+            const mirrored =
+              endpoint.source === "ghproxy" && endpoint.proxyBase
+                ? `${endpoint.proxyBase}${direct}`
+                : direct;
+            return {
+              name: String(a.name || ""),
+              url: direct,
+              mirrorUrl: mirrored !== direct ? mirrored : undefined,
+              size: Number(a.size) || 0,
+              contentType: a.content_type ? String(a.content_type) : "",
+            };
+          })
       : [];
     const releaseUrl = String(json.html_url || UPDATE_RELEASES_URL);
     const releaseNotes = typeof json.body === "string" ? json.body.slice(0, 4000) : null;
@@ -584,6 +661,9 @@ async function checkForUpdates(opts = {}) {
       tagName: tag,
       prerelease: Boolean(json.prerelease),
       draft: Boolean(json.draft),
+      source: endpoint.source,
+      proxyBase: endpoint.proxyBase,
+      apiUrl: endpoint.url,
     };
   } catch (err) {
     return {
@@ -598,6 +678,9 @@ async function checkForUpdates(opts = {}) {
       assets: [],
       checkedAt,
       error: err instanceof Error ? err.message : String(err),
+      source: endpoint.source,
+      proxyBase: endpoint.proxyBase,
+      apiUrl: endpoint.url,
     };
   }
 }
@@ -697,16 +780,38 @@ function registerIpc() {
     } catch {
       throw new Error("invalid release URL");
     }
-    if (url.protocol !== "https:") throw new Error("only https release URLs allowed");
+    if (url.protocol !== "https:" && url.protocol !== "http:") {
+      throw new Error("only http(s) release URLs allowed");
+    }
     const host = url.hostname.toLowerCase();
-    if (host !== "github.com" && host !== "api.github.com" && host !== "objects.githubusercontent.com") {
-      throw new Error("release URL host not allowed");
+    if (!UPDATE_OPEN_HOST_ALLOW.has(host)) {
+      // Allow custom ghproxy base host from prefs (user may set private mirror).
+      let allowedCustom = false;
+      try {
+        const cfg = await readConfig();
+        const base = normalizeGhproxyBase(cfg?.prefs?.updateProxyBase);
+        const baseHost = new URL(base).hostname.toLowerCase();
+        if (host === baseHost) allowedCustom = true;
+      } catch {
+        /* ignore */
+      }
+      if (!allowedCustom) throw new Error("release URL host not allowed");
     }
     // Prefer repo path for github.com
     if (host === "github.com") {
       const allowedPrefix = `/${UPDATE_REPO.owner}/${UPDATE_REPO.name}`.toLowerCase();
       if (!url.pathname.toLowerCase().startsWith(allowedPrefix)) {
         throw new Error("release URL outside HFQ-Code repository");
+      }
+    }
+    // ghproxy.com/https://github.com/... — ensure inner path still points at our repo when present
+    if (host !== "github.com" && /github\.com\//i.test(url.href)) {
+      const marker = `github.com/${UPDATE_REPO.owner}/${UPDATE_REPO.name}`.toLowerCase();
+      if (!url.href.toLowerCase().includes(marker) && !url.href.toLowerCase().includes("api.github.com")) {
+        // allow asset mirrors that only embed objects.githubusercontent.com
+        if (!/githubusercontent\.com/i.test(url.href)) {
+          throw new Error("mirrored URL outside HFQ-Code repository");
+        }
       }
     }
     await shell.openExternal(url.toString());
@@ -1236,6 +1341,12 @@ function registerIpc() {
     }
     if (typeof payload.lastUpdateCheckAt === "string") {
       patch.lastUpdateCheckAt = payload.lastUpdateCheckAt;
+    }
+    if (payload.updateSource === "direct" || payload.updateSource === "ghproxy") {
+      patch.updateSource = payload.updateSource;
+    }
+    if (typeof payload.updateProxyBase === "string") {
+      patch.updateProxyBase = payload.updateProxyBase.trim() || DEFAULT_GHPROXY_BASE;
     }
     if (payload.compactMaxChars != null) {
       const n = Number(payload.compactMaxChars);

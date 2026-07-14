@@ -876,18 +876,19 @@ function updateChatLogIfPresent() {
 }
 
 function renderMessagesHtml() {
-  if (!state.messages.length) {
-    return `<div class="empty-state">
-      <div class="empty-icon">${ICONS.chat}</div>
-      <h3>开始一次编码会话</h3>
-      <p>打开工作区并创建会话后，可让智能体检查、编辑文件或执行命令。离线 mock 模式支持 list / read / write / shell。</p>
-      <div class="chips" style="justify-content:center">
-        <button type="button" class="chip" data-fill="list">列出文件</button>
-        <button type="button" class="chip" data-fill="read README.md">读取 README</button>
-        <button type="button" class="chip" data-fill="write demo to hfq-demo.txt">写入演示文件</button>
-      </div>
-    </div>`;
-  }
+if (!state.messages.length) {
+	    return `<div class="empty-state">
+	      <div class="empty-icon">${ICONS.chat}</div>
+	      <h3>开始一次编码会话</h3>
+	      <p>打开工作区并创建会话后，可让智能体检查、编辑文件或执行命令。输入 <code>/</code> 打开命令；长运行目标用 <code>/goal …</code>（见任务页）。</p>
+	      <div class="chips" style="justify-content:center">
+	        <button type="button" class="chip" data-fill="/goal ">长运行 /goal</button>
+	        <button type="button" class="chip" data-fill="list">列出文件</button>
+	        <button type="button" class="chip" data-fill="read README.md">读取 README</button>
+	        <button type="button" class="chip" data-fill="write demo to hfq-demo.txt">写入演示文件</button>
+	      </div>
+	    </div>`;
+	  }
 
   return state.messages
     .map((m) => {
@@ -1015,16 +1016,16 @@ const SLASH_COMMANDS = [
     kind: "command",
     trigger: "/goal",
     label: "/goal",
-    hint: "描述目标，让智能体规划执行",
-    insert: "请帮我完成：",
+    hint: "长运行目标：提高本轮轮次/工具预算，并记入任务页",
+    insert: "/goal ",
   },
   {
     id: "compact",
     kind: "command",
     trigger: "/compact",
     label: "/compact",
-    hint: "请求压缩上下文（模型侧尽量精简）",
-    insert: "请压缩当前上下文，只保留关键结论后继续。",
+    hint: "请求压缩上下文，只保留关键结论",
+    insert: "/compact ",
   },
 ];
 
@@ -1341,26 +1342,47 @@ function setComposerEnabled(enabled) {
 	}
 
 async function sendChat(text) {
-  const content = text.trim();
-  if (!content || state.busy) return;
-  try {
-    state.busy = true;
-    setComposerEnabled(false);
-    await ensureSession();
-    pushMessage({ role: "user", text: content });
-    setStatus("智能体运行中…", "busy");
-    if (state.session) {
-      state.session = { ...state.session, status: "running" };
-      setSessionBadge();
-    }
-    await window.hfq.sendMessage({ sessionId: state.session.id, text: content });
-  } catch (err) {
-    pushMessage({ role: "error", text: err instanceof Error ? err.message : String(err) });
-    setStatus("出错", "warn");
-    state.busy = false;
-    setComposerEnabled(true);
-  }
-}
+	  const content = text.trim();
+	  if (!content || state.busy) return;
+	  const isGoal = /^\/goal(?:\s|$)/i.test(content);
+	  const isBareGoal = /^\/goal\s*$/i.test(content);
+	  try {
+	    state.busy = true;
+	    setComposerEnabled(false);
+	    await ensureSession();
+	    pushMessage({ role: "user", text: content });
+	    if (isGoal && !isBareGoal) {
+	      setStatus("Goal 长运行中…（可停止）", "busy");
+	      pushMessage({
+	        role: "system",
+	        text: "已进入 /goal 长运行模式：本轮提高轮次与工具预算，进度见「任务」页。可用停止中断。",
+	      });
+	    } else if (isBareGoal) {
+	      setStatus("请补充 /goal 目标", "warn");
+	    } else {
+	      setStatus("智能体运行中…", "busy");
+	    }
+	    if (state.session) {
+	      state.session = { ...state.session, status: "running" };
+	      setSessionBadge();
+	    }
+	    await window.hfq.sendMessage({ sessionId: state.session.id, text: content });
+	    // Bare /goal only returns a usage hint; unlock composer when idle event may not flip busy.
+	    if (isBareGoal) {
+	      state.busy = false;
+	      setComposerEnabled(true);
+	      if (state.session) {
+	        state.session = { ...state.session, status: "idle" };
+	        setSessionBadge();
+	      }
+	    }
+	  } catch (err) {
+	    pushMessage({ role: "error", text: err instanceof Error ? err.message : String(err) });
+	    setStatus("出错", "warn");
+	    state.busy = false;
+	    setComposerEnabled(true);
+	  }
+	}
 
 function handleSessionEvent(event) {
 	  if (!event || !event.type) return;
@@ -1707,7 +1729,7 @@ function pageChat() {
       <div id="chatLog" class="chat-log">${renderMessagesHtml()}</div>
       <div class="composer-shell">
         ${renderSlashPaletteHtml()}
-        <textarea id="chatInput" placeholder="描述任务，或输入 / 打开命令 · $ 打开技能…" ${
+        <textarea id="chatInput" placeholder="描述任务，或 /goal 长运行目标 · / 命令 · $ 技能…" ${
           state.busy ? "disabled" : ""
         }></textarea>
         <div class="composer-bar">
@@ -1811,22 +1833,29 @@ function pageChanges() {
 function formatUpdateStatus(result, currentVersionFallback) {
   const current =
     result?.currentVersion || currentVersionFallback || state.appPaths?.version || "—";
+  const via =
+    result?.source === "direct"
+      ? "直连 GitHub"
+      : result?.source === "ghproxy"
+        ? `ghproxy${result.proxyBase ? ` · ${result.proxyBase}` : ""}`
+        : "";
+  const viaSuffix = via ? ` · 经由 ${via}` : "";
   if (!result) {
-    return `当前版本 ${current} · 尚未检查`;
+    return `当前版本 ${current} · 尚未检查（默认 ghproxy，避免直连 GitHub 卡顿）`;
   }
   if (result.skipped && result.reason === "throttled") {
-    return `当前版本 ${current} · 距上次检查不足 6 小时（可点「检查新版本」强制查询）`;
+    return `当前版本 ${current} · 距上次检查不足 6 小时（可点「检查新版本」强制查询）${viaSuffix}`;
   }
   if (!result.ok) {
-    return `当前版本 ${current} · 检查失败：${result.error || "网络错误"}`;
+    return `当前版本 ${current} · 检查失败：${result.error || "网络错误"}${viaSuffix}`;
   }
   if (result.updateAvailable && result.latestVersion) {
-    return `发现新版本 ${result.latestVersion}（当前 ${current}）· 请下载安装包覆盖安装`;
+    return `发现新版本 ${result.latestVersion}（当前 ${current}）· 请下载安装包覆盖安装${viaSuffix}`;
   }
   if (result.latestVersion) {
-    return `已是最新 · 当前 ${current} · 远端 ${result.latestVersion}`;
+    return `已是最新 · 当前 ${current} · 远端 ${result.latestVersion}${viaSuffix}`;
   }
-  return `当前版本 ${current} · ${result.message || "暂无远端版本信息"}`;
+  return `当前版本 ${current} · ${result.message || "暂无远端版本信息"}${viaSuffix}`;
 }
 
 function renderUpdateAssetsHtml(result) {
@@ -1838,14 +1867,24 @@ function renderUpdateAssetsHtml(result) {
     .slice(0, 6)
     .map((a) => {
       const mb = a.size ? `${(a.size / (1024 * 1024)).toFixed(1)} MB` : "";
-      return `<li class="faint mono" style="margin:4px 0">${escapeHtml(a.name)}${
-        mb ? ` · ${mb}` : ""
-      }</li>`;
+      const mirror = a.mirrorUrl
+        ? ` · <button type="button" class="btn ghost sm" data-open-update-url="${escapeHtml(
+            a.mirrorUrl,
+          )}">镜像下载</button>`
+        : "";
+      const direct = a.url
+        ? ` <button type="button" class="btn ghost sm" data-open-update-url="${escapeHtml(
+            a.url,
+          )}">直链</button>`
+        : "";
+      return `<li class="faint mono" style="margin:6px 0;display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+        <span>${escapeHtml(a.name)}${mb ? ` · ${mb}` : ""}</span>${mirror}${direct}
+      </li>`;
     })
     .join("");
   if (!rows) return "";
-  return `<ul style="margin:8px 0 0;padding-left:18px">${rows}</ul>
-    <p class="faint" style="margin-top:6px">在浏览器中打开发布页后选择 NSIS 或 portable 下载。</p>`;
+  return `<ul style="margin:8px 0 0;padding-left:18px;list-style:disc">${rows}</ul>
+    <p class="faint" style="margin-top:6px">默认检查走 ghproxy；下载可用镜像或直链。也可「打开发布页」后手动选择 NSIS / portable。</p>`;
 }
 
 function pageSettings() {
@@ -1860,7 +1899,12 @@ const prefs = state.config?.prefs || {
 					    planModeDefault: false,
 					    permissionMode: "confirm_before_change",
 					    checkUpdatesOnStartup: true,
+					    updateSource: "ghproxy",
+					    updateProxyBase: "https://ghproxy.com/",
 					  };
+				  const updateSource =
+				    prefs.updateSource === "direct" ? "direct" : "ghproxy";
+				  const updateProxyBase = prefs.updateProxyBase || "https://ghproxy.com/";
 				  const prefPermissionMode = normalizePermissionMode(
 				    prefs.permissionMode || (prefs.planModeDefault ? "plan" : "confirm_before_change"),
 				  );
@@ -1993,27 +2037,42 @@ return `
 				      <p class="form-status" id="prefsStatus"></p>
 				    </div>
 <div class="panel" style="margin-top:14px">
-							      <div class="panel-head">
-							        <div>
-							          <h2>检查更新</h2>
-							          <p>查询 GitHub Releases 最新版；仅提示并打开下载页，不会自动安装</p>
-							        </div>
-							        <div class="row" style="gap:6px">
-							          <button type="button" class="btn sm" id="updateCheckBtn">检查新版本</button>
-							          <button type="button" class="btn sm primary" id="updateOpenBtn" ${
-							            state.updateCheck?.releaseUrl || state.appPaths?.version ? "" : ""
-							          }>打开发布页</button>
-							        </div>
-							      </div>
-							      <label class="field row" style="align-items:center;gap:10px;margin:4px 0 8px">
-							        <input id="prefCheckUpdates" type="checkbox" ${
-							          prefs.checkUpdatesOnStartup !== false ? "checked" : ""
-							        } />
-							        <span>启动时自动检查（有新版本才提示）</span>
-							      </label>
-							      <p class="form-status" id="updateStatus">${escapeHtml(formatUpdateStatus(state.updateCheck, paths.version))}</p>
-							      ${renderUpdateAssetsHtml(state.updateCheck)}
-							    </div>
+								      <div class="panel-head">
+								        <div>
+								          <h2>检查更新</h2>
+								          <p>查询 GitHub Releases 最新版；默认经 <strong>ghproxy</strong>，避免直连 GitHub 超时。仅提示/打开下载页，不会自动安装</p>
+								        </div>
+								        <div class="row" style="gap:6px">
+								          <button type="button" class="btn sm" id="updateCheckBtn">检查新版本</button>
+								          <button type="button" class="btn sm primary" id="updateOpenBtn">打开发布页</button>
+								        </div>
+								      </div>
+								      <div class="form-grid" style="margin:4px 0 8px">
+								        <label class="field"><span>更新源</span>
+								          <select id="prefUpdateSource">
+								            <option value="ghproxy" ${updateSource === "ghproxy" ? "selected" : ""}>ghproxy 镜像（推荐）</option>
+								            <option value="direct" ${updateSource === "direct" ? "selected" : ""}>直连 api.github.com</option>
+								          </select>
+								        </label>
+								        <label class="field"><span>ghproxy 基址</span>
+								          <input id="prefUpdateProxyBase" type="url" placeholder="https://ghproxy.com/" value="${escapeHtml(
+								            updateProxyBase,
+								          )}" />
+								        </label>
+								      </div>
+								      <p class="faint" style="margin:0 0 8px">API 请求形态：<code>{基址}https://api.github.com/repos/BB0813/HFQ-Code/releases/latest</code>。改源后点「保存更新源」或「保存偏好」即可生效。</p>
+								      <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:8px">
+								        <button type="button" class="btn sm ghost" id="updateSourceSaveBtn">保存更新源</button>
+								        <label class="field row" style="align-items:center;gap:10px;margin:0">
+								          <input id="prefCheckUpdates" type="checkbox" ${
+								            prefs.checkUpdatesOnStartup !== false ? "checked" : ""
+								          } />
+								          <span>启动时自动检查（有新版本才提示）</span>
+								        </label>
+								      </div>
+								      <p class="form-status" id="updateStatus">${escapeHtml(formatUpdateStatus(state.updateCheck, paths.version))}</p>
+								      ${renderUpdateAssetsHtml(state.updateCheck)}
+								    </div>
 	<div class="panel" style="margin-top:14px">
 							      <div class="panel-head">
 							        <div>
@@ -3264,6 +3323,10 @@ function applyPaletteInsert(text) {
   } catch {
     /* ignore */
   }
+  // Keep palette closed for slash prefixes that expect the user to type args.
+  if (/^\/(goal|compact)\s*$/i.test(String(text || "").trim() + " ") || /^\/(goal|compact)\s$/i.test(text)) {
+    setSlashPaletteVisible(false);
+  }
 }
 
 function updateSlashPaletteFromInput() {
@@ -3737,27 +3800,36 @@ const permissionMode = normalizePermissionMode(
 					      ) {
 					        return;
 					      }
-					      const checkUpdatesOnStartup =
-					        /** @type {HTMLInputElement | null} */ (el("prefCheckUpdates"))?.checked !== false;
-					      const compactMaxChars = Number(compactRaw || 48000);
-					      const usageInputPerMillion = Number(
-					        /** @type {HTMLInputElement | null} */ (el("prefInPrice"))?.value || 0,
-					      );
-					      const usageOutputPerMillion = Number(
-					        /** @type {HTMLInputElement | null} */ (el("prefOutPrice"))?.value || 0,
-					      );
-					      if (!window.hfq?.setPrefs) throw new Error("setPrefs unavailable");
-					      const next = await window.hfq.setPrefs({
-					        theme,
-					        proxyUrl,
-					        memoryEnabled,
-					        compactMaxChars,
-					        permissionMode,
-					        planModeDefault: permissionMode === "plan",
-					        checkUpdatesOnStartup,
-					        usageInputPerMillion,
-					        usageOutputPerMillion,
-					      });
+const checkUpdatesOnStartup =
+						        /** @type {HTMLInputElement | null} */ (el("prefCheckUpdates"))?.checked !== false;
+						      const updateSourceRaw =
+						        /** @type {HTMLSelectElement | null} */ (el("prefUpdateSource"))?.value ||
+						        "ghproxy";
+						      const updateSource = updateSourceRaw === "direct" ? "direct" : "ghproxy";
+						      const updateProxyBase =
+						        /** @type {HTMLInputElement | null} */ (el("prefUpdateProxyBase"))?.value?.trim() ||
+						        "https://ghproxy.com/";
+						      const compactMaxChars = Number(compactRaw || 48000);
+						      const usageInputPerMillion = Number(
+						        /** @type {HTMLInputElement | null} */ (el("prefInPrice"))?.value || 0,
+						      );
+						      const usageOutputPerMillion = Number(
+						        /** @type {HTMLInputElement | null} */ (el("prefOutPrice"))?.value || 0,
+						      );
+						      if (!window.hfq?.setPrefs) throw new Error("setPrefs unavailable");
+						      const next = await window.hfq.setPrefs({
+						        theme,
+						        proxyUrl,
+						        memoryEnabled,
+						        compactMaxChars,
+						        permissionMode,
+						        planModeDefault: permissionMode === "plan",
+						        checkUpdatesOnStartup,
+						        updateSource,
+						        updateProxyBase,
+						        usageInputPerMillion,
+						        usageOutputPerMillion,
+						      });
 				      state.config = next;
 				      applyTheme(next?.prefs?.theme || theme);
 				      if (status) status.textContent = "偏好已保存";
@@ -3788,7 +3860,7 @@ const permissionMode = normalizePermissionMode(
 				    const status = el("updateStatus");
 				    const btn = el("updateCheckBtn");
 				    if (btn instanceof HTMLButtonElement) btn.disabled = true;
-				    if (status) status.textContent = "正在查询 GitHub Releases…";
+				    if (status) status.textContent = "正在查询 Releases（优先 ghproxy）…";
 				    try {
 				      if (!window.hfq?.checkForUpdates) throw new Error("checkForUpdates unavailable");
 				      const res = await window.hfq.checkForUpdates({ force: true });
@@ -3822,6 +3894,44 @@ const permissionMode = normalizePermissionMode(
 				    } catch (err) {
 				      setStatus(err instanceof Error ? err.message : String(err), "warn");
 				    }
+				  });
+				  el("updateSourceSaveBtn")?.addEventListener("click", async () => {
+				    const status = el("updateStatus");
+				    try {
+				      if (!window.hfq?.setPrefs) throw new Error("setPrefs unavailable");
+				      const updateSourceRaw =
+				        /** @type {HTMLSelectElement | null} */ (el("prefUpdateSource"))?.value ||
+				        "ghproxy";
+				      const updateSource = updateSourceRaw === "direct" ? "direct" : "ghproxy";
+				      const updateProxyBase =
+				        /** @type {HTMLInputElement | null} */ (el("prefUpdateProxyBase"))?.value?.trim() ||
+				        "https://ghproxy.com/";
+				      const next = await window.hfq.setPrefs({ updateSource, updateProxyBase });
+				      state.config = next;
+				      if (status) {
+				        status.textContent =
+				          updateSource === "ghproxy"
+				            ? `已保存 · 更新检查走 ghproxy（${updateProxyBase}）`
+				            : "已保存 · 更新检查直连 api.github.com";
+				      }
+				      setStatus("更新源已保存", "live");
+				    } catch (err) {
+				      const msg = err instanceof Error ? err.message : String(err);
+				      if (status) status.textContent = msg;
+				      setStatus(msg, "warn");
+				    }
+				  });
+				  document.querySelectorAll("[data-open-update-url]").forEach((btn) => {
+				    btn.addEventListener("click", async () => {
+				      const url = btn.getAttribute("data-open-update-url");
+				      if (!url) return;
+				      try {
+				        await window.hfq.openReleasePage({ url });
+				        setStatus("已在浏览器打开下载链接", "live");
+				      } catch (err) {
+				        setStatus(err instanceof Error ? err.message : String(err), "warn");
+				      }
+				    });
 				  });
 				  el("prefCheckUpdates")?.addEventListener("change", async () => {
 				    const checked =

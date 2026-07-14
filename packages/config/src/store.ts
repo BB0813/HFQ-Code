@@ -197,6 +197,16 @@ export function withPrefs(
         patch.lastUpdateCheckAt !== undefined
           ? patch.lastUpdateCheckAt
           : cfg.prefs?.lastUpdateCheckAt,
+      updateSource:
+        patch.updateSource === "direct" || patch.updateSource === "ghproxy"
+          ? patch.updateSource
+          : cfg.prefs?.updateSource === "direct" || cfg.prefs?.updateSource === "ghproxy"
+            ? cfg.prefs.updateSource
+            : "ghproxy",
+      updateProxyBase:
+        typeof patch.updateProxyBase === "string"
+          ? patch.updateProxyBase.trim() || "https://ghproxy.com/"
+          : cfg.prefs?.updateProxyBase?.trim() || "https://ghproxy.com/",
     },
   };
 }

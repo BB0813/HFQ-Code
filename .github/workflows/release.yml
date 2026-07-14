@@ -116,7 +116,7 @@ jobs:
             echo ""
             echo "Unsigned builds may trigger SmartScreen. Data lives in \`%APPDATA%/HFQ-Code\`."
             echo ""
-            echo "See [docs/RELEASE-1.0.3.md](./docs/RELEASE-1.0.3.md) and [docs/PACKAGING.md](./docs/PACKAGING.md)."
+            echo "See [docs/RELEASE-1.0.4.md](./docs/RELEASE-1.0.4.md) and [docs/PACKAGING.md](./docs/PACKAGING.md)."
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 

@@ -7,6 +7,7 @@ export * from "./history.js";
 export * from "./usage.js";
 export * from "./import-wizard.js";
 export * from "./subagent.js";
+export * from "./slash.js";
 export * from "./redact.js";
 export * from "./diagnostics.js";
 export * from "./worker/index.js";

@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.0.4 — 2026-07-14
+
+### `/goal` long-running tasks
+- Real slash handling in agent-core (not just a composer text prefix)
+- `/goal <目标>` elevates **this turn** to 32 rounds / +400 tool calls
+- Emits `task.updated` goal rows (in_progress → completed/failed/cancelled) for the Tasks page
+- Bare `/goal` returns a usage hint without starting a failed turn
+- `/compact [note]` expands into an explicit compression request for the model
+- Composer palette inserts `/goal ` / `/compact ` so the slash is sent to the runtime
+
+### Update check via ghproxy (default)
+- Default `prefs.updateSource = ghproxy` so Releases API goes through  
+  `https://ghproxy.com/https://api.github.com/repos/BB0813/HFQ-Code/releases/latest`
+- Avoids direct `api.github.com` timeouts on restricted networks
+- Settings: switch **ghproxy / 直连**, custom proxy base, save without full prefs form
+- Asset list can offer mirrored download links when ghproxy is active
+- `update:openRelease` allows known ghproxy hosts + user-configured mirror host
+
+---
+
 ## 1.0.3 — 2026-07-14
 
 Chat UI polish toward ZCode / Codex Desktop composer patterns.

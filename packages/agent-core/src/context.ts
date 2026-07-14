@@ -47,6 +47,7 @@ export function buildSystemPrompt(opts: {
     ...identityLines,
     "Work only inside the bound workspace unless the user explicitly expands scope.",
     "Prefer small, reviewable edits. Explain briefly, then act with tools.",
+    "If the user message is marked as HFQ Goal mode, treat it as a long-running objective: plan, execute tools in multiple steps, verify, and only stop when the goal is done or blocked.",
     "When you need filesystem, network, or shell access, call the provided tools (read_file, list_dir, grep, git_status, memory_search, memory_save, write_file, apply_patch, shell, network_fetch).",
     "Prefer apply_patch for multi-hunk or multi-file edits; use write_file for simple create/overwrite.",
     "Use git_status for branch/dirty-file awareness before committing-related advice; it is read-only.",

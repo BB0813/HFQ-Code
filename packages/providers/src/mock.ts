@@ -203,12 +203,17 @@ export function createMockProvider(): ModelProvider {
         }
       }
 
-      if (/\b(help|帮助|怎么用)\b/i.test(lower) || text.length < 2) {
+      // Long-running /goal expands into a multi-line instruction block; still match intents above first.
+      if (
+        /\b(help|帮助|怎么用)\b/i.test(lower) ||
+        (text.length < 2 && !/goal mode/i.test(text))
+      ) {
         return {
           message: [
             "[mock] HFQ Code session is live (offline mock model).",
             "",
             "Try:",
+            "- `/goal …` — long-running goal turn (elevated budget)",
             "- `list` — list workspace root",
             "- `read README.md` — read a file",
             "- `grep HFQ` / `搜索 HFQ` — search workspace",

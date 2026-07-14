@@ -225,6 +225,45 @@ describe("SessionManager integration", () => {
     expect(listed.find((s) => s.id === session.id)?.title).toBe("Offline title");
   });
 
+  it("runs /goal as a long-running task with elevated budget markers", async () => {
+    const ws = await makeWorkspace();
+    const events: SessionEvent[] = [];
+    const mgr = new SessionManager({
+      onEvent: async (e) => {
+        events.push(e);
+      },
+    });
+    const session = await mgr.create({ workspacePath: ws, title: "goal-test" });
+    await mgr.send(session.id, "/goal list the workspace and summarize");
+
+    const goalTasks = events.filter(
+      (e) => e.type === "task.updated" && String(e.title || "").startsWith("goal:"),
+    );
+    expect(goalTasks.length).toBeGreaterThanOrEqual(2);
+    expect(goalTasks.some((e) => e.type === "task.updated" && e.status === "in_progress")).toBe(
+      true,
+    );
+    expect(goalTasks.some((e) => e.type === "task.updated" && e.status === "completed")).toBe(
+      true,
+    );
+
+    const userMsg = events.find(
+      (e) => e.type === "message.completed" && e.role === "user",
+    );
+    expect(userMsg && "text" in userMsg ? userMsg.text : "").toMatch(/^\/goal /);
+
+    // Bare /goal should not start a failed turn — system usage hint only.
+    const before = events.length;
+    await mgr.send(session.id, "/goal");
+    const after = events.slice(before);
+    expect(
+      after.some(
+        (e) => e.type === "message.completed" && e.role === "system" && /\/goal/.test(e.text || ""),
+      ),
+    ).toBe(true);
+    expect(after.some((e) => e.type === "session.failed")).toBe(false);
+  });
+
   it("deletes a session from memory and disk", async () => {
     const ws = await makeWorkspace();
     const mgr = new SessionManager();

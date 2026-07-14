@@ -4,13 +4,13 @@
 
 | Artifact | Command | Output |
 |----------|---------|--------|
-| NSIS installer + portable | `pnpm pack:win` | `apps/desktop/release/HFQ Code-1.0.3-x64.exe` + `…-portable.exe` |
+| NSIS installer + portable | `pnpm pack:win` | `apps/desktop/release/HFQ Code-1.0.4-x64.exe` + `…-portable.exe` |
 | SHA-256 sums | `pnpm sha256:release` | `apps/desktop/release/SHA256SUMS.txt` |
 | Portable only | `pnpm --filter @hfq/desktop pack:portable` | same dir |
 | Unpacked dir (debug) | `pnpm pack:dir` | `release/win-unpacked/` |
 | Unpacked smoke asserts | `pnpm pack:verify` | builds dir + checks tree |
 
-Release handoff notes: [RELEASE-1.0.3.md](./RELEASE-1.0.3.md) · [RELEASE-1.0.2.md](./RELEASE-1.0.2.md) · [RELEASE-1.0.1.md](./RELEASE-1.0.1.md).
+Release handoff notes: [RELEASE-1.0.4.md](./RELEASE-1.0.4.md) · [RELEASE-1.0.3.md](./RELEASE-1.0.3.md) · [RELEASE-1.0.2.md](./RELEASE-1.0.2.md) · [RELEASE-1.0.1.md](./RELEASE-1.0.1.md).
 
 ## CI / CD (GitHub Actions)
 
@@ -33,7 +33,7 @@ Requires: Node 22+, pnpm 9+, Windows x64, network for electron-builder downloads
 
 ## Version
 
-Product version comes from `apps/desktop/package.json` (currently **1.0.3**). Keep root `package.json` version aligned.
+Product version comes from `apps/desktop/package.json` (currently **1.0.4**). Keep root `package.json` version aligned.
 
 App icon: `apps/desktop/build/icon.ico` (+ `icon.png`); electron-builder uses `directories.buildResources` / `win.icon`.
 
@@ -47,7 +47,11 @@ App icon: `apps/desktop/build/icon.ico` (+ `icon.png`); electron-builder uses `d
 2. Users install NSIS over the previous install, or replace the portable folder.
 3. Data under `%APPDATA%/HFQ-Code` is preserved across upgrades (`config.json`, `credentials.json`, sessions).
 
-**In-app check (1.0.2+):** Settings → 检查更新 queries `https://api.github.com/repos/BB0813/HFQ-Code/releases/latest`, compares semver to `app.getVersion()`, and can open the release page in the browser. Optional startup check (`prefs.checkUpdatesOnStartup`, default on, 6h throttle). Never downloads or runs installers automatically.
+**In-app check (1.0.2+):** Settings → 检查更新 queries GitHub Releases latest, compares semver to `app.getVersion()`, and can open the release page in the browser. Optional startup check (`prefs.checkUpdatesOnStartup`, default on, 6h throttle). Never downloads or runs installers automatically.
+
+**Default transport (1.0.4+):** `prefs.updateSource` defaults to **`ghproxy`** so the API call is  
+`{updateProxyBase}https://api.github.com/repos/BB0813/HFQ-Code/releases/latest`  
+(default base `https://ghproxy.com/`). Set `updateSource: "direct"` to hit GitHub without a mirror. Asset rows may include a mirrored download URL when ghproxy is active.
 
 Rationale: single-user desktop, low update frequency, avoids auto-update attack surface and code-signing dependency for RC→1.0. Full electron-updater remains deferred.
 
@@ -73,7 +77,7 @@ Manual:
 2. Confirm data dir under `%APPDATA%/HFQ-Code`
 3. Open a workspace → new session → list/read (worker or local fallback)
 4. Settings → 诊断包 export works
-5. Settings shows version **1.0.3**
+5. Settings shows version **1.0.4**
 6. Taskbar / shortcut / `HFQ Code.exe` icon is the HFQ monogram (not the default Electron atom)
 
 ## Signing

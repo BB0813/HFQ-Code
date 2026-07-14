@@ -69,6 +69,17 @@ export const UiPrefsSchema = z.object({
   checkUpdatesOnStartup: z.boolean().default(true),
   /** ISO timestamp of last successful/attempted update check (best-effort). */
   lastUpdateCheckAt: z.string().optional(),
+  /**
+   * How to reach GitHub Releases for update checks.
+   * `ghproxy` (default) wraps api.github.com via a public mirror — better for CN networks.
+   * `direct` hits GitHub API as-is.
+   */
+  updateSource: z.enum(["ghproxy", "direct"]).default("ghproxy"),
+  /**
+   * Optional ghproxy base, e.g. https://ghproxy.com/ or https://mirror.ghproxy.com/
+   * Only used when updateSource is ghproxy.
+   */
+  updateProxyBase: z.string().default("https://ghproxy.com/"),
 });
 
 export type UiPrefs = z.infer<typeof UiPrefsSchema>;
@@ -93,6 +104,8 @@ export const AppConfigSchema = z.object({
     planModeDefault: false,
     permissionMode: "confirm_before_change",
     checkUpdatesOnStartup: true,
+    updateSource: "ghproxy",
+    updateProxyBase: "https://ghproxy.com/",
   }),
 });
 
@@ -115,6 +128,8 @@ export function defaultAppConfig(): AppConfig {
       planModeDefault: false,
       permissionMode: "confirm_before_change",
       checkUpdatesOnStartup: true,
+      updateSource: "ghproxy",
+      updateProxyBase: "https://ghproxy.com/",
     },
     providers: [
       {

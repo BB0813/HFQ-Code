@@ -13,6 +13,7 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("grok-4.5");
     expect(prompt).toContain("openai-compatible");
     expect(prompt).toMatch(/do not claim to be GPT-4\/GPT-5/i);
+    expect(prompt).toMatch(/HFQ Goal mode|long-running objective/i);
   });
 
   it("avoids inventing a model brand when id is missing", () => {

@@ -65,6 +65,33 @@ describe("config store", () => {
     expect(yolo.prefs.planModeDefault).toBe(false);
   });
 
+  it("defaults update checks to ghproxy and merges update source prefs", () => {
+    const base = defaultAppConfig();
+    expect(base.prefs.updateSource).toBe("ghproxy");
+    expect(base.prefs.updateProxyBase).toBe("https://ghproxy.com/");
+
+    const direct = withPrefs(base, { updateSource: "direct" });
+    expect(direct.prefs.updateSource).toBe("direct");
+    expect(direct.prefs.updateProxyBase).toBe("https://ghproxy.com/");
+
+    const custom = withPrefs(direct, {
+      updateSource: "ghproxy",
+      updateProxyBase: "https://mirror.ghproxy.com",
+    });
+    expect(custom.prefs.updateSource).toBe("ghproxy");
+    expect(custom.prefs.updateProxyBase).toBe("https://mirror.ghproxy.com");
+
+    const blankBase = withPrefs(custom, { updateProxyBase: "   " });
+    expect(blankBase.prefs.updateProxyBase).toBe("https://ghproxy.com/");
+
+    // invalid enum values are ignored; previous source kept / default applied
+    const ignored = withPrefs(custom, {
+      // @ts-expect-error intentional invalid value
+      updateSource: "ftp",
+    });
+    expect(ignored.prefs.updateSource).toBe("ghproxy");
+  });
+
   it("soft-migrates legacy planModeDefault into permissionMode on load", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "hfq-cfg-"));
     temps.push(dir);

@@ -28,6 +28,13 @@ import {
   type UiTask,
   type UiTerminalLine,
 } from "./history.js";
+import {
+  formatCompactUserContent,
+  formatGoalUserContent,
+  GOAL_MAX_ROUNDS,
+  GOAL_MAX_TOOL_CALLS,
+  parseUserSlash,
+} from "./slash.js";
 import { ensureDataDirs } from "./paths.js";
 import { redactJsonValue } from "./redact.js";
 import {
@@ -119,6 +126,9 @@ export class AgentSession {
   private previousNonPlanMode: PermissionMode = "confirm_before_change";
   private toolCallCount = 0;
   private readonly maxToolCalls: number;
+  /** Per-turn overrides (e.g. elevated /goal budgets). Cleared after each send. */
+  private turnMaxRounds: number | null = null;
+  private turnMaxToolCalls: number | null = null;
   private static readonly EVENT_LOG_MAX = 500;
 
   constructor(private readonly opts: AgentSessionOptions) {
@@ -528,22 +538,69 @@ export class AgentSession {
     this.abortRequested = false;
     this.info.status = "running";
     this.info.updatedAt = new Date().toISOString();
+    this.turnMaxRounds = null;
+    this.turnMaxToolCalls = null;
+
+    const parsed = parseUserSlash(text);
     const messageId = randomUUID();
     const at = new Date().toISOString();
+    let goalTaskId: string | null = null;
 
-    this.messages.push({ role: "user", content: text });
+    if (parsed.kind === "goal" && !parsed.body) {
+      this.info.status = "idle";
+      await this.emit({
+        type: "message.completed",
+        sessionId: this.info.id,
+        messageId,
+        role: "system",
+        text: "用法：/goal <目标描述>。例如：/goal 梳理 packages 结构并写一份摘要到 docs/overview.md",
+        at,
+      });
+      return;
+    }
+
+    // Transcript / UI shows the slash form; model may receive expanded instructions.
+    const displayText = parsed.displayText || parsed.raw;
+    let modelContent = displayText;
+    if (parsed.kind === "goal") {
+      modelContent = formatGoalUserContent(parsed.body);
+      this.turnMaxRounds = GOAL_MAX_ROUNDS;
+      // Remaining budget this turn, not lifetime reset (preserve prior tool accounting).
+      this.turnMaxToolCalls = this.toolCallCount + GOAL_MAX_TOOL_CALLS;
+      goalTaskId = `goal_${messageId.slice(0, 8)}`;
+    } else if (parsed.kind === "compact") {
+      modelContent = formatCompactUserContent(parsed.body);
+    }
+
+    this.messages.push({ role: "user", content: modelContent });
     await this.emit({
       type: "message.completed",
       sessionId: this.info.id,
       messageId,
       role: "user",
-      text,
+      text: displayText,
       at,
     });
 
+    if (goalTaskId) {
+      await this.emit({
+        type: "task.updated",
+        sessionId: this.info.id,
+        taskId: goalTaskId,
+        title: `goal: ${parsed.body.slice(0, 80)}`,
+        status: "in_progress",
+        detail: `long-run · up to ${GOAL_MAX_ROUNDS} rounds / ${GOAL_MAX_TOOL_CALLS} tools`,
+        at: new Date().toISOString(),
+      });
+    }
+
     // Auto-title from first user message unless user already set one.
     if (!this.titleLocked) {
-      const short = text.replace(/\s+/g, " ").trim().slice(0, 48);
+      const titleSource =
+        parsed.kind === "goal"
+          ? parsed.body
+          : displayText.replace(/^\/\w+\s*/i, "").trim() || displayText;
+      const short = titleSource.replace(/\s+/g, " ").trim().slice(0, 48);
       if (short) {
         this.info.title = short;
         this.titleLocked = true;
@@ -561,6 +618,17 @@ export class AgentSession {
       await this.runLoop();
       if (this.abortRequested) {
         this.info.status = "idle";
+        if (goalTaskId) {
+          await this.emit({
+            type: "task.updated",
+            sessionId: this.info.id,
+            taskId: goalTaskId,
+            title: `goal: ${parsed.body.slice(0, 80)}`,
+            status: "cancelled",
+            detail: "user_stop",
+            at: new Date().toISOString(),
+          });
+        }
         await this.emit({
           type: "session.aborted",
           sessionId: this.info.id,
@@ -570,6 +638,17 @@ export class AgentSession {
         return;
       }
       this.info.status = "idle";
+      if (goalTaskId) {
+        await this.emit({
+          type: "task.updated",
+          sessionId: this.info.id,
+          taskId: goalTaskId,
+          title: `goal: ${parsed.body.slice(0, 80)}`,
+          status: "completed",
+          detail: "goal turn finished",
+          at: new Date().toISOString(),
+        });
+      }
       await this.emit({
         type: "session.completed",
         sessionId: this.info.id,
@@ -579,6 +658,17 @@ export class AgentSession {
       const code = (err as Error & { code?: string })?.code;
       if (code === "ABORTED" || this.abortRequested) {
         this.info.status = "idle";
+        if (goalTaskId) {
+          await this.emit({
+            type: "task.updated",
+            sessionId: this.info.id,
+            taskId: goalTaskId,
+            title: `goal: ${parsed.body.slice(0, 80)}`,
+            status: "cancelled",
+            detail: "user_stop",
+            at: new Date().toISOString(),
+          });
+        }
         await this.emit({
           type: "session.aborted",
           sessionId: this.info.id,
@@ -589,6 +679,17 @@ export class AgentSession {
       }
       this.info.status = "failed";
       const error = err instanceof Error ? err.message : String(err);
+      if (goalTaskId) {
+        await this.emit({
+          type: "task.updated",
+          sessionId: this.info.id,
+          taskId: goalTaskId,
+          title: `goal: ${parsed.body.slice(0, 80)}`,
+          status: "failed",
+          detail: error.slice(0, 200),
+          at: new Date().toISOString(),
+        });
+      }
       await this.emit({
         type: "session.failed",
         sessionId: this.info.id,
@@ -596,6 +697,9 @@ export class AgentSession {
         at: new Date().toISOString(),
       });
       throw err;
+    } finally {
+      this.turnMaxRounds = null;
+      this.turnMaxToolCalls = null;
     }
   }
 
@@ -612,7 +716,9 @@ export class AgentSession {
   }
 
   private async runLoop(): Promise<void> {
-    for (let round = 0; round < this.maxRounds; round++) {
+    const maxRounds = this.turnMaxRounds ?? this.maxRounds;
+    const maxToolCalls = this.turnMaxToolCalls ?? this.maxToolCalls;
+    for (let round = 0; round < maxRounds; round++) {
       this.assertNotAborted();
       this.refreshTools();
       // Soft-compact long histories so multi-turn sessions stay within model budgets.
@@ -685,8 +791,8 @@ export class AgentSession {
 
       for (const call of result.toolCalls) {
         this.assertNotAborted();
-        if (this.toolCallCount >= this.maxToolCalls) {
-          const output = { error: `tool call budget exceeded (${this.maxToolCalls})` };
+        if (this.toolCallCount >= maxToolCalls) {
+          const output = { error: `tool call budget exceeded (${maxToolCalls})` };
           this.messages.push({
             role: "tool",
             tool_call_id: call.id || randomUUID(),
