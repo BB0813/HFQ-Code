@@ -4,12 +4,12 @@
 
 | Artifact | Command | Output |
 |----------|---------|--------|
-| NSIS installer + portable | `pnpm pack:win` | `apps/desktop/release/HFQ Code-1.0.0-x64.exe` + `…-portable.exe` |
+| NSIS installer + portable | `pnpm pack:win` | `apps/desktop/release/HFQ Code-1.0.1-x64.exe` + `…-portable.exe` |
 | Portable only | `pnpm --filter @hfq/desktop pack:portable` | same dir |
 | Unpacked dir (debug) | `pnpm pack:dir` | `release/win-unpacked/` |
 | Unpacked smoke asserts | `pnpm pack:verify` | builds dir + checks tree |
 
-Release handoff notes: [RELEASE-1.0.0.md](./RELEASE-1.0.0.md).
+Release handoff notes: [RELEASE-1.0.1.md](./RELEASE-1.0.1.md) · prior [RELEASE-1.0.0.md](./RELEASE-1.0.0.md).
 
 ## CI / CD (GitHub Actions)
 
@@ -22,8 +22,8 @@ Release handoff notes: [RELEASE-1.0.0.md](./RELEASE-1.0.0.md).
 Publish a release:
 
 ```bash
-git tag -a v1.0.0 -m "HFQ Code 1.0.0"
-git push origin v1.0.0
+git tag -a v1.0.1 -m "HFQ Code 1.0.1"
+git push origin v1.0.1
 ```
 
 Requires: Node 22+, pnpm 9+, Windows x64, network for electron-builder downloads on first run.
@@ -32,7 +32,9 @@ Requires: Node 22+, pnpm 9+, Windows x64, network for electron-builder downloads
 
 ## Version
 
-Product version comes from `apps/desktop/package.json` (currently **1.0.0**). Keep root `package.json` version aligned.
+Product version comes from `apps/desktop/package.json` (currently **1.0.1**). Keep root `package.json` version aligned.
+
+App icon: `apps/desktop/build/icon.ico` (+ `icon.png`); electron-builder uses `directories.buildResources` / `win.icon`.
 
 ## Update policy (1.0 freeze)
 
@@ -66,7 +68,7 @@ Manual:
 2. Confirm data dir under `%APPDATA%/HFQ-Code`
 3. Open a workspace → new session → list/read (worker or local fallback)
 4. Settings → 诊断包 export works
-5. Settings shows version **1.0.0**
+5. Settings shows version **1.0.1**
 
 ## Signing
 

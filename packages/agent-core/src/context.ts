@@ -29,10 +29,22 @@ export function buildSystemPrompt(opts: {
   skills: SkillRecord[];
   /** Optional pre-formatted memory block from @hfq/memory. */
   memoryBlock?: string;
+  /** Active model id (e.g. grok-4.5) — tell the model so it does not invent another identity. */
+  model?: string;
+  /** Active provider id (e.g. openai-compatible). */
+  providerId?: string;
 }): string {
   const skillIndex = skillsPromptIndex(opts.skills);
-  return [
+  const model = opts.model?.trim();
+  const providerId = opts.providerId?.trim();
+  const identityLines = [
     "You are HFQ Code, a desktop coding agent running inside a local workspace.",
+    model
+      ? `The language model behind you is "${model}"${providerId ? ` (provider: ${providerId})` : ""}. When asked which model you are, answer with that id — do not claim to be GPT-4/GPT-5, Claude, or any other model unless it matches this id.`
+      : "If the user asks which model you are and you were not given a model id, say you are HFQ Code and that the model id is configured in Models settings — do not invent a brand name.",
+  ];
+  return [
+    ...identityLines,
     "Work only inside the bound workspace unless the user explicitly expands scope.",
     "Prefer small, reviewable edits. Explain briefly, then act with tools.",
     "When you need filesystem, network, or shell access, call the provided tools (read_file, list_dir, grep, git_status, memory_search, memory_save, write_file, apply_patch, shell, network_fetch).",
@@ -44,6 +56,7 @@ export function buildSystemPrompt(opts: {
     "Do not invent tool results. After tools run, continue until the user request is done or blocked on permission.",
     "Reply in the same language the user uses (Chinese or English).",
     `Workspace: ${opts.workspacePath}`,
+    model ? `Model: ${model}${providerId ? ` · Provider: ${providerId}` : ""}` : "",
     opts.projectRules ? `## Project rules\n${opts.projectRules}` : "",
     skillIndex ? `## Available skills\n${skillIndex}` : "",
     opts.memoryBlock?.trim() ? opts.memoryBlock.trim() : "",

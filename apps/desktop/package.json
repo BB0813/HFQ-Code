@@ -1,6 +1,6 @@
 {
   "name": "@hfq/desktop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "HFQ Code desktop shell",
   "main": "electron/main.cjs",
@@ -37,12 +37,16 @@
     "productName": "HFQ Code",
     "copyright": "Copyright © HFQ",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
     "electronDist": "node_modules/electron/dist",
+    "icon": "build/icon.ico",
     "files": [
       "electron/**/*",
       "renderer/**/*",
+      "build/icon.ico",
+      "build/icon.png",
       "package.json"
     ],
     "asar": false,
@@ -67,6 +71,7 @@
           "arch": ["x64"]
         }
       ],
+      "icon": "build/icon.ico",
       "artifactName": "${productName}-${version}-${arch}.${ext}",
       "signAndEditExecutable": false
     },

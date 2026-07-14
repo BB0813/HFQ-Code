@@ -6,7 +6,7 @@ Windows desktop **coding agent** (WorkBuddy / ZCode class): full GUI, workspace-
 
 ## Status
 
-**1.0.0** — stable Windows coding agent (Phase-1+2 + Phase-3 M3.0/M3.1/M3.3/M3.4):
+**1.0.1** — stable Windows coding agent (Phase-1+2 + Phase-3 M3.0/M3.1/M3.3/M3.4) + logo / model-identity / eval isolation patch:
 
 - Session loop: create / resume / stop / delete / rename + auto-title, streaming, tokens, compaction, **plan mode**, **sub-agents**
 - **Session worker** (child process) for agent loop isolation; in-process fallback
@@ -75,8 +75,8 @@ Artifacts under `apps/desktop/release/`. Update policy: **manual** download/inst
 | **Pack verify** | weekly / manual | `pnpm pack:verify` |
 
 ```bash
-git tag -a v1.0.0 -m "HFQ Code 1.0.0"
-git push origin v1.0.0   # triggers Release workflow
+git tag -a v1.0.1 -m "HFQ Code 1.0.1"
+git push origin v1.0.1   # triggers Release workflow
 ```
 
 ### Desktop try-out

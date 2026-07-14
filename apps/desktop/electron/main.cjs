@@ -370,7 +370,26 @@ async function resolveActiveProvider() {
   return { provider, providerSpec, model, providerId: providerCfg.id };
 }
 
+function resolveAppIcon() {
+  // Packaged: resources/app/build/icon.* · Dev: apps/desktop/build/icon.*
+  const candidates = [
+    path.join(__dirname, "..", "build", "icon.ico"),
+    path.join(__dirname, "..", "build", "icon.png"),
+    path.join(__dirname, "..", "renderer", "assets", "logo-256.png"),
+  ];
+  for (const p of candidates) {
+    try {
+      require("node:fs").accessSync(p);
+      return p;
+    } catch {
+      /* try next */
+    }
+  }
+  return undefined;
+}
+
 function createWindow() {
+  const icon = resolveAppIcon();
   mainWindow = new BrowserWindow({
     width: 1360,
     height: 900,
@@ -378,6 +397,7 @@ function createWindow() {
     minHeight: 680,
     title: "HFQ Code",
     backgroundColor: "#07090d",
+    ...(icon ? { icon } : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,

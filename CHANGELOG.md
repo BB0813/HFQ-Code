@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.0.1 — 2026-07-15
+
+Patch release: product logo + agent identity accuracy + test/eval data isolation.
+
+### Brand
+- Official **HFQ Code** app icon (`apps/desktop/build/icon.ico` / `icon.png`)
+- Sidebar brand mark uses the logo asset; window + installer icons wired
+- Source mark kept under `brand/hfq-code-logo.png`
+
+### Agent identity (model honesty)
+- System prompt now injects the **active model id + provider id**
+- Model is instructed not to invent GPT/Claude brands when asked who it is
+- Unit coverage in `packages/agent-core/src/context.test.ts`
+
+### Data hygiene
+- `HFQ_DATA_DIR` overrides product data root (`%APPDATA%/HFQ-Code`)
+- `pnpm eval` / `pnpm test` / `pnpm smoke` write sessions under temp data dirs only
+- Memory tool path respects `HFQ_DATA_DIR`
+- Optional cleanup: `node scripts/purge-temp-sessions.mjs` removes leftover temp/eval transcripts
+
+---
+
 ## 1.0.0 — 2026-07-15
 
 First stable desktop release. Builds on `1.0.0-rc.1` Phase-3 slices.

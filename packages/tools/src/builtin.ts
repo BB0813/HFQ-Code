@@ -1076,6 +1076,8 @@ async function networkFetchTool(_workspaceRoot: string, input: Record<string, un
 }
 
 function hfqMemoryDir(): string {
+  const override = process.env.HFQ_DATA_DIR?.trim();
+  if (override) return path.join(path.resolve(override), "memory");
   if (process.platform === "win32") {
     const base = process.env.APPDATA ?? path.join(process.env.USERPROFILE || "", "AppData", "Roaming");
     return path.join(base, "HFQ-Code", "memory");

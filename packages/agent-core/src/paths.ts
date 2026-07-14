@@ -2,7 +2,14 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+/**
+ * Product data root (%APPDATA%/HFQ-Code on Windows).
+ * Override with HFQ_DATA_DIR for eval / unit tests so they never touch the user's real store.
+ */
 export function hfqDataDir(): string {
+  const override = process.env.HFQ_DATA_DIR?.trim();
+  if (override) return path.resolve(override);
+
   if (process.platform === "win32") {
     const base = process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming");
     return path.join(base, "HFQ-Code");

@@ -36,6 +36,18 @@ async function withTemp(fn) {
 }
 
 async function main() {
+  // Global isolation for the whole suite (sessions / memory under temp, not APPDATA).
+  const suiteDataDir = await fs.mkdtemp(path.join(os.tmpdir(), "hfq-eval-data-"));
+  process.env.HFQ_DATA_DIR = suiteDataDir;
+  try {
+    await runSuite();
+  } finally {
+    delete process.env.HFQ_DATA_DIR;
+    await fs.rm(suiteDataDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+async function runSuite() {
   const agentCore = await loadDist("agent-core");
   const providers = await loadDist("providers");
   const memory = await loadDist("memory");

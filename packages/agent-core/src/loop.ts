@@ -268,6 +268,8 @@ export class AgentSession {
       projectRules,
       skills,
       memoryBlock,
+      model: this.opts.model,
+      providerId: this.opts.provider?.id,
     });
 
     if (this.opts.resume) {
