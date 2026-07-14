@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.0.3 — 2026-07-14
+
+Chat UI polish toward ZCode / Codex Desktop composer patterns.
+
+### Chat toolbar
+- Session meta no longer crams title + provider + model into one overflowing pill
+- Card layout: status chip · short session id · truncated title · model/provider chips · compact token usage
+
+### Composer
+- Removed dense quick-action chip row (列出/读取/…)
+- Bottom controls: **访问模式** dropdown · **模型** selector · **/ 命令** toggle
+- Slash / skill palette: type `/` or `$`, ↑↓ select, Tab/Enter insert, Esc close
+- Skills load into palette when opening Chat
+
+### Notes
+- Model switch from composer updates global active model (new session picks it up, same as Models page)
+- Empty-state demo chips kept for first-run guidance only
+
+---
+
 ## 1.0.2 — 2026-07-14
 
 Access modes (Claude/ZCode-style) + permission modal reliability + Windows app icon stamp.

@@ -778,21 +778,35 @@ function setStatus(text, kind = "") {
 }
 
 function setSessionBadge() {
-  const pill = el("sessionBadge");
-  const label = el("sessionBadgeText");
-  if (!label || !pill) return;
-  pill.classList.remove("live", "warn", "busy");
-  if (!state.session) {
-    label.textContent = "无会话";
-    return;
-  }
-  const st = state.session.status || "idle";
-  label.textContent = `${statusLabel(st)} · ${state.session.id.slice(0, 8)}`;
-  if (st === "running") pill.classList.add("busy");
-  else if (st === "waiting_permission") pill.classList.add("warn");
-  else if (st === "idle" || st === "completed") pill.classList.add("live");
-  else if (st === "failed") pill.classList.add("warn");
-}
+	  const pill = el("sessionBadge");
+	  const label = el("sessionBadgeText");
+	  if (label && pill) {
+	    pill.classList.remove("live", "warn", "busy");
+	    if (!state.session) {
+	      label.textContent = "无会话";
+	    } else {
+	      const st = state.session.status || "idle";
+	      label.textContent = `${statusLabel(st)} · ${state.session.id.slice(0, 8)}`;
+	      if (st === "running") pill.classList.add("busy");
+	      else if (st === "waiting_permission") pill.classList.add("warn");
+	      else if (st === "idle" || st === "completed") pill.classList.add("live");
+	      else if (st === "failed") pill.classList.add("warn");
+	    }
+	  }
+	  // Chat toolbar status chip (separate from topbar badge).
+	  const statusNode = el("sessionStatusLabel");
+	  const statusPill = statusNode?.closest(".session-status-pill");
+	  if (statusNode) {
+	    statusNode.textContent = state.session
+	      ? statusLabel(state.session.status || "idle")
+	      : "无会话";
+	  }
+	  if (statusPill) {
+	    statusPill.classList.remove("live", "warn", "busy");
+	    const cls = sessionStatusClass();
+	    if (cls) statusPill.classList.add(cls);
+	  }
+	}
 
 function setCrumb() {
   const node = el("crumb");
@@ -895,32 +909,287 @@ return `<div class="msg ${role}${m.streaming ? " streaming" : ""}"><div class="m
 	}
 
 const PERMISSION_MODES = [
+	  {
+	    id: "confirm_before_change",
+	    label: "变更前确认",
+	    short: "确认",
+	    hint: "写入、补丁、Shell、网络等变更前询问",
+	  },
+	  {
+	    id: "auto_edit",
+	    label: "自动编辑",
+	    short: "自动编辑",
+	    hint: "自动允许写文件/补丁；Shell 与网络仍询问",
+	  },
+	  {
+	    id: "plan",
+	    label: "计划模式",
+	    short: "计划",
+	    hint: "只读规划；禁止写文件、补丁与 Shell",
+	  },
+	  {
+	    id: "full_access",
+	    label: "完全访问",
+	    short: "完全访问",
+	    hint: "全部放行（含危险 Shell）· 真·YOLO",
+	    warn: true,
+	  },
+	];
+
+/** Slash / skill palette items (ZCode-style). */
+const SLASH_COMMANDS = [
   {
-    id: "confirm_before_change",
-    label: "变更前确认",
-    short: "确认",
-    hint: "写入、补丁、Shell、网络等变更前询问",
+    id: "help",
+    kind: "command",
+    trigger: "/help",
+    label: "/help",
+    hint: "列出常用命令与技能用法",
+    insert: "help",
   },
   {
-    id: "auto_edit",
-    label: "自动编辑",
-    short: "自动编辑",
-    hint: "自动允许写文件/补丁；Shell 与网络仍询问",
+    id: "list",
+    kind: "command",
+    trigger: "/list",
+    label: "/list",
+    hint: "列出工作区文件",
+    insert: "list",
   },
   {
-    id: "plan",
-    label: "计划模式",
-    short: "计划",
-    hint: "只读规划；禁止写文件、补丁与 Shell",
+    id: "read",
+    kind: "command",
+    trigger: "/read",
+    label: "/read",
+    hint: "读取指定文件",
+    insert: "read README.md",
   },
   {
-    id: "full_access",
-    label: "完全访问",
-    short: "完全访问",
-    hint: "全部放行（含危险 Shell）· 真·YOLO",
-    warn: true,
+    id: "search",
+    kind: "command",
+    trigger: "/search",
+    label: "/search",
+    hint: "用 grep 搜索代码",
+    insert: "用 grep 搜索 HFQ",
+  },
+  {
+    id: "git",
+    kind: "command",
+    trigger: "/git",
+    label: "/git",
+    hint: "查看 git status",
+    insert: "git status",
+  },
+  {
+    id: "write",
+    kind: "command",
+    trigger: "/write",
+    label: "/write",
+    hint: "写入演示文件（会走权限）",
+    insert: "write demo to hfq-demo.txt",
+  },
+  {
+    id: "patch",
+    kind: "command",
+    trigger: "/patch",
+    label: "/patch",
+    hint: "应用补丁演示",
+    insert: "apply_patch demo",
+  },
+  {
+    id: "fetch",
+    kind: "command",
+    trigger: "/fetch",
+    label: "/fetch",
+    hint: "发起网络请求（会走权限）",
+    insert: "fetch https://example.com",
+  },
+  {
+    id: "shell",
+    kind: "command",
+    trigger: "/shell",
+    label: "/shell",
+    hint: "执行 shell 命令（会走权限）",
+    insert: "shell echo HFQ-Code",
+  },
+  {
+    id: "goal",
+    kind: "command",
+    trigger: "/goal",
+    label: "/goal",
+    hint: "描述目标，让智能体规划执行",
+    insert: "请帮我完成：",
+  },
+  {
+    id: "compact",
+    kind: "command",
+    trigger: "/compact",
+    label: "/compact",
+    hint: "请求压缩上下文（模型侧尽量精简）",
+    insert: "请压缩当前上下文，只保留关键结论后继续。",
   },
 ];
+
+function skillPaletteItems() {
+  const list = Array.isArray(state.skills) ? state.skills : [];
+  return list
+    .filter((s) => s && s.name && s.eligible !== false)
+    .slice(0, 24)
+    .map((s) => ({
+      id: `skill:${s.name}`,
+      kind: "skill",
+      trigger: `$${s.name}`,
+      label: `$${s.name}`,
+      hint: String(s.description || s.source || "技能").slice(0, 80),
+      insert: `使用技能 ${s.name}：`,
+    }));
+}
+
+function paletteItems() {
+  return [...SLASH_COMMANDS, ...skillPaletteItems()];
+}
+
+function truncateLabel(text, max = 36) {
+  const s = String(text || "").replace(/\s+/g, " ").trim();
+  if (!s) return "";
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
+
+function sessionStatusClass() {
+  if (!state.session) return "";
+  const st = state.session.status || "idle";
+  if (st === "running") return "busy";
+  if (st === "waiting_permission" || st === "failed") return "warn";
+  if (st === "idle" || st === "completed") return "live";
+  return "";
+}
+
+function renderAccessModeMenuHtml(mode, opts = {}) {
+  const { buttonId = "accessModeBtn", panelId = "accessModePanel", menuId = "accessModeMenu" } =
+    opts;
+  const modeBtnClass =
+    mode.id === "full_access"
+      ? "warn"
+      : mode.id === "plan" || mode.id === "auto_edit"
+        ? "primary"
+        : "ghost";
+  const modeMenu = PERMISSION_MODES.map((m) => {
+    const active = m.id === mode.id;
+    return `<button type="button" class="mode-menu-item${active ? " active" : ""}${
+      m.warn ? " warn" : ""
+    }" data-set-mode="${m.id}" role="menuitem">
+      <span class="mode-menu-check">${active ? "✓" : ""}</span>
+      <span class="mode-menu-text">
+        <span class="mode-menu-label">${escapeHtml(m.label)}</span>
+        <span class="mode-menu-hint">${escapeHtml(m.hint)}</span>
+      </span>
+    </button>`;
+  }).join("");
+  return `<div class="mode-menu" id="${menuId}">
+    <button type="button" class="btn ${modeBtnClass} sm composer-ctl" id="${buttonId}" title="${escapeHtml(
+      mode.hint,
+    )}" ${state.session?.id ? "" : "disabled"} aria-haspopup="menu" aria-expanded="false">
+      <span class="composer-ctl-kicker">访问</span>
+      <span class="composer-ctl-value">${escapeHtml(mode.short)}</span>
+      <span class="composer-ctl-caret">▾</span>
+    </button>
+    <div class="mode-menu-panel hidden" id="${panelId}" role="menu">
+      ${modeMenu}
+      <div class="mode-menu-sep"></div>
+      <button type="button" class="mode-menu-item" id="accessModeSetDefault" role="menuitem">
+        <span class="mode-menu-check"></span>
+        <span class="mode-menu-text">
+          <span class="mode-menu-label">设为默认</span>
+          <span class="mode-menu-hint">写入全局偏好，新建会话沿用当前模式</span>
+        </span>
+      </button>
+    </div>
+  </div>`;
+}
+
+function renderModelMenuHtml(provider, model) {
+  const providers = Array.isArray(state.config?.providers) ? state.config.providers : [];
+  const activeProvider =
+    providers.find((p) => p.id === provider) || providers[0] || { id: provider, models: [model] };
+  const models = Array.isArray(activeProvider.models) && activeProvider.models.length
+    ? activeProvider.models
+    : [model];
+  const providerItems = providers
+    .map((p) => {
+      const active = p.id === activeProvider.id;
+      return `<button type="button" class="mode-menu-item${active ? " active" : ""}" data-set-provider="${escapeHtml(
+        p.id,
+      )}" role="menuitem">
+        <span class="mode-menu-check">${active ? "✓" : ""}</span>
+        <span class="mode-menu-text">
+          <span class="mode-menu-label">${escapeHtml(p.name || p.id)}</span>
+          <span class="mode-menu-hint">${escapeHtml(p.id)} · ${(p.models || []).length} 模型</span>
+        </span>
+      </button>`;
+    })
+    .join("");
+  const modelItems = models
+    .map((m) => {
+      const active = m === model;
+      return `<button type="button" class="mode-menu-item${active ? " active" : ""}" data-set-model="${escapeHtml(
+        m,
+      )}" data-provider-id="${escapeHtml(activeProvider.id)}" role="menuitem">
+        <span class="mode-menu-check">${active ? "✓" : ""}</span>
+        <span class="mode-menu-text">
+          <span class="mode-menu-label mono">${escapeHtml(m)}</span>
+          <span class="mode-menu-hint">${escapeHtml(activeProvider.name || activeProvider.id)}</span>
+        </span>
+      </button>`;
+    })
+    .join("");
+  return `<div class="mode-menu mode-menu-end" id="modelMenu">
+    <button type="button" class="btn ghost sm composer-ctl" id="modelMenuBtn" title="${escapeHtml(
+      `${provider} / ${model}`,
+    )}" aria-haspopup="menu" aria-expanded="false">
+      <span class="composer-ctl-kicker">模型</span>
+      <span class="composer-ctl-value mono" id="modelMenuLabel">${escapeHtml(truncateLabel(model, 28))}</span>
+      <span class="composer-ctl-caret">▾</span>
+    </button>
+    <div class="mode-menu-panel mode-menu-panel-end hidden" id="modelMenuPanel" role="menu">
+      <div class="mode-menu-section">提供方</div>
+      ${providerItems || `<div class="mode-menu-empty">无提供方</div>`}
+      <div class="mode-menu-sep"></div>
+      <div class="mode-menu-section">模型 · ${escapeHtml(activeProvider.name || activeProvider.id)}</div>
+      ${modelItems}
+      <div class="mode-menu-sep"></div>
+      <button type="button" class="mode-menu-item" id="openModelsPageBtn" role="menuitem">
+        <span class="mode-menu-check"></span>
+        <span class="mode-menu-text">
+          <span class="mode-menu-label">打开模型页</span>
+          <span class="mode-menu-hint">配置 API Key、baseURL 与模型列表</span>
+        </span>
+      </button>
+    </div>
+  </div>`;
+}
+
+function renderSlashPaletteHtml() {
+  const items = paletteItems()
+    .map(
+      (item, idx) => `<button type="button" class="slash-item${idx === 0 ? " active" : ""}" data-palette-id="${escapeHtml(
+        item.id,
+      )}" data-palette-insert="${escapeHtml(item.insert)}" data-palette-kind="${escapeHtml(
+        item.kind,
+      )}" role="option">
+        <span class="slash-item-main">
+          <span class="slash-item-label">${escapeHtml(item.label)}</span>
+          <span class="slash-item-hint">${escapeHtml(item.hint)}</span>
+        </span>
+        <span class="slash-item-kind">${item.kind === "skill" ? "技能" : "命令"}</span>
+      </button>`,
+    )
+    .join("");
+  return `<div class="slash-palette hidden" id="slashPalette" role="listbox" aria-label="命令与技能">
+    <div class="slash-palette-head">
+      <span>命令与技能</span>
+      <span class="faint">输入 <code>/</code> 或 <code>$</code> 过滤 · Esc 关闭</span>
+    </div>
+    <div class="slash-palette-list" id="slashPaletteList">${items}</div>
+  </div>`;
+}
 
 function normalizePermissionMode(mode) {
   const id = String(mode || "");
@@ -1227,26 +1496,31 @@ case "tool.completed":
         `tokens 本轮 入 ${event.inputTokens} / 出 ${event.outputTokens} · 累计 入 ${state.usage.inputTokens} / 出 ${state.usage.outputTokens}`,
         "busy",
       );
-      if (state.page === "chat") {
-        const usageNode = el("sessionUsage");
-        if (usageNode) {
-          usageNode.textContent = `累计 tokens 入 ${state.usage.inputTokens} / 出 ${state.usage.outputTokens}`;
-        }
-      }
-      break;
-    case "session.meta":
-      if (event.title && state.session?.id === event.sessionId) {
-        state.session = { ...state.session, title: event.title };
-        if (event.model) state.session.model = event.model;
-        setSessionBadge();
-        setCrumb();
-        if (state.page === "chat") {
-          const titleNode = el("sessionTitleLabel");
-          if (titleNode) titleNode.textContent = event.title;
-        }
-        void refreshSessions();
-      }
-      break;
+if (state.page === "chat") {
+	        const usageNode = el("sessionUsage");
+	        if (usageNode) {
+	          usageNode.textContent = `入 ${state.usage.inputTokens} · 出 ${state.usage.outputTokens}`;
+	        }
+	      }
+	      break;
+	    case "session.meta":
+	      if (event.title && state.session?.id === event.sessionId) {
+	        state.session = { ...state.session, title: event.title };
+	        if (event.model) state.session.model = event.model;
+	        setSessionBadge();
+	        setCrumb();
+	        if (state.page === "chat") {
+	          const titleNode = el("sessionTitleLabel");
+	          if (titleNode) {
+	            titleNode.textContent = truncateLabel(event.title, 42);
+	            titleNode.title = event.title;
+	          }
+	          const statusNode = el("sessionStatusLabel");
+	          if (statusNode) statusNode.textContent = statusLabel(state.session.status || "idle");
+	        }
+	        void refreshSessions();
+	      }
+	      break;
     default:
       break;
   }
@@ -1377,92 +1651,83 @@ return `<div class="session-item ${active}">
 	}
 
 function pageChat() {
-				  const provider = state.config?.activeProviderId || "mock";
-				  const model = state.session?.model || state.config?.activeModel || "mock-hfq";
-				  const title = state.session?.title || "未创建会话";
-				  const usageText = `累计 tokens 入 ${state.usage?.inputTokens || 0} / 出 ${state.usage?.outputTokens || 0}`;
-				  const mode = permissionModeMeta(state.permissionMode);
-				  const modeBtnClass =
-				    mode.id === "full_access"
-				      ? "warn"
-				      : mode.id === "plan" || mode.id === "auto_edit"
-				        ? "primary"
-				        : "ghost";
-				  const modeMenu = PERMISSION_MODES.map((m) => {
-				    const active = m.id === mode.id;
-				    return `<button type="button" class="mode-menu-item${active ? " active" : ""}${
-				      m.warn ? " warn" : ""
-				    }" data-set-mode="${m.id}" role="menuitem">
-				      <span class="mode-menu-check">${active ? "✓" : ""}</span>
-				      <span class="mode-menu-text">
-				        <span class="mode-menu-label">${escapeHtml(m.label)}</span>
-				        <span class="mode-menu-hint">${escapeHtml(m.hint)}</span>
-				      </span>
-				    </button>`;
-				  }).join("");
-				  return `
-				    <div class="chat-layout">
-				      <div class="chat-toolbar">
-				        <div class="row" style="gap:8px;flex-wrap:wrap">
-				          <button type="button" class="btn primary sm" id="startSessionBtn">新建会话</button>
-				          <button type="button" class="btn ghost sm" id="clearChatBtn">清空视图</button>
-				          <button type="button" class="btn ghost sm" id="stopSessionBtn" ${state.busy ? "" : "disabled"}>停止</button>
-				          <button type="button" class="btn ghost sm" id="renameSessionBtn" ${
-				            state.session?.id ? "" : "disabled"
-				          }>重命名</button>
-				          <div class="mode-menu" id="accessModeMenu">
-				            <button type="button" class="btn ${modeBtnClass} sm" id="accessModeBtn" title="${escapeHtml(
-				              mode.hint,
-				            )}" ${state.session?.id ? "" : "disabled"} aria-haspopup="menu" aria-expanded="false">
-				              访问 · ${escapeHtml(mode.short)} ▾
-				            </button>
-				            <div class="mode-menu-panel hidden" id="accessModePanel" role="menu">
-				              ${modeMenu}
-				              <div class="mode-menu-sep"></div>
-				              <button type="button" class="mode-menu-item" id="accessModeSetDefault" role="menuitem">
-				                <span class="mode-menu-check"></span>
-				                <span class="mode-menu-text">
-				                  <span class="mode-menu-label">设为默认</span>
-				                  <span class="mode-menu-hint">写入全局偏好，新建会话沿用当前模式</span>
-				                </span>
-				              </button>
-				            </div>
-				          </div>
-				          <button type="button" class="btn ghost sm" id="spawnExploreBtn" ${
-				            state.session?.id && !state.busy ? "" : "disabled"
-				          }>派生子代理(调研)</button>
-				        </div>
-			        <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
-			          <div class="pill ${state.session ? "live" : ""}" title="${escapeHtml(title)}">
-			            <span class="dot"></span>
-			            <span id="sessionTitleLabel">${escapeHtml(title)}</span>
-			            · ${escapeHtml(provider)} · ${escapeHtml(model)}
-			          </div>
-			          <span class="faint mono" id="sessionUsage">${escapeHtml(usageText)}</span>
-			        </div>
-			      </div>
-	      <div id="chatLog" class="chat-log">${renderMessagesHtml()}</div>
-	      <div class="composer-shell">
-	        <textarea id="chatInput" placeholder="让 HFQ Code 检查、编辑文件，或在本工作区执行命令…" ${
-	          state.busy ? "disabled" : ""
-	        }></textarea>
-	        <div class="composer-bar">
-	          <div class="chips">
-	            <button type="button" class="chip" data-fill="list">列出</button>
-	            <button type="button" class="chip" data-fill="read README.md">读取</button>
-	            <button type="button" class="chip" data-fill="用 grep 搜索 HFQ">搜索</button>
-	            <button type="button" class="chip" data-fill="git status">Git</button>
-<button type="button" class="chip" data-fill="write demo to hfq-demo.txt">写入</button>
-            <button type="button" class="chip" data-fill="apply_patch demo">补丁</button>
-            <button type="button" class="chip" data-fill="fetch https://example.com">网络</button>
-            <button type="button" class="chip" data-fill="shell echo HFQ-Code">Shell</button>
-	            <button type="button" class="chip" data-fill="help">帮助</button>
-	          </div>
-	          <button type="button" class="btn primary" id="sendBtn" ${state.busy ? "disabled" : ""}>发送</button>
-	        </div>
-	      </div>
-	    </div>`;
-	}
+  const provider = state.config?.activeProviderId || "mock";
+  const model = state.session?.model || state.config?.activeModel || "mock-hfq";
+  const rawTitle = state.session?.title || "";
+  const title = rawTitle ? truncateLabel(rawTitle, 42) : state.session ? "未命名会话" : "未创建会话";
+  const titleFull = rawTitle || title;
+  const statusText = state.session
+    ? statusLabel(state.session.status || "idle")
+    : "无会话";
+  const statusCls = sessionStatusClass();
+  const usageText = `入 ${state.usage?.inputTokens || 0} · 出 ${state.usage?.outputTokens || 0}`;
+  const mode = permissionModeMeta(state.permissionMode);
+  const sessionIdShort = state.session?.id ? state.session.id.slice(0, 8) : "";
+
+  return `
+    <div class="chat-layout">
+      <div class="chat-toolbar">
+        <div class="chat-toolbar-left">
+          <button type="button" class="btn primary sm" id="startSessionBtn">新建会话</button>
+          <button type="button" class="btn ghost sm" id="clearChatBtn">清空视图</button>
+          <button type="button" class="btn ghost sm" id="stopSessionBtn" ${state.busy ? "" : "disabled"}>停止</button>
+          <button type="button" class="btn ghost sm" id="renameSessionBtn" ${
+            state.session?.id ? "" : "disabled"
+          }>重命名</button>
+          <button type="button" class="btn ghost sm" id="spawnExploreBtn" ${
+            state.session?.id && !state.busy ? "" : "disabled"
+          }>派生子代理</button>
+        </div>
+        <div class="chat-toolbar-meta">
+          <div class="session-meta-card" title="${escapeHtml(titleFull)}">
+            <div class="session-meta-top">
+              <div class="pill session-status-pill ${statusCls}">
+                <span class="dot"></span>
+                <span id="sessionStatusLabel">${escapeHtml(statusText)}</span>
+              </div>
+              ${
+                sessionIdShort
+                  ? `<span class="session-id mono" title="${escapeHtml(state.session.id)}">${escapeHtml(
+                      sessionIdShort,
+                    )}</span>`
+                  : ""
+              }
+            </div>
+            <div class="session-title-line" id="sessionTitleLabel">${escapeHtml(title)}</div>
+            <div class="session-meta-sub">
+              <span class="session-model-chip mono" title="${escapeHtml(`${provider} / ${model}`)}">${escapeHtml(
+                truncateLabel(model, 32),
+              )}</span>
+              <span class="session-provider-chip">${escapeHtml(provider)}</span>
+              <span class="faint mono" id="sessionUsage">${escapeHtml(usageText)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="chatLog" class="chat-log">${renderMessagesHtml()}</div>
+      <div class="composer-shell">
+        ${renderSlashPaletteHtml()}
+        <textarea id="chatInput" placeholder="描述任务，或输入 / 打开命令 · $ 打开技能…" ${
+          state.busy ? "disabled" : ""
+        }></textarea>
+        <div class="composer-bar">
+          <div class="composer-controls">
+            ${renderAccessModeMenuHtml(mode)}
+            ${renderModelMenuHtml(provider, model)}
+            <button type="button" class="btn ghost sm composer-ctl" id="slashToggleBtn" title="命令与技能" ${
+              state.busy ? "disabled" : ""
+            }>
+              <span class="composer-ctl-value">/ 命令</span>
+            </button>
+          </div>
+          <div class="composer-actions">
+            <span class="composer-hint faint">Enter 发送 · Shift+Enter 换行</span>
+            <button type="button" class="btn primary" id="sendBtn" ${state.busy ? "disabled" : ""}>发送</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
 
 function pageChanges() {
 		  if (!state.changes.length) {
@@ -2898,146 +3163,349 @@ function pageMemory() {
 	  }
 	}
 
+function bindDropdownMenu(btn, panel, { requireSession = false } = {}) {
+  if (!btn || !panel) {
+    return { close: () => {}, open: () => {}, isOpen: () => false };
+  }
+  const close = () => {
+    panel.classList.add("hidden");
+    btn.setAttribute("aria-expanded", "false");
+  };
+  const open = () => {
+    panel.classList.remove("hidden");
+    btn.setAttribute("aria-expanded", "true");
+  };
+  const isOpen = () => !panel.classList.contains("hidden");
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (requireSession && !state.session?.id) {
+      setStatus("请先创建会话", "warn");
+      return;
+    }
+    if (isOpen()) close();
+    else {
+      // close sibling menus in composer
+      document.querySelectorAll(".mode-menu-panel:not(.hidden)").forEach((p) => {
+        if (p !== panel) p.classList.add("hidden");
+      });
+      document
+        .querySelectorAll(".mode-menu [aria-expanded='true']")
+        .forEach((b) => b.setAttribute("aria-expanded", "false"));
+      open();
+      const onDoc = (ev) => {
+        if (panel.contains(ev.target) || btn.contains(ev.target)) return;
+        close();
+        document.removeEventListener("click", onDoc);
+      };
+      setTimeout(() => document.addEventListener("click", onDoc), 0);
+    }
+  });
+  panel.addEventListener("click", (e) => e.stopPropagation());
+  return { close, open, isOpen };
+}
+
+function filterPaletteItems(query) {
+  const q = String(query || "").trim().toLowerCase();
+  const all = paletteItems();
+  if (!q || q === "/" || q === "$") return all;
+  const needle = q.replace(/^[/$\s]+/, "");
+  if (!needle) return all;
+  return all.filter((item) => {
+    const hay = `${item.label} ${item.hint} ${item.trigger}`.toLowerCase();
+    return hay.includes(needle) || item.trigger.toLowerCase().startsWith(q);
+  });
+}
+
+function setSlashPaletteVisible(show) {
+  const panel = el("slashPalette");
+  if (!panel) return;
+  panel.classList.toggle("hidden", !show);
+}
+
+function renderSlashPaletteList(items, activeIdx = 0) {
+  const list = el("slashPaletteList");
+  if (!list) return;
+  if (!items.length) {
+    list.innerHTML = `<div class="mode-menu-empty">无匹配命令 / 技能</div>`;
+    return;
+  }
+  const safeIdx = Math.max(0, Math.min(activeIdx, items.length - 1));
+  list.innerHTML = items
+    .map(
+      (item, idx) => `<button type="button" class="slash-item${idx === safeIdx ? " active" : ""}" data-palette-id="${escapeHtml(
+        item.id,
+      )}" data-palette-insert="${escapeHtml(item.insert)}" data-palette-kind="${escapeHtml(
+        item.kind,
+      )}" role="option">
+        <span class="slash-item-main">
+          <span class="slash-item-label">${escapeHtml(item.label)}</span>
+          <span class="slash-item-hint">${escapeHtml(item.hint)}</span>
+        </span>
+        <span class="slash-item-kind">${item.kind === "skill" ? "技能" : "命令"}</span>
+      </button>`,
+    )
+    .join("");
+  list.querySelectorAll("[data-palette-insert]").forEach((btn) => {
+    btn.addEventListener("click", () => applyPaletteInsert(btn.getAttribute("data-palette-insert") || ""));
+  });
+  const active = list.querySelector(".slash-item.active");
+  active?.scrollIntoView({ block: "nearest" });
+}
+
+function applyPaletteInsert(text) {
+  const input = el("chatInput");
+  if (!input) return;
+  input.value = text;
+  setSlashPaletteVisible(false);
+  input.focus();
+  try {
+    const len = input.value.length;
+    input.setSelectionRange(len, len);
+  } catch {
+    /* ignore */
+  }
+}
+
+function updateSlashPaletteFromInput() {
+  const input = el("chatInput");
+  if (!input) return;
+  const value = input.value;
+  const caret = typeof input.selectionStart === "number" ? input.selectionStart : value.length;
+  const before = value.slice(0, caret);
+  // open when current line starts with / or $ (ZCode-style)
+  const lineStart = before.lastIndexOf("\n") + 1;
+  const line = before.slice(lineStart);
+  if (line.startsWith("/") || line.startsWith("$")) {
+    // stop filtering after first whitespace (command chosen, args follow)
+    const token = line.split(/\s/, 1)[0];
+    if (token !== line && line.includes(" ")) {
+      setSlashPaletteVisible(false);
+      return;
+    }
+    const items = filterPaletteItems(token);
+    setSlashPaletteVisible(true);
+    renderSlashPaletteList(items, 0);
+    return;
+  }
+  // Keep palette if opened via button with empty input; otherwise close for normal text.
+  if (value.trim() === "") return;
+  setSlashPaletteVisible(false);
+}
+
 function bindChatHandlers() {
-			  el("startSessionBtn")?.addEventListener("click", async () => {
-			    try {
-			      state.session = null;
-			      await createFreshSession();
-			      renderPage("chat");
-			    } catch (err) {
-			      pushMessage({ role: "error", text: err instanceof Error ? err.message : String(err) });
-			    }
-			  });
-			  el("clearChatBtn")?.addEventListener("click", () => {
-			    state.messages = [];
-			    updateChatLogIfPresent();
-			  });
-	el("stopSessionBtn")?.addEventListener("click", () => {
-				    void stopSession();
-				  });
-				  el("renameSessionBtn")?.addEventListener("click", () => {
-				    if (!state.session?.id) return;
-				    void renameRecentSession(state.session.id, state.session.title || "");
-				  });
-const modeBtn = el("accessModeBtn");
-					  const modePanel = el("accessModePanel");
-					  const closeModeMenu = () => {
-					    modePanel?.classList.add("hidden");
-					    modeBtn?.setAttribute("aria-expanded", "false");
-					  };
-					  modeBtn?.addEventListener("click", (e) => {
-					    e.stopPropagation();
-					    if (!state.session?.id) {
-					      setStatus("请先创建会话", "warn");
-					      return;
-					    }
-					    const willOpen = modePanel?.classList.contains("hidden");
-					    if (willOpen) {
-					      modePanel?.classList.remove("hidden");
-					      modeBtn?.setAttribute("aria-expanded", "true");
-					      const onDoc = () => {
-					        closeModeMenu();
-					        document.removeEventListener("click", onDoc);
-					      };
-					      setTimeout(() => document.addEventListener("click", onDoc), 0);
-					    } else {
-					      closeModeMenu();
-					    }
-					  });
-					  modePanel?.addEventListener("click", (e) => e.stopPropagation());
-					  el("content")?.querySelectorAll("[data-set-mode]").forEach((btn) => {
-					    btn.addEventListener("click", async () => {
-					      if (!state.session?.id) return;
-					      const mode = btn.getAttribute("data-set-mode");
-					      if (!mode) return;
-					      if (
-					        mode === "full_access" &&
-					        !window.confirm(
-					          "开启「完全访问」？\n\n将自动允许全部工具，包括危险 Shell（如 rm / del）。仅在你完全信任当前工作区时继续。",
-					        )
-					      ) {
-					        closeModeMenu();
-					        return;
-					      }
-					      try {
-					        const res = await window.hfq.setPermissionMode({
-					          sessionId: state.session.id,
-					          mode,
-					        });
-					        applyPermissionModeState(
-					          res?.permissionMode || mode,
-					          res?.planMode,
-					        );
-					        const meta = permissionModeMeta(state.permissionMode);
-					        setStatus(`访问模式 · ${meta.label}`, meta.warn ? "warn" : "live");
-					        closeModeMenu();
-					        renderPage("chat");
-					      } catch (err) {
-					        setStatus(err instanceof Error ? err.message : String(err), "warn");
-					      }
-					    });
-					  });
-					  el("accessModeSetDefault")?.addEventListener("click", async () => {
-					    try {
-					      if (!window.hfq?.setPrefs) throw new Error("setPrefs unavailable");
-					      const next = await window.hfq.setPrefs({
-					        permissionMode: state.permissionMode,
-					      });
-					      state.config = next;
-					      const meta = permissionModeMeta(state.permissionMode);
-					      setStatus(`已设为默认 · ${meta.label}`, "live");
-					      closeModeMenu();
-					    } catch (err) {
-					      setStatus(err instanceof Error ? err.message : String(err), "warn");
-					    }
-					  });
-				  el("spawnExploreBtn")?.addEventListener("click", async () => {
-				    if (!state.session?.id) return;
-				    const goal =
-				      window.prompt("子代理调研目标", "梳理本仓库 packages 结构并摘要") || "";
-				    if (!goal.trim()) return;
-				    try {
-				      setStatus("子代理运行中…", "live");
-				      const res = await window.hfq.spawnSubagent({
-				        sessionId: state.session.id,
-				        goal: goal.trim(),
-				        profile: "explore",
-				      });
-				      pushMessage({
-				        role: "system",
-				        text: res?.summary || JSON.stringify(res),
-				      });
-				      setStatus(res?.ok ? "子代理完成" : "子代理失败", res?.ok ? "live" : "warn");
-				      updateChatLogIfPresent();
-				    } catch (err) {
-				      pushMessage({
-				        role: "error",
-				        text: err instanceof Error ? err.message : String(err),
-				      });
-				    }
-				  });
-				  el("sendBtn")?.addEventListener("click", () => {
-				    const input = el("chatInput");
-				    if (!input) return;
-				    const text = input.value;
-				    input.value = "";
-				    void sendChat(text);
-				  });
-			  el("chatInput")?.addEventListener("keydown", (e) => {
-			    if (e.key === "Enter" && !e.shiftKey) {
-			      e.preventDefault();
-			      el("sendBtn")?.click();
-			    }
-			  });
-			  document.querySelectorAll("[data-fill]").forEach((chip) => {
-			    chip.addEventListener("click", () => {
-			      const input = el("chatInput");
-			      if (!input) return;
-			      input.value = chip.getAttribute("data-fill") || "";
-			      input.focus();
-			    });
-			  });
-			}
+  el("startSessionBtn")?.addEventListener("click", async () => {
+    try {
+      state.session = null;
+      await createFreshSession();
+      renderPage("chat");
+    } catch (err) {
+      pushMessage({ role: "error", text: err instanceof Error ? err.message : String(err) });
+    }
+  });
+  el("clearChatBtn")?.addEventListener("click", () => {
+    state.messages = [];
+    updateChatLogIfPresent();
+  });
+  el("stopSessionBtn")?.addEventListener("click", () => {
+    void stopSession();
+  });
+  el("renameSessionBtn")?.addEventListener("click", () => {
+    if (!state.session?.id) return;
+    void renameRecentSession(state.session.id, state.session.title || "");
+  });
+
+  const modeBtn = el("accessModeBtn");
+  const modePanel = el("accessModePanel");
+  const modeMenuApi = bindDropdownMenu(modeBtn, modePanel, { requireSession: true });
+
+  el("content")?.querySelectorAll("[data-set-mode]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!state.session?.id) return;
+      const mode = btn.getAttribute("data-set-mode");
+      if (!mode) return;
+      if (
+        mode === "full_access" &&
+        !window.confirm(
+          "开启「完全访问」？\n\n将自动允许全部工具，包括危险 Shell（如 rm / del）。仅在你完全信任当前工作区时继续。",
+        )
+      ) {
+        modeMenuApi.close();
+        return;
+      }
+      try {
+        const res = await window.hfq.setPermissionMode({
+          sessionId: state.session.id,
+          mode,
+        });
+        applyPermissionModeState(res?.permissionMode || mode, res?.planMode);
+        const meta = permissionModeMeta(state.permissionMode);
+        setStatus(`访问模式 · ${meta.label}`, meta.warn ? "warn" : "live");
+        modeMenuApi.close();
+        renderPage("chat");
+      } catch (err) {
+        setStatus(err instanceof Error ? err.message : String(err), "warn");
+      }
+    });
+  });
+  el("accessModeSetDefault")?.addEventListener("click", async () => {
+    try {
+      if (!window.hfq?.setPrefs) throw new Error("setPrefs unavailable");
+      const next = await window.hfq.setPrefs({
+        permissionMode: state.permissionMode,
+      });
+      state.config = next;
+      const meta = permissionModeMeta(state.permissionMode);
+      setStatus(`已设为默认 · ${meta.label}`, "live");
+      modeMenuApi.close();
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : String(err), "warn");
+    }
+  });
+
+  const modelBtn = el("modelMenuBtn");
+  const modelPanel = el("modelMenuPanel");
+  const modelMenuApi = bindDropdownMenu(modelBtn, modelPanel, { requireSession: false });
+
+  el("content")?.querySelectorAll("[data-set-provider]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const providerId = btn.getAttribute("data-set-provider");
+      if (!providerId || !window.hfq?.setActiveModel) return;
+      try {
+        const p = (state.config?.providers || []).find((x) => x.id === providerId);
+        const model = p?.defaultModel || p?.models?.[0] || state.config?.activeModel;
+        state.config = await window.hfq.setActiveModel({ providerId, model });
+        setStatus(`提供方 · ${providerId}`, "live");
+        modelMenuApi.close();
+        renderPage("chat");
+      } catch (err) {
+        setStatus(err instanceof Error ? err.message : String(err), "warn");
+      }
+    });
+  });
+  el("content")?.querySelectorAll("[data-set-model]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const model = btn.getAttribute("data-set-model");
+      const providerId =
+        btn.getAttribute("data-provider-id") || state.config?.activeProviderId;
+      if (!model || !providerId || !window.hfq?.setActiveModel) return;
+      try {
+        state.config = await window.hfq.setActiveModel({ providerId, model });
+        setStatus(`模型 · ${model}（新会话生效）`, "live");
+        modelMenuApi.close();
+        renderPage("chat");
+      } catch (err) {
+        setStatus(err instanceof Error ? err.message : String(err), "warn");
+      }
+    });
+  });
+  el("openModelsPageBtn")?.addEventListener("click", () => {
+    modelMenuApi.close();
+    renderPage("models");
+  });
+
+  el("spawnExploreBtn")?.addEventListener("click", async () => {
+    if (!state.session?.id) return;
+    const goal = window.prompt("子代理调研目标", "梳理本仓库 packages 结构并摘要") || "";
+    if (!goal.trim()) return;
+    try {
+      setStatus("子代理运行中…", "live");
+      const res = await window.hfq.spawnSubagent({
+        sessionId: state.session.id,
+        goal: goal.trim(),
+        profile: "explore",
+      });
+      pushMessage({
+        role: "system",
+        text: res?.summary || JSON.stringify(res),
+      });
+      setStatus(res?.ok ? "子代理完成" : "子代理失败", res?.ok ? "live" : "warn");
+      updateChatLogIfPresent();
+    } catch (err) {
+      pushMessage({
+        role: "error",
+        text: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+
+  el("sendBtn")?.addEventListener("click", () => {
+    const input = el("chatInput");
+    if (!input) return;
+    const text = input.value;
+    input.value = "";
+    setSlashPaletteVisible(false);
+    void sendChat(text);
+  });
+
+  const input = el("chatInput");
+  input?.addEventListener("input", () => {
+    updateSlashPaletteFromInput();
+  });
+  input?.addEventListener("keydown", (e) => {
+    const panel = el("slashPalette");
+    const open = panel && !panel.classList.contains("hidden");
+    if (open) {
+      const items = [...(el("slashPaletteList")?.querySelectorAll(".slash-item") || [])];
+      const activeIdx = items.findIndex((n) => n.classList.contains("active"));
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setSlashPaletteVisible(false);
+        return;
+      }
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        if (!items.length) return;
+        const next =
+          e.key === "ArrowDown"
+            ? (activeIdx + 1) % items.length
+            : (activeIdx - 1 + items.length) % items.length;
+        items.forEach((n, i) => n.classList.toggle("active", i === next));
+        items[next]?.scrollIntoView({ block: "nearest" });
+        return;
+      }
+      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey && activeIdx >= 0)) {
+        const active = items[activeIdx] || items[0];
+        if (active) {
+          e.preventDefault();
+          applyPaletteInsert(active.getAttribute("data-palette-insert") || "");
+          return;
+        }
+      }
+    }
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      el("sendBtn")?.click();
+    }
+  });
+
+  el("slashToggleBtn")?.addEventListener("click", () => {
+    const panel = el("slashPalette");
+    if (!panel) return;
+    const willOpen = panel.classList.contains("hidden");
+    if (willOpen) {
+      renderSlashPaletteList(paletteItems(), 0);
+      setSlashPaletteVisible(true);
+      el("chatInput")?.focus();
+    } else {
+      setSlashPaletteVisible(false);
+    }
+  });
+
+  el("slashPaletteList")?.querySelectorAll("[data-palette-insert]").forEach((btn) => {
+    btn.addEventListener("click", () => applyPaletteInsert(btn.getAttribute("data-palette-insert") || ""));
+  });
+
+  // keep empty-state demo chips working
+  document.querySelectorAll("[data-fill]").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const node = el("chatInput");
+      if (!node) return;
+      node.value = chip.getAttribute("data-fill") || "";
+      node.focus();
+      setSlashPaletteVisible(false);
+    });
+  });
+}
 
 function bindHomeHandlers() {
 			  el("homeOpenWs")?.addEventListener("click", () => el("openWs")?.click());
@@ -3757,8 +4225,20 @@ if (id === "home") {
 		      }
 		    });
 		  }
-if (id === "chat") bindChatHandlers();
-				  if (id === "changes") bindChangesHandlers();
+if (id === "chat") {
+					    bindChatHandlers();
+					    if (!state.skills?.length) {
+					      void refreshSkills().then(() => {
+					        if (state.page === "chat" && el("slashPaletteList")) {
+					          const panel = el("slashPalette");
+					          if (panel && !panel.classList.contains("hidden")) {
+					            renderSlashPaletteList(paletteItems(), 0);
+					          }
+					        }
+					      });
+					    }
+					  }
+					  if (id === "changes") bindChangesHandlers();
 				  if (id === "terminal") bindTerminalHandlers();
 				  if (id === "tasks") {
 				    bindTasksHandlers();
