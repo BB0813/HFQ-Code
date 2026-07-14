@@ -1,0 +1,29 @@
+{
+  "name": "hfq-code",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HFQ Code — Windows desktop coding agent",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev:desktop": "pnpm --filter @hfq/desktop dev",
+    "build": "pnpm -r run build",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "smoke": "node packages/agent-core/scripts/smoke.mjs",
+    "eval": "node scripts/eval.mjs",
+    "prepack:win": "pnpm build",
+    "pack:win": "pnpm --filter @hfq/desktop pack:win",
+    "pack:dir": "pnpm build && pnpm --filter @hfq/desktop pack:dir",
+    "pack:verify": "node scripts/pack-verify.mjs",
+    "release:check": "pnpm build && pnpm test && pnpm smoke && pnpm eval",
+    "lint": "pnpm -r run lint --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.9"
+  }
+}

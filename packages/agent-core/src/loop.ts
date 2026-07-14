@@ -1,0 +1,1040 @@
+import { randomUUID } from "node:crypto";
+import path from "node:path";
+import {
+  defaultPolicyConfig,
+  grantSessionAllow,
+  listSessionAllows,
+  revokeSessionAllow,
+  resolvePermission,
+  type PolicyConfig,
+} from "@hfq/policy";
+import { toAssistantToolCalls, type ChatMessage, type ModelProvider } from "@hfq/providers";
+import type { SessionEvent, SessionInfo } from "@hfq/shared";
+import { loadSkills } from "@hfq/skills";
+import { createToolHub, type ToolHub } from "@hfq/tools";
+import type { ToolDefinition } from "@hfq/shared";
+import type { ToolHandler } from "@hfq/tools";
+import { JsonlTranscript } from "@hfq/transcript";
+import { createScopedMemory, formatMemoryForPrompt } from "@hfq/memory";
+import { compactChatMessages } from "./compact.js";
+import { buildSystemPrompt, loadProjectRules } from "./context.js";
+import {
+  buildSessionSnapshot,
+  type SessionSnapshot,
+  type UiChange,
+  type UiMessage,
+  type UiTask,
+  type UiTerminalLine,
+} from "./history.js";
+import { ensureDataDirs } from "./paths.js";
+import { redactJsonValue } from "./redact.js";
+import {
+  defaultBudget,
+  toolsForProfile,
+  type SubagentProfile,
+} from "./subagent.js";
+
+function clipText(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max)}\n… [truncated ${text.length - max} chars]`;
+}
+
+export type EventHandler = (event: SessionEvent) => void | Promise<void>;
+export type PermissionHandler = (req: {
+  requestId: string;
+  toolName: string;
+  risk: "low" | "medium" | "high";
+  summary: string;
+}) => Promise<"allow" | "deny" | "allow_session">;
+
+export interface ExtraToolsBundle {
+  defs: ToolDefinition[];
+  handlers: Record<string, ToolHandler>;
+}
+
+export interface AgentSessionOptions {
+  workspacePath: string;
+  provider: ModelProvider;
+  model: string;
+  sessionId?: string;
+  title?: string;
+  /** Open existing JSONL and rebuild context instead of starting fresh. */
+  resume?: boolean;
+  bundledSkillsDir?: string;
+  sharedAgentsDir?: string;
+  onEvent?: EventHandler;
+  onPermission?: PermissionHandler;
+  maxRounds?: number;
+  /** Dynamic tools (e.g. live MCP) refreshed each agent round. */
+  getExtraTools?: () => ExtraToolsBundle | null | undefined;
+  /** Plan mode: deny mutating tools (write/patch/shell). */
+  planMode?: boolean;
+  /** Soft character budget for compaction (prefs). */
+  compactMaxChars?: number;
+  /** Inject memory into system prompt (prefs). */
+  memoryEnabled?: boolean;
+  /** Parent session id when this is a sub-agent. */
+  parentSessionId?: string;
+  /** Nesting depth (0 = root). */
+  subagentDepth?: number;
+  /** Tool profile for sub-agents. */
+  subagentProfile?: SubagentProfile;
+  /** Hard cap on tool executions this turn/session life. */
+  maxToolCalls?: number;
+  /** Optional handler for spawn_subagent tool (wired by SessionManager). */
+  onSpawnSubagent?: (params: {
+    goal: string;
+    profile: SubagentProfile;
+    parentSessionId: string;
+  }) => Promise<{ childSessionId: string; summary: string; ok: boolean; error?: string }>;
+}
+
+export class AgentSession {
+  readonly info: SessionInfo;
+  private messages: ChatMessage[] = [];
+  private transcript!: JsonlTranscript;
+  private tools: ToolHub = createToolHub();
+  private policy: PolicyConfig = defaultPolicyConfig();
+  private systemPrompt = "";
+  private readonly maxRounds: number;
+  private uiMessages: UiMessage[] = [];
+  private uiChanges: UiChange[] = [];
+  private uiTerminal: UiTerminalLine[] = [];
+  private uiTasks: UiTask[] = [];
+  private usage = { inputTokens: 0, outputTokens: 0 };
+  /** Durable transcript events for audit restore (no message.delta). Newest last. */
+  private eventLog: SessionEvent[] = [];
+  private titleLocked = false;
+  private abortRequested = false;
+  private planMode: boolean;
+  private toolCallCount = 0;
+  private readonly maxToolCalls: number;
+  private static readonly EVENT_LOG_MAX = 500;
+
+  constructor(private readonly opts: AgentSessionOptions) {
+    const now = new Date().toISOString();
+    this.info = {
+      id: opts.sessionId ?? randomUUID(),
+      workspacePath: opts.workspacePath,
+      title: opts.title ?? "New session",
+      model: opts.model,
+      createdAt: now,
+      updatedAt: now,
+      status: "idle",
+    };
+    this.planMode = Boolean(opts.planMode);
+    if (opts.subagentProfile) {
+      const budget = defaultBudget(opts.subagentProfile, opts.subagentDepth ?? 1);
+      this.maxRounds = opts.maxRounds ?? budget.maxRounds;
+      this.maxToolCalls = opts.maxToolCalls ?? budget.maxToolCalls;
+    } else {
+      this.maxRounds = opts.maxRounds ?? 12;
+      this.maxToolCalls = opts.maxToolCalls ?? 200;
+    }
+  }
+
+  setPlanMode(enabled: boolean): void {
+    this.planMode = Boolean(enabled);
+  }
+
+  getPlanMode(): boolean {
+    return this.planMode;
+  }
+
+  getParentSessionId(): string | undefined {
+    return this.opts.parentSessionId;
+  }
+
+  getSubagentDepth(): number {
+    return this.opts.subagentDepth ?? 0;
+  }
+
+  /**
+   * Cooperative cancel: checked between model rounds and tools.
+   * Does not kill an in-flight HTTP/provider call mid-body.
+   */
+  requestAbort(): boolean {
+    if (this.info.status !== "running" && this.info.status !== "waiting_permission") {
+      return false;
+    }
+    this.abortRequested = true;
+    return true;
+  }
+
+  listSessionAllows(): string[] {
+    return listSessionAllows(this.policy);
+  }
+
+  grantSessionTool(toolName: string): string[] {
+    grantSessionAllow(this.policy, toolName);
+    return this.listSessionAllows();
+  }
+
+  revokeSessionTool(toolName: string): string[] {
+    revokeSessionAllow(this.policy, toolName);
+    return this.listSessionAllows();
+  }
+
+  private assertNotAborted(): void {
+    if (!this.abortRequested) return;
+    const err = new Error("session aborted by user");
+    (err as Error & { code?: string }).code = "ABORTED";
+    throw err;
+  }
+
+  getSnapshot(): SessionSnapshot {
+    return {
+      info: { ...this.info },
+      messages: [...this.uiMessages],
+      chatMessages: [...this.messages],
+      changes: [...this.uiChanges],
+      terminal: [...this.uiTerminal],
+      tasks: [...this.uiTasks],
+      usage: { ...this.usage },
+      events: [...this.eventLog],
+    };
+  }
+
+  private pushEventLog(event: SessionEvent): void {
+    if (event.type === "message.delta") return;
+    this.eventLog.push(event);
+    if (this.eventLog.length > AgentSession.EVENT_LOG_MAX) {
+      this.eventLog.splice(0, this.eventLog.length - AgentSession.EVENT_LOG_MAX);
+    }
+  }
+
+  /**
+   * Persist a user-facing title into the JSONL transcript (session.meta).
+   */
+  async setTitle(title: string): Promise<SessionInfo> {
+    const next = title.replace(/\s+/g, " ").trim().slice(0, 80);
+    if (!next) throw new Error("title required");
+    this.info.title = next;
+    this.titleLocked = true;
+    this.info.updatedAt = new Date().toISOString();
+    await this.emit({
+      type: "session.meta",
+      sessionId: this.info.id,
+      title: next,
+      model: this.info.model,
+      at: this.info.updatedAt,
+    });
+    return { ...this.info };
+  }
+
+  async init(): Promise<SessionSnapshot | null> {
+    const dirs = await ensureDataDirs();
+
+    const skills = await loadSkills({
+      workspacePath: this.opts.workspacePath,
+      userSkillsDir: dirs.skills,
+      sharedAgentsDir: this.opts.sharedAgentsDir,
+      bundledDir: this.opts.bundledSkillsDir,
+    });
+
+    const projectRules = await loadProjectRules(this.opts.workspacePath);
+    let memoryBlock = "";
+    if (this.opts.memoryEnabled !== false) {
+      try {
+        const brain = createScopedMemory({
+          rootDir: dirs.memory,
+          workspacePath: this.opts.workspacePath,
+        });
+        const base = path.basename(this.opts.workspacePath || "") || "project";
+        const hits = await brain.search(base, 6);
+        const recent = hits.length
+          ? hits
+          : (await brain.list(5)).map((d) => ({
+              id: d.id,
+              text: d.text,
+              score: 1,
+              source: d.source,
+              updatedAt: d.updatedAt,
+              scope: d.scope,
+            }));
+        memoryBlock = formatMemoryForPrompt(recent, 1_800);
+      } catch {
+        memoryBlock = "";
+      }
+    }
+    if (this.planMode) {
+      memoryBlock = `${memoryBlock ? `${memoryBlock}\n\n` : ""}## Plan mode\nYou are in plan mode: do not modify files or run shell. Use read-only tools and produce a clear plan.`;
+    }
+    if (this.opts.subagentProfile) {
+      memoryBlock = `${memoryBlock ? `${memoryBlock}\n\n` : ""}## Sub-agent\nProfile: ${this.opts.subagentProfile}. Stay focused on the assigned goal; parent will receive your final summary.`;
+    }
+    this.systemPrompt = buildSystemPrompt({
+      workspacePath: this.opts.workspacePath,
+      projectRules,
+      skills,
+      memoryBlock,
+    });
+
+    if (this.opts.resume) {
+      const existing = await JsonlTranscript.openExisting(dirs.sessions, this.info.id);
+      if (!existing) throw new Error(`session transcript not found: ${this.info.id}`);
+      this.transcript = existing;
+      const events = await existing.readEvents();
+      const snap = buildSessionSnapshot(events, {
+        id: this.info.id,
+        workspacePath: this.opts.workspacePath,
+        title: this.opts.title,
+        model: this.opts.model,
+      });
+      Object.assign(this.info, snap.info);
+      this.info.model = this.opts.model || snap.info.model;
+      this.uiMessages = snap.messages;
+      this.uiChanges = snap.changes;
+      this.uiTerminal = snap.terminal;
+      this.uiTasks = snap.tasks;
+      this.usage = { ...snap.usage };
+      this.eventLog = events
+        .filter((ev) => ev.type !== "message.delta")
+        .slice(-AgentSession.EVENT_LOG_MAX);
+      this.titleLocked = events.some(
+        (ev) => ev.type === "session.meta" && Boolean(ev.title?.trim()),
+      );
+      this.messages = [
+        { role: "system", content: this.systemPrompt },
+        ...snap.chatMessages.filter((m) => m.role !== "system"),
+      ];
+      // Re-apply session allows from prior permission.resolved(allow_session) events.
+      // toolName is on the matching permission.requested.
+      const requestTool = new Map<string, string>();
+      for (const ev of events) {
+        if (ev.type === "permission.requested") {
+          requestTool.set(ev.requestId, ev.toolName);
+        } else if (ev.type === "permission.resolved" && ev.decision === "allow_session") {
+          const tool = requestTool.get(ev.requestId);
+          if (tool) grantSessionAllow(this.policy, tool);
+        }
+      }
+      return this.getSnapshot();
+    }
+
+    this.transcript = await JsonlTranscript.create(dirs.sessions, this.info.id);
+    this.messages = [{ role: "system", content: this.systemPrompt }];
+    this.uiMessages = [];
+    this.uiChanges = [];
+    this.uiTerminal = [];
+    this.uiTasks = [];
+    this.usage = { inputTokens: 0, outputTokens: 0 };
+    this.eventLog = [];
+    this.titleLocked = Boolean(
+      this.opts.title && this.opts.title !== "New session" && this.opts.title !== "Session",
+    );
+
+    await this.emit({
+      type: "session.started",
+      sessionId: this.info.id,
+      workspacePath: this.info.workspacePath,
+      at: new Date().toISOString(),
+    });
+    if (this.titleLocked && this.info.title) {
+      await this.emit({
+        type: "session.meta",
+        sessionId: this.info.id,
+        title: this.info.title,
+        model: this.info.model,
+        at: new Date().toISOString(),
+      });
+    }
+    return null;
+  }
+
+  private trackUi(event: SessionEvent): void {
+    switch (event.type) {
+      case "message.completed":
+        this.uiMessages.push({ role: event.role, text: event.text });
+        break;
+      case "tool.started":
+        this.uiMessages.push({
+          role: "tool",
+          name: event.name,
+          text: `开始执行 ${event.name}`,
+          detail: event.input,
+        });
+        break;
+      case "tool.completed":
+        this.uiMessages.push({
+          role: "tool",
+          name: event.name,
+          text: event.ok ? `完成 ${event.name}` : `失败 ${event.name}`,
+          detail: event.output,
+        });
+        break;
+      case "permission.resolved": {
+        const map: Record<string, string> = {
+          allow: "允许一次",
+          deny: "拒绝",
+          allow_session: "本会话允许",
+        };
+        this.uiMessages.push({
+          role: "system",
+          text: `权限决策: ${map[event.decision] || event.decision} · ${event.requestId.slice(0, 8)}`,
+        });
+        break;
+      }
+      case "diff.updated": {
+        const next = {
+          path: event.path,
+          kind: event.kind,
+          before: event.before,
+          after: event.after,
+          at: event.at,
+        };
+        const idx = this.uiChanges.findIndex((c) => c.path === event.path);
+        if (idx >= 0) this.uiChanges[idx] = { ...this.uiChanges[idx], ...next };
+        else this.uiChanges.unshift(next);
+        break;
+      }
+      case "terminal.output":
+        this.uiTerminal.unshift({
+          callId: event.callId,
+          command: event.command,
+          stdout: event.stdout,
+          stderr: event.stderr,
+          code: event.code,
+          ok: event.ok,
+          at: event.at,
+        });
+        if (this.uiTerminal.length > 80) this.uiTerminal.length = 80;
+        break;
+      case "task.updated": {
+        const next = {
+          taskId: event.taskId,
+          title: event.title,
+          status: event.status,
+          detail: event.detail,
+          at: event.at,
+        };
+        const idx = this.uiTasks.findIndex((t) => t.taskId === event.taskId);
+        if (idx >= 0) this.uiTasks[idx] = next;
+        else this.uiTasks.unshift(next);
+        if (this.uiTasks.length > 100) this.uiTasks.length = 100;
+        break;
+      }
+      case "session.failed":
+        this.uiMessages.push({ role: "error", text: event.error });
+        break;
+      case "session.aborted":
+        this.uiMessages.push({ role: "system", text: "会话已由用户停止" });
+        break;
+      case "session.meta":
+        if (event.title?.trim()) {
+          this.info.title = event.title.trim();
+          this.titleLocked = true;
+        }
+        if (event.model?.trim()) this.info.model = event.model.trim();
+        break;
+      case "usage.updated":
+        this.usage.inputTokens += Number(event.inputTokens) || 0;
+        this.usage.outputTokens += Number(event.outputTokens) || 0;
+        break;
+      default:
+        break;
+    }
+  }
+
+  private sanitizeEvent(event: SessionEvent): SessionEvent {
+    try {
+      return redactJsonValue(event) as SessionEvent;
+    } catch {
+      return event;
+    }
+  }
+
+  private async emit(event: SessionEvent): Promise<void> {
+    const safe = this.sanitizeEvent(event);
+    this.trackUi(safe);
+    this.pushEventLog(safe);
+    await this.transcript.append(safe);
+    await this.opts.onEvent?.(safe);
+  }
+
+  private toolAllowedByProfile(name: string): boolean {
+    if (name === "spawn_subagent" && (this.opts.subagentDepth ?? 0) >= 1) {
+      return false;
+    }
+    if (!this.opts.subagentProfile) return true;
+    const { allow, deny } = toolsForProfile(this.opts.subagentProfile);
+    if (deny.has(name)) return false;
+    if (allow && !allow.has(name) && !name.startsWith("mcp__")) return false;
+    return true;
+  }
+
+  private isMutatingTool(name: string): boolean {
+    return (
+      name === "write_file" ||
+      name === "apply_patch" ||
+      name === "shell" ||
+      name === "git_commit" ||
+      name === "memory_save" ||
+      name === "spawn_subagent"
+    );
+  }
+
+  async sendUserMessage(text: string): Promise<void> {
+    this.abortRequested = false;
+    this.info.status = "running";
+    this.info.updatedAt = new Date().toISOString();
+    const messageId = randomUUID();
+    const at = new Date().toISOString();
+
+    this.messages.push({ role: "user", content: text });
+    await this.emit({
+      type: "message.completed",
+      sessionId: this.info.id,
+      messageId,
+      role: "user",
+      text,
+      at,
+    });
+
+    // Auto-title from first user message unless user already set one.
+    if (!this.titleLocked) {
+      const short = text.replace(/\s+/g, " ").trim().slice(0, 48);
+      if (short) {
+        this.info.title = short;
+        this.titleLocked = true;
+        await this.emit({
+          type: "session.meta",
+          sessionId: this.info.id,
+          title: short,
+          model: this.info.model,
+          at: new Date().toISOString(),
+        });
+      }
+    }
+
+    try {
+      await this.runLoop();
+      if (this.abortRequested) {
+        this.info.status = "idle";
+        await this.emit({
+          type: "session.aborted",
+          sessionId: this.info.id,
+          reason: "user_stop",
+          at: new Date().toISOString(),
+        });
+        return;
+      }
+      this.info.status = "idle";
+      await this.emit({
+        type: "session.completed",
+        sessionId: this.info.id,
+        at: new Date().toISOString(),
+      });
+    } catch (err) {
+      const code = (err as Error & { code?: string })?.code;
+      if (code === "ABORTED" || this.abortRequested) {
+        this.info.status = "idle";
+        await this.emit({
+          type: "session.aborted",
+          sessionId: this.info.id,
+          reason: "user_stop",
+          at: new Date().toISOString(),
+        });
+        return;
+      }
+      this.info.status = "failed";
+      const error = err instanceof Error ? err.message : String(err);
+      await this.emit({
+        type: "session.failed",
+        sessionId: this.info.id,
+        error,
+        at: new Date().toISOString(),
+      });
+      throw err;
+    }
+  }
+
+  private refreshTools(): void {
+    const extra = this.opts.getExtraTools?.();
+    if (!extra?.defs?.length) {
+      this.tools = createToolHub();
+      return;
+    }
+    this.tools = createToolHub({
+      extraDefs: extra.defs,
+      handlers: extra.handlers ?? {},
+    });
+  }
+
+  private async runLoop(): Promise<void> {
+    for (let round = 0; round < this.maxRounds; round++) {
+      this.assertNotAborted();
+      this.refreshTools();
+      // Soft-compact long histories so multi-turn sessions stay within model budgets.
+      const packed = compactChatMessages(this.messages, {
+        maxChars: this.opts.compactMaxChars,
+      });
+      if (packed.compacted) {
+        this.messages = packed.messages;
+      }
+      const streamMessageId = randomUUID();
+      let streamedAny = false;
+      const result = await this.opts.provider.chat({
+        model: this.opts.model,
+        messages: this.messages,
+        tools: this.tools.list().map((t) => ({
+          name: t.name,
+          description: t.description,
+          parameters: t.inputSchema,
+        })),
+        onDelta: async (text) => {
+          if (!text) return;
+          streamedAny = true;
+          // Live UI only — do not append deltas to JSONL (completed row is enough).
+          await this.opts.onEvent?.({
+            type: "message.delta",
+            sessionId: this.info.id,
+            messageId: streamMessageId,
+            role: "assistant",
+            text,
+            at: new Date().toISOString(),
+          });
+        },
+      });
+      this.assertNotAborted();
+
+      if (result.usage) {
+        await this.emit({
+          type: "usage.updated",
+          sessionId: this.info.id,
+          inputTokens: result.usage.inputTokens,
+          outputTokens: result.usage.outputTokens,
+          at: new Date().toISOString(),
+        });
+      }
+
+      // OpenAI-compatible history requires assistant.tool_calls before any role:tool rows.
+      const hasTools = result.toolCalls.length > 0;
+      if (result.message || hasTools) {
+        this.messages.push({
+          role: "assistant",
+          content: result.message || "",
+          ...(hasTools ? { tool_calls: toAssistantToolCalls(result.toolCalls) } : {}),
+        });
+      }
+
+      if (result.message) {
+        await this.emit({
+          type: "message.completed",
+          sessionId: this.info.id,
+          messageId: streamedAny ? streamMessageId : randomUUID(),
+          role: "assistant",
+          text: result.message,
+          at: new Date().toISOString(),
+        });
+      }
+
+      if (!hasTools) {
+        return;
+      }
+
+      for (const call of result.toolCalls) {
+        this.assertNotAborted();
+        if (this.toolCallCount >= this.maxToolCalls) {
+          const output = { error: `tool call budget exceeded (${this.maxToolCalls})` };
+          this.messages.push({
+            role: "tool",
+            tool_call_id: call.id || randomUUID(),
+            name: call.name,
+            content: JSON.stringify(output),
+          });
+          continue;
+        }
+        const risk = this.tools.riskOf(call.name);
+        const summary =
+          call.name === "shell"
+            ? `shell: ${String(call.arguments.command ?? "")}`
+            : call.name === "spawn_subagent"
+              ? `subagent: ${String(call.arguments.goal ?? "").slice(0, 80)}`
+              : `${call.name} ${JSON.stringify(call.arguments).slice(0, 200)}`;
+
+        if (!this.toolAllowedByProfile(call.name)) {
+          const callId = call.id || randomUUID();
+          const output = { error: `tool denied by sub-agent profile: ${call.name}` };
+          this.messages.push({
+            role: "tool",
+            tool_call_id: callId,
+            name: call.name,
+            content: JSON.stringify(output),
+          });
+          await this.emit({
+            type: "tool.completed",
+            sessionId: this.info.id,
+            callId,
+            name: call.name,
+            ok: false,
+            output,
+            at: new Date().toISOString(),
+          });
+          continue;
+        }
+
+        if (this.planMode && this.isMutatingTool(call.name)) {
+          const callId = call.id || randomUUID();
+          const output = {
+            error:
+              "plan mode is active — mutating tools are disabled (write/patch/shell/git_commit/memory_save/spawn_subagent)",
+          };
+          this.messages.push({
+            role: "tool",
+            tool_call_id: callId,
+            name: call.name,
+            content: JSON.stringify(output),
+          });
+          await this.emit({
+            type: "tool.completed",
+            sessionId: this.info.id,
+            callId,
+            name: call.name,
+            ok: false,
+            output,
+            at: new Date().toISOString(),
+          });
+          continue;
+        }
+
+        let decision = resolvePermission(this.policy, call.name, risk, {
+          command: call.name === "shell" ? String(call.arguments.command ?? "") : undefined,
+        });
+
+        if (decision === "ask") {
+          this.info.status = "waiting_permission";
+          const requestId = randomUUID();
+          // Register waiter before broadcasting so UI/auto-resolvers can settle it.
+          const permissionPromise =
+            this.opts.onPermission?.({
+              requestId,
+              toolName: call.name,
+              risk,
+              summary,
+            }) ?? Promise.resolve<"allow" | "deny" | "allow_session">("deny");
+
+          await this.emit({
+            type: "permission.requested",
+            sessionId: this.info.id,
+            requestId,
+            toolName: call.name,
+            risk,
+            summary,
+            at: new Date().toISOString(),
+          });
+
+          const resolved = await permissionPromise;
+
+          await this.emit({
+            type: "permission.resolved",
+            sessionId: this.info.id,
+            requestId,
+            decision: resolved,
+            at: new Date().toISOString(),
+          });
+
+          if (resolved === "allow_session") {
+            grantSessionAllow(this.policy, call.name);
+            decision = "allow";
+          } else if (resolved === "allow") {
+            decision = "allow";
+          } else {
+            decision = "deny";
+          }
+          this.info.status = "running";
+        }
+
+        const callId = call.id || randomUUID();
+        await this.emit({
+          type: "tool.started",
+          sessionId: this.info.id,
+          callId,
+          name: call.name,
+          input: call.arguments,
+          at: new Date().toISOString(),
+        });
+
+        const taskTitle =
+          call.name === "shell"
+            ? `shell: ${String(call.arguments.command ?? "").slice(0, 80)}`
+            : call.name === "write_file"
+              ? `write ${String(call.arguments.path ?? "")}`
+              : call.name === "apply_patch"
+                ? `patch ${String(call.arguments.patch ?? "").match(/\*\*\* (?:Add|Update|Delete) File:\s*(\S+)/)?.[1] ?? "files"}`
+                : call.name === "read_file"
+                  ? `read ${String(call.arguments.path ?? "")}`
+                  : call.name === "list_dir"
+                    ? `list ${String(call.arguments.path ?? ".")}`
+                    : call.name === "grep"
+                      ? `grep ${String(call.arguments.pattern ?? "").slice(0, 40)}`
+                      : call.name === "network_fetch"
+                        ? `fetch ${String(call.arguments.url ?? "").slice(0, 60)}`
+                        : call.name === "git_status"
+                          ? `git status ${String(call.arguments.path ?? ".").slice(0, 40)}`
+                          : call.name === "memory_search"
+                            ? `memory search ${String(call.arguments.query ?? "").slice(0, 40)}`
+                            : call.name === "memory_save"
+                              ? `memory save`
+                              : call.name === "git_diff"
+                                ? `git diff ${String(call.arguments.path ?? ".").slice(0, 40)}`
+                                : call.name === "git_show"
+                                  ? `git show ${String(call.arguments.object ?? "HEAD").slice(0, 40)}`
+                                  : call.name === "git_commit"
+                                    ? `git commit ${String(call.arguments.message ?? "").slice(0, 40)}`
+                                    : call.name === "spawn_subagent"
+                                      ? `subagent ${String(call.arguments.profile ?? "explore")}`
+                                  : call.name;
+
+        if (decision === "deny") {
+          const output = { error: "permission denied by policy/user" };
+          this.messages.push({
+            role: "tool",
+            tool_call_id: callId,
+            name: call.name,
+            content: JSON.stringify(output),
+          });
+          await this.emit({
+            type: "tool.completed",
+            sessionId: this.info.id,
+            callId,
+            name: call.name,
+            ok: false,
+            output,
+            at: new Date().toISOString(),
+          });
+          await this.emit({
+            type: "task.updated",
+            sessionId: this.info.id,
+            taskId: callId,
+            title: taskTitle,
+            status: "cancelled",
+            detail: "用户或策略拒绝执行",
+            at: new Date().toISOString(),
+          });
+          continue;
+        }
+
+        await this.emit({
+          type: "task.updated",
+          sessionId: this.info.id,
+          taskId: callId,
+          title: taskTitle,
+          status: "in_progress",
+          detail: summary,
+          at: new Date().toISOString(),
+        });
+
+        try {
+          this.toolCallCount += 1;
+          let output: unknown;
+          if (call.name === "spawn_subagent") {
+            const goal = String(call.arguments.goal ?? "").trim();
+            if (!goal) throw new Error("goal required");
+            const profile = (String(call.arguments.profile ?? "explore") ||
+              "explore") as SubagentProfile;
+            if (!["explore", "edit", "shell"].includes(profile)) {
+              throw new Error(`invalid subagent profile: ${profile}`);
+            }
+            if (!this.opts.onSpawnSubagent) {
+              throw new Error("spawn_subagent not available in this runtime");
+            }
+            if ((this.opts.subagentDepth ?? 0) >= 2) {
+              throw new Error("sub-agent nesting depth exceeded");
+            }
+            const spawned = await this.opts.onSpawnSubagent({
+              goal,
+              profile,
+              parentSessionId: this.info.id,
+            });
+            output = {
+              ok: spawned.ok,
+              childSessionId: spawned.childSessionId,
+              summary: spawned.summary,
+              error: spawned.error,
+            };
+            await this.emit({
+              type: "task.updated",
+              sessionId: this.info.id,
+              taskId: `sub_${spawned.childSessionId.slice(0, 8)}`,
+              title: `子代理 · ${profile}: ${goal.slice(0, 60)}`,
+              status: spawned.ok ? "completed" : "failed",
+              detail: spawned.summary.slice(0, 500),
+              at: new Date().toISOString(),
+            });
+          } else {
+            output = await this.tools.execute(
+              call.name,
+              this.opts.workspacePath,
+              call.arguments,
+            );
+          }
+
+          if (call.name === "write_file" && typeof call.arguments.path === "string") {
+            const writeOut = output as {
+              path?: string;
+              kind?: "create" | "modify";
+              previous?: string | null;
+              content?: string;
+            };
+            const after =
+              typeof writeOut.content === "string"
+                ? writeOut.content
+                : String(call.arguments.content ?? "");
+            const before =
+              typeof writeOut.previous === "string"
+                ? writeOut.previous
+                : writeOut.previous === null
+                  ? ""
+                  : undefined;
+            await this.emit({
+              type: "diff.updated",
+              sessionId: this.info.id,
+              path: call.arguments.path,
+              kind: writeOut.kind ?? (before ? "modify" : "create"),
+              before: before !== undefined ? clipText(before, 12_000) : undefined,
+              after: clipText(after, 12_000),
+              at: new Date().toISOString(),
+            });
+          }
+
+          if (call.name === "apply_patch") {
+            const patchOut = output as {
+              changes?: Array<{
+                path: string;
+                kind: "create" | "modify" | "delete";
+                previous: string | null;
+                content: string | null;
+              }>;
+            };
+            for (const ch of patchOut.changes ?? []) {
+              await this.emit({
+                type: "diff.updated",
+                sessionId: this.info.id,
+                path: ch.path,
+                kind: ch.kind,
+                before:
+                  ch.previous !== null && ch.previous !== undefined
+                    ? clipText(ch.previous, 12_000)
+                    : ch.kind === "create"
+                      ? ""
+                      : undefined,
+                after:
+                  ch.content !== null && ch.content !== undefined
+                    ? clipText(ch.content, 12_000)
+                    : ch.kind === "delete"
+                      ? ""
+                      : undefined,
+                at: new Date().toISOString(),
+              });
+            }
+          }
+
+          if (call.name === "shell") {
+            const shellOut = output as {
+              code?: number | null;
+              stdout?: string;
+              stderr?: string;
+            };
+            await this.emit({
+              type: "terminal.output",
+              sessionId: this.info.id,
+              callId,
+              command: String(call.arguments.command ?? ""),
+              stdout: clipText(String(shellOut.stdout ?? ""), 20_000),
+              stderr: clipText(String(shellOut.stderr ?? ""), 8_000),
+              code: shellOut.code ?? null,
+              ok: (shellOut.code ?? 0) === 0,
+              at: new Date().toISOString(),
+            });
+          }
+
+          const toolContent =
+            call.name === "write_file"
+              ? JSON.stringify({
+                  path: (output as { path?: string }).path,
+                  bytes: (output as { bytes?: number }).bytes,
+                  kind: (output as { kind?: string }).kind,
+                })
+              : call.name === "apply_patch"
+                ? JSON.stringify({
+                    ok: true,
+                    changeCount: (output as { changeCount?: number }).changeCount,
+                    paths: (
+                      (output as { changes?: Array<{ path: string; kind: string }> }).changes ?? []
+                    ).map((c) => `${c.kind}:${c.path}`),
+                  })
+                : JSON.stringify(output);
+
+          this.messages.push({
+            role: "tool",
+            tool_call_id: callId,
+            name: call.name,
+            content: toolContent,
+          });
+          await this.emit({
+            type: "tool.completed",
+            sessionId: this.info.id,
+            callId,
+            name: call.name,
+            ok: true,
+            output:
+              call.name === "write_file"
+                ? {
+                    path: (output as { path?: string }).path,
+                    bytes: (output as { bytes?: number }).bytes,
+                    kind: (output as { kind?: string }).kind,
+                  }
+                : call.name === "apply_patch"
+                  ? {
+                      changeCount: (output as { changeCount?: number }).changeCount,
+                      paths: (
+                        (output as { changes?: Array<{ path: string; kind: string }> }).changes ??
+                        []
+                      ).map((c) => `${c.kind}:${c.path}`),
+                    }
+                  : output,
+            at: new Date().toISOString(),
+          });
+          await this.emit({
+            type: "task.updated",
+            sessionId: this.info.id,
+            taskId: callId,
+            title: taskTitle,
+            status: "completed",
+            detail: summary,
+            at: new Date().toISOString(),
+          });
+        } catch (err) {
+          const output = {
+            error: err instanceof Error ? err.message : String(err),
+          };
+          this.messages.push({
+            role: "tool",
+            tool_call_id: callId,
+            name: call.name,
+            content: JSON.stringify(output),
+          });
+          await this.emit({
+            type: "tool.completed",
+            sessionId: this.info.id,
+            callId,
+            name: call.name,
+            ok: false,
+            output,
+            at: new Date().toISOString(),
+          });
+          await this.emit({
+            type: "task.updated",
+            sessionId: this.info.id,
+            taskId: callId,
+            title: taskTitle,
+            status: "failed",
+            detail: output.error,
+            at: new Date().toISOString(),
+          });
+        }
+      }
+    }
+  }
+}

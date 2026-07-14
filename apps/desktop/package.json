@@ -1,0 +1,84 @@
+{
+  "name": "@hfq/desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HFQ Code desktop shell",
+  "main": "electron/main.cjs",
+  "author": "HFQ",
+  "scripts": {
+    "dev": "electron electron/main.cjs",
+    "start": "electron electron/main.cjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "node -e \"console.log('desktop: use pnpm pack:win for installers')\"",
+    "pack:dir": "electron-builder --win dir --x64",
+    "pack:win": "electron-builder --win nsis portable --x64",
+    "pack:portable": "electron-builder --win portable --x64"
+  },
+  "dependencies": {
+    "@hfq/agent-core": "workspace:*",
+    "@hfq/config": "workspace:*",
+    "@hfq/mcp": "workspace:*",
+    "@hfq/memory": "workspace:*",
+    "@hfq/policy": "workspace:*",
+    "@hfq/providers": "workspace:*",
+    "@hfq/session-api": "workspace:*",
+    "@hfq/shared": "workspace:*",
+    "@hfq/skills": "workspace:*",
+    "@hfq/tools": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "electron": "35.7.5",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.8.2"
+  },
+  "build": {
+    "appId": "com.hfq.code",
+    "productName": "HFQ Code",
+    "copyright": "Copyright © HFQ",
+    "directories": {
+      "output": "release"
+    },
+    "electronDist": "node_modules/electron/dist",
+    "files": [
+      "electron/**/*",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "asar": false,
+    "extraResources": [
+      {
+        "from": "../../skills/bundled",
+        "to": "skills/bundled",
+        "filter": ["**/*"]
+      }
+    ],
+    "extraMetadata": {
+      "main": "electron/main.cjs"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "HFQ Code"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.${ext}"
+    }
+  }
+}

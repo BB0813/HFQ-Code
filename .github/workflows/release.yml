@@ -1,0 +1,110 @@
+# Build Windows NSIS + portable on version tags and publish a GitHub Release.
+# Trigger: push tag v1.0.0 (or workflow_dispatch with tag input).
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (e.g. v1.0.0). Leave empty to use package.json version."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pack-win:
+    name: pack:win · upload
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Quality gates
+        run: pnpm release:check
+
+      - name: Package Windows (NSIS + portable)
+        # signAndEditExecutable is false in package.json — no winCodeSign / cert required
+        env:
+          # Prefer electron from node_modules when present; builder still downloads if needed
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: pnpm pack:win
+
+      - name: List release artifacts
+        shell: bash
+        run: |
+          ls -lah apps/desktop/release/ || true
+          test -f "apps/desktop/release/HFQ Code-1.0.0-x64.exe" || test -n "$(ls apps/desktop/release/*.exe 2>/dev/null)"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hfq-code-windows
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/builder-debug.yml
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Resolve tag name
+        id: meta
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.tag }}" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            VER=$(node -p "require('./package.json').version")
+            echo "tag=v${VER}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: HFQ Code ${{ steps.meta.outputs.tag }}
+          draft: false
+          prerelease: ${{ contains(steps.meta.outputs.tag, '-') }}
+          generate_release_notes: true
+          body: |
+            ## HFQ Code ${{ steps.meta.outputs.tag }}
+
+            Windows desktop coding agent.
+
+            ### Downloads
+            - **NSIS installer** — `HFQ Code-*-x64.exe`
+            - **Portable** — `HFQ Code-*-portable.exe`
+
+            Unsigned builds may trigger SmartScreen. Data lives in `%APPDATA%/HFQ-Code`.
+
+            See [docs/RELEASE-1.0.0.md](./docs/RELEASE-1.0.0.md) and [docs/PACKAGING.md](./docs/PACKAGING.md).
+          files: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.blockmap
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

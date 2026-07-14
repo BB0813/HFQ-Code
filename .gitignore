@@ -1,0 +1,14 @@
+node_modules/
+dist/
+out/
+.turbo/
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+coverage/
+*.tsbuildinfo
+apps/desktop/release/
+.hfq/
+credentials.json

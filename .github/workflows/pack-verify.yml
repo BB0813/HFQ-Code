@@ -1,0 +1,35 @@
+# Optional: verify unpacked tree on Windows (heavier; manual or weekly).
+name: Pack verify
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Mondays 06:00 UTC
+    - cron: "0 6 * * 1"
+
+concurrency:
+  group: pack-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pack-verify:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: pack:verify
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: pnpm pack:verify

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HFQ Code</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="logo">HFQ</div>
+          <div class="brand-copy">
+            <div class="brand-title">HFQ Code</div>
+            <div class="brand-sub">本地编码智能体</div>
+          </div>
+        </div>
+
+        <div class="nav-section">工作区</div>
+        <nav id="nav" class="nav" aria-label="主导航"></nav>
+
+        <div class="sidebar-footer">
+          <div class="ws-card">
+            <div class="ws-card-label">已绑定工作区</div>
+            <div id="wsPath" class="ws-path">尚未选择文件夹</div>
+          </div>
+          <button id="openWs" class="btn primary block" type="button">打开工作区</button>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div class="topbar-left">
+            <h1 id="pageTitle">首页</h1>
+            <div id="crumb" class="crumb"></div>
+          </div>
+          <div class="topbar-right">
+            <div id="sessionBadge" class="pill">
+              <span class="dot"></span>
+              <span id="sessionBadgeText">无会话</span>
+            </div>
+            <div id="status" class="pill">
+              <span class="dot"></span>
+              <span id="statusText">就绪</span>
+            </div>
+          </div>
+        </header>
+        <section id="content" class="content"></section>
+      </main>
+    </div>
+
+    <div id="permModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="permTitle">
+      <div class="modal-card">
+        <h2 id="permTitle">需要授权</h2>
+        <p id="permSummary" class="muted"></p>
+        <div class="perm-meta">
+          <span id="permTool" class="badge info"></span>
+          <span id="permRisk" class="badge warn"></span>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn" data-perm="deny">拒绝</button>
+          <button type="button" class="btn" data-perm="allow">允许一次</button>
+          <button type="button" class="btn primary" data-perm="allow_session">本会话允许</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
