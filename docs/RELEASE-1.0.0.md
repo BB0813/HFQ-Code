@@ -47,17 +47,17 @@ Deferred: interactive PTY, electron-updater, DPAPI, OAuth MCP, IM gateway.
 - [ ] Settings → 导出诊断包
 - [ ] Quit cleanly; reopen resumes data dir
 
-## Git tag
+## GitHub
 
-This workspace is **not** a git repository by default. When you have a remote:
+- Repo: https://github.com/BB0813/HFQ-Code  
+- Tag: `v1.0.0` (push triggers **Release** workflow → NSIS + portable on the GitHub Release page)
 
 ```bash
 git tag -a v1.0.0 -m "HFQ Code 1.0.0"
 git push origin v1.0.0
 ```
 
-Attach the two `.exe` files (and optional blockmap) to the release page.
-
+Local artifacts under `apps/desktop/release/` remain useful for offline smoke; CI uploads the same class of binaries.
 ## Rebuild
 
 ```bash
