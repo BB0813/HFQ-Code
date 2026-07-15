@@ -39,6 +39,8 @@ contextBridge.exposeInMainWorld("hfq", {
   writeChangeContent: (payload) => ipcRenderer.invoke("changes:writeContent", payload),
   getAppPaths: () => ipcRenderer.invoke("app:paths"),
   listSkills: (payload) => ipcRenderer.invoke("skills:list", payload ?? {}),
+  skillsCatalog: (payload) => ipcRenderer.invoke("skills:catalog", payload ?? {}),
+  installSkillFromDir: (payload) => ipcRenderer.invoke("skills:installFromDir", payload ?? {}),
   getPolicyMatrix: (payload) => ipcRenderer.invoke("policy:matrix", payload ?? {}),
   getSessionAllows: (payload) => ipcRenderer.invoke("policy:sessionAllows", payload ?? {}),
   grantSessionAllow: (payload) => ipcRenderer.invoke("policy:grantSession", payload ?? {}),
@@ -61,6 +63,7 @@ contextBridge.exposeInMainWorld("hfq", {
   exportDiagnostics: () => ipcRenderer.invoke("diagnostics:export"),
   checkForUpdates: (payload) => ipcRenderer.invoke("update:check", payload ?? {}),
   openReleasePage: (payload) => ipcRenderer.invoke("update:openRelease", payload ?? {}),
+  openExternal: (payload) => ipcRenderer.invoke("shell:openExternal", payload ?? {}),
 
   onSessionEvent: (handler) => {
     const listener = (_event, data) => handler(data);

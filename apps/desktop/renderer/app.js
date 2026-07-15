@@ -79,6 +79,12 @@ audit: /** @type {any[]} */ ([]),
   /** @type {string} all | tools | permissions | changes | terminal | session */
   auditFilter: "all",
   skills: /** @type {any[]} */ ([]),
+  /** @type {"installed" | "store"} */
+  skillsTab: "installed",
+  /** @type {null | { items: any[], source?: string, remoteError?: string | null, fetchedAt?: string, catalogUrl?: string, userSkillsDir?: string }} */
+  skillsCatalog: null,
+  /** @type {string} */
+  skillsCatalogFilter: "",
   config: /** @type {any | null} */ (null),
 policyMatrix: /** @type {any[] | null} */ (null),
   /** @type {string[]} */
@@ -1839,9 +1845,12 @@ function formatUpdateStatus(result, currentVersionFallback) {
       : result?.source === "ghproxy"
         ? `ghproxy${result.proxyBase ? ` · ${result.proxyBase}` : ""}`
         : "";
-  const viaSuffix = via ? ` · 经由 ${via}` : "";
+  const fallbackNote = result?.fallbackUsed
+    ? " · 已从 ghproxy 回退直连"
+    : "";
+  const viaSuffix = via ? ` · 经由 ${via}${fallbackNote}` : fallbackNote;
   if (!result) {
-    return `当前版本 ${current} · 尚未检查（默认 ghproxy，避免直连 GitHub 卡顿）`;
+    return `当前版本 ${current} · 尚未检查（默认 ghproxy，失败时自动回退直连）`;
   }
   if (result.skipped && result.reason === "throttled") {
     return `当前版本 ${current} · 距上次检查不足 6 小时（可点「检查新版本」强制查询）${viaSuffix}`;
@@ -2314,9 +2323,9 @@ function pageTasks() {
 			      </div>
 			    </div>`
 		    : "";
-		  if (!state.tasks.length && !children.length) {
-		    return `<div class="panel"><div class="empty-state"><div class="empty-icon">${ICONS.tasks}</div><h3>暂无任务</h3><p>工具调用会自动记为任务；子代理会出现在本页树中。</p></div></div>`;
-		  }
+if (!state.tasks.length && !children.length) {
+			    return `<div class="panel"><div class="empty-state"><div class="empty-icon">${ICONS.tasks}</div><h3>暂无任务</h3><p>工具调用会自动记为任务；<code>/goal …</code> 长运行目标也会出现在此。子代理会出现在本页树中。运行中可用会话「停止」取消 goal。</p></div></div>`;
+			  }
 		  if (!state.tasks.length) {
 		    return `${childBlock}<div class="panel"><div class="empty-state"><h3>暂无本会话工具任务</h3><p>子代理列表见上方。</p></div></div>`;
 		  }
@@ -2636,45 +2645,164 @@ const tools =
 	}
 
 function pageSkills() {
-	  if (!state.skills.length) {
-	    return `<div class="panel"><div class="empty-state"><div class="empty-icon">${ICONS.skills}</div><h3>正在加载技能…</h3><p>扫描工作区、用户与内置技能目录。</p></div></div>`;
-	  }
-	  const rows = state.skills
-	    .map(
-	      (s) => `<tr>
-	        <td><code>${escapeHtml(s.name)}</code></td>
-	        <td>${escapeHtml(s.description)}</td>
-	        <td><span class="badge">${escapeHtml(s.source)}</span></td>
-	        <td>${
-	          s.eligible
-	            ? '<span class="badge ok">可用</span>'
-	            : `<span class="badge bad">${escapeHtml(s.ineligibleReason || "已拦截")}</span>`
-	        }</td>
-	        <td>${
-	          s.dir
-	            ? `<button type="button" class="btn sm" data-open-skill-dir="${escapeHtml(s.dir)}">打开目录</button>`
-	            : "—"
-	        }</td>
-	      </tr>`,
-	    )
-	    .join("");
-	  const paths = state.appPaths || {};
-	  return `<div class="panel">
-	    <div class="panel-head">
-	      <div>
-	        <h2>技能</h2>
-	        <p>AgentSkills SKILL.md，附带轻量 OpenClaw 门控</p>
-	      </div>
-	      <div class="row" style="gap:8px">
-	        <button type="button" class="btn ghost sm" id="skillsRefreshBtn">刷新</button>
-	        <button type="button" class="btn sm" id="skillsOpenUserDir" ${
-	          paths.skills ? "" : "disabled"
-	        }>用户技能目录</button>
-	      </div>
-	    </div>
-	    <div class="table-wrap"><table class="table"><thead><tr><th>名称</th><th>描述</th><th>来源</th><th>门控</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-	  </div>`;
-	}
+  const paths = state.appPaths || {};
+  const tab = state.skillsTab === "store" ? "store" : "installed";
+  const tabBar = `<div class="seg-tabs" role="tablist" style="margin-bottom:12px">
+    <button type="button" class="seg-tab ${tab === "installed" ? "active" : ""}" data-skills-tab="installed">已安装</button>
+    <button type="button" class="seg-tab ${tab === "store" ? "active" : ""}" data-skills-tab="store">技能商店 <span class="badge info">beta</span></button>
+  </div>`;
+
+  if (tab === "store") {
+    const cat = state.skillsCatalog;
+    const q = (state.skillsCatalogFilter || "").trim().toLowerCase();
+    const items = Array.isArray(cat?.items) ? cat.items : [];
+    const filtered = q
+      ? items.filter(
+          (it) =>
+            String(it.name || "")
+              .toLowerCase()
+              .includes(q) ||
+            String(it.description || "")
+              .toLowerCase()
+              .includes(q) ||
+            (Array.isArray(it.tags) && it.tags.some((t) => String(t).toLowerCase().includes(q))),
+        )
+      : items;
+    const cards = filtered.length
+      ? filtered
+          .map((it) => {
+            const tags = Array.isArray(it.tags)
+              ? it.tags
+                  .slice(0, 4)
+                  .map((t) => `<span class="badge">${escapeHtml(String(t))}</span>`)
+                  .join(" ")
+              : "";
+            const installed = it.installed
+              ? `<span class="badge ok">已安装</span>`
+              : `<span class="badge">未安装</span>`;
+            const origin =
+              it.origin === "remote"
+                ? "remote"
+                : it.origin === "local_preview"
+                  ? "local"
+                  : "curated";
+            return `<article class="skill-card">
+              <div class="skill-card-head">
+                <strong class="mono">${escapeHtml(it.name)}</strong>
+                ${installed}
+                <span class="badge">${escapeHtml(origin)}</span>
+              </div>
+              <p class="faint" style="margin:6px 0 8px">${escapeHtml(it.description || "")}</p>
+              <div class="row" style="gap:6px;flex-wrap:wrap">${tags}</div>
+              <div class="row" style="gap:6px;margin-top:10px;flex-wrap:wrap">
+                ${
+                  it.homepage
+                    ? `<button type="button" class="btn ghost sm" data-open-skill-home="${escapeHtml(
+                        it.homepage,
+                      )}">主页</button>`
+                    : ""
+                }
+                ${
+                  it.packageUrl
+                    ? `<button type="button" class="btn ghost sm" data-open-skill-home="${escapeHtml(
+                        it.packageUrl,
+                      )}">包地址</button>`
+                    : ""
+                }
+                <span class="faint" style="font-size:11px">${
+                  it.installed
+                    ? "已在本地技能中"
+                    : it.tags?.includes?.("planned") || /planned|coming/i.test(it.description || "")
+                      ? "规划中 · 可本地文件夹安装同类技能"
+                      : "从本地文件夹安装 SKILL.md 包"
+                }</span>
+              </div>
+            </article>`;
+          })
+          .join("")
+      : `<div class="empty-state"><h3>${cat ? "无匹配技能" : "正在加载目录…"}</h3><p>可刷新远程目录，或从本地文件夹安装。</p></div>`;
+
+    return `<div class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>技能 · ClawHub 商店（脚手架）</h2>
+          <p>1.0.5 起提供策展目录 + 本地安装；完整远程包管理将分阶段补齐</p>
+        </div>
+        <div class="row" style="gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn ghost sm" id="skillsCatalogRefreshBtn">刷新目录</button>
+          <button type="button" class="btn sm primary" id="skillsInstallDirBtn">从文件夹安装</button>
+          <button type="button" class="btn sm" id="skillsOpenUserDir" ${
+            paths.skills || cat?.userSkillsDir ? "" : "disabled"
+          }>用户技能目录</button>
+        </div>
+      </div>
+      ${tabBar}
+      <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
+        <input id="skillsCatalogFilter" class="input" style="max-width:280px" placeholder="筛选名称 / 标签…" value="${escapeHtml(
+          state.skillsCatalogFilter || "",
+        )}" />
+        <span class="faint mono" style="font-size:11px">${escapeHtml(
+          cat
+            ? `source=${cat.source || "—"}${cat.remoteError ? ` · ${cat.remoteError}` : ""}`
+            : "loading…",
+        )}</span>
+      </div>
+      <p class="faint" style="margin:0 0 10px">远程目录默认尝试仓库 <code>skills/catalog.json</code>（可 404）；失败时仍显示离线策展列表。安装仅复制到用户技能目录，不会执行远程脚本。</p>
+      <div class="skill-store-grid">${cards}</div>
+      <p class="form-status" id="skillsStoreStatus"></p>
+    </div>`;
+  }
+
+  if (!state.skills.length) {
+    return `<div class="panel">
+      <div class="panel-head">
+        <div><h2>技能</h2><p>AgentSkills SKILL.md，附带轻量 OpenClaw 门控</p></div>
+        <div class="row" style="gap:8px">
+          <button type="button" class="btn ghost sm" id="skillsRefreshBtn">刷新</button>
+          <button type="button" class="btn sm primary" id="skillsInstallDirBtn">从文件夹安装</button>
+        </div>
+      </div>
+      ${tabBar}
+      <div class="empty-state"><div class="empty-icon">${ICONS.skills}</div><h3>暂无已安装技能</h3><p>扫描工作区、用户与内置技能目录；也可在「技能商店」安装。</p></div>
+    </div>`;
+  }
+  const rows = state.skills
+    .map(
+      (s) => `<tr>
+        <td><code>${escapeHtml(s.name)}</code></td>
+        <td>${escapeHtml(s.description)}</td>
+        <td><span class="badge">${escapeHtml(s.source)}</span></td>
+        <td>${
+          s.eligible
+            ? '<span class="badge ok">可用</span>'
+            : `<span class="badge bad">${escapeHtml(s.ineligibleReason || "已拦截")}</span>`
+        }</td>
+        <td>${
+          s.dir
+            ? `<button type="button" class="btn sm" data-open-skill-dir="${escapeHtml(s.dir)}">打开目录</button>`
+            : "—"
+        }</td>
+      </tr>`,
+    )
+    .join("");
+  return `<div class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>技能</h2>
+        <p>AgentSkills SKILL.md，附带轻量 OpenClaw 门控</p>
+      </div>
+      <div class="row" style="gap:8px">
+        <button type="button" class="btn ghost sm" id="skillsRefreshBtn">刷新</button>
+        <button type="button" class="btn sm primary" id="skillsInstallDirBtn">从文件夹安装</button>
+        <button type="button" class="btn sm" id="skillsOpenUserDir" ${
+          paths.skills ? "" : "disabled"
+        }>用户技能目录</button>
+      </div>
+    </div>
+    ${tabBar}
+    <div class="table-wrap"><table class="table"><thead><tr><th>名称</th><th>描述</th><th>来源</th><th>门控</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+  </div>`;
+}
 
 function auditTypeLabel(type) {
 		  const map = {
@@ -3624,35 +3752,144 @@ document.querySelectorAll("[data-delete-session]").forEach((btn) => {
 				  });
 				}
 
-		function bindSkillsHandlers() {
-		  el("skillsRefreshBtn")?.addEventListener("click", async () => {
-		    await refreshSkills();
-		    if (state.page === "skills") {
-		      el("content").innerHTML = pageHtml("skills");
-		      bindSkillsHandlers();
-		    }
-		  });
-		  el("skillsOpenUserDir")?.addEventListener("click", async () => {
-		    const dir = state.appPaths?.skills;
-		    if (!dir) return;
-		    try {
-		      await window.hfq.openPath({ path: dir });
-		    } catch (err) {
-		      setStatus(err instanceof Error ? err.message : String(err), "warn");
-		    }
-		  });
-		  document.querySelectorAll("[data-open-skill-dir]").forEach((btn) => {
-		    btn.addEventListener("click", async () => {
-		      const dir = btn.getAttribute("data-open-skill-dir");
-		      if (!dir) return;
-		      try {
-		        await window.hfq.openPath({ path: dir });
-		      } catch (err) {
-		        setStatus(err instanceof Error ? err.message : String(err), "warn");
-		      }
-		    });
-		  });
-		}
+async function refreshSkillsCatalog(opts = {}) {
+  try {
+    if (!window.hfq?.skillsCatalog) {
+      state.skillsCatalog = {
+        items: [],
+        source: "curated",
+        remoteError: "skillsCatalog IPC unavailable",
+        fetchedAt: new Date().toISOString(),
+      };
+      return state.skillsCatalog;
+    }
+    const res = await window.hfq.skillsCatalog({
+      workspacePath: state.workspacePath,
+      remote: opts.remote !== false,
+    });
+    state.skillsCatalog = res;
+    return res;
+  } catch (err) {
+    state.skillsCatalog = {
+      items: [],
+      source: "curated",
+      remoteError: err instanceof Error ? err.message : String(err),
+      fetchedAt: new Date().toISOString(),
+    };
+    return state.skillsCatalog;
+  }
+}
+
+function bindSkillsHandlers() {
+  el("skillsRefreshBtn")?.addEventListener("click", async () => {
+    await refreshSkills();
+    if (state.page === "skills") {
+      el("content").innerHTML = pageHtml("skills");
+      bindSkillsHandlers();
+    }
+  });
+  el("skillsCatalogRefreshBtn")?.addEventListener("click", async () => {
+    const status = el("skillsStoreStatus");
+    if (status) status.textContent = "正在刷新目录…";
+    await refreshSkillsCatalog({ remote: true });
+    if (state.page === "skills") {
+      el("content").innerHTML = pageHtml("skills");
+      bindSkillsHandlers();
+    }
+    setStatus("技能目录已刷新", "live");
+  });
+  el("skillsInstallDirBtn")?.addEventListener("click", async () => {
+    const status = el("skillsStoreStatus");
+    try {
+      if (!window.hfq?.installSkillFromDir) throw new Error("installSkillFromDir unavailable");
+      const res = await window.hfq.installSkillFromDir({});
+      if (res?.cancelled) {
+        if (status) status.textContent = "已取消";
+        return;
+      }
+      if (!res?.ok) {
+        const msg = res?.error || "安装失败";
+        if (status) status.textContent = msg;
+        setStatus(msg, "warn");
+        return;
+      }
+      await Promise.all([refreshSkills(), refreshSkillsCatalog({ remote: false })]);
+      if (status) status.textContent = `已安装 ${res.name} → ${res.destDir || "用户技能目录"}`;
+      setStatus(`技能已安装：${res.name}`, "live");
+      if (state.page === "skills") {
+        el("content").innerHTML = pageHtml("skills");
+        bindSkillsHandlers();
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (status) status.textContent = msg;
+      setStatus(msg, "warn");
+    }
+  });
+  el("skillsOpenUserDir")?.addEventListener("click", async () => {
+    const dir = state.appPaths?.skills || state.skillsCatalog?.userSkillsDir;
+    if (!dir) return;
+    try {
+      await window.hfq.openPath({ path: dir });
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : String(err), "warn");
+    }
+  });
+  document.querySelectorAll("[data-skills-tab]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const next = btn.getAttribute("data-skills-tab") === "store" ? "store" : "installed";
+      state.skillsTab = next;
+      if (next === "store" && !state.skillsCatalog) {
+        await refreshSkillsCatalog();
+      }
+      if (state.page === "skills") {
+        el("content").innerHTML = pageHtml("skills");
+        bindSkillsHandlers();
+      }
+    });
+  });
+  el("skillsCatalogFilter")?.addEventListener("input", (ev) => {
+    state.skillsCatalogFilter = /** @type {HTMLInputElement} */ (ev.target).value || "";
+    if (state.page === "skills" && state.skillsTab === "store") {
+      el("content").innerHTML = pageHtml("skills");
+      bindSkillsHandlers();
+      const input = el("skillsCatalogFilter");
+      if (input instanceof HTMLInputElement) {
+        input.focus();
+        const len = input.value.length;
+        input.setSelectionRange(len, len);
+      }
+    }
+  });
+  document.querySelectorAll("[data-open-skill-dir]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const dir = btn.getAttribute("data-open-skill-dir");
+      if (!dir) return;
+      try {
+        await window.hfq.openPath({ path: dir });
+      } catch (err) {
+        setStatus(err instanceof Error ? err.message : String(err), "warn");
+      }
+    });
+  });
+  document.querySelectorAll("[data-open-skill-home]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const url = btn.getAttribute("data-open-skill-home");
+      if (!url) return;
+      try {
+        if (window.hfq?.openExternal) {
+          await window.hfq.openExternal({ url });
+        } else if (window.hfq?.openReleasePage) {
+          await window.hfq.openReleasePage({ url });
+        } else {
+          setStatus("无法打开链接", "warn");
+        }
+      } catch (err) {
+        setStatus(err instanceof Error ? err.message : String(err), "warn");
+      }
+    });
+  });
+}
 
 function bindChangesHandlers() {
 			  const filterInput = el("changeFilterInput");
@@ -4383,7 +4620,11 @@ if (id === "chat") {
 		    bindModelsHandlers();
 		  }
 		  if (id === "skills") {
-		    void Promise.all([refreshSkills(), refreshAppPaths()]).then(() => {
+		    void Promise.all([
+		      refreshSkills(),
+		      refreshAppPaths(),
+		      state.skillsTab === "store" ? refreshSkillsCatalog() : Promise.resolve(),
+		    ]).then(() => {
 		      if (state.page === "skills") {
 		        el("content").innerHTML = pageHtml("skills");
 		        bindSkillsHandlers();

@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "updatedAt": "2026-07-15",
+  "skills": [
+    {
+      "id": "hello-workspace",
+      "name": "hello-workspace",
+      "description": "Introduce HFQ Code workspace conventions and AGENTS.md usage.",
+      "author": "HFQ",
+      "tags": ["onboarding", "bundled"],
+      "homepage": "https://github.com/BB0813/HFQ-Code"
+    },
+    {
+      "id": "code-review-checklist",
+      "name": "code-review-checklist",
+      "description": "Structured PR / diff review checklist for coding agents (planned pack).",
+      "author": "HFQ",
+      "tags": ["review", "planned"]
+    },
+    {
+      "id": "git-safe-commit",
+      "name": "git-safe-commit",
+      "description": "Conventional commits + pre-commit sanity checks via tools.",
+      "author": "HFQ",
+      "tags": ["git", "planned"]
+    },
+    {
+      "id": "test-fix-loop",
+      "name": "test-fix-loop",
+      "description": "Run failing tests, patch, re-run until green or blocked.",
+      "author": "HFQ",
+      "tags": ["test", "planned"]
+    },
+    {
+      "id": "docs-from-diff",
+      "name": "docs-from-diff",
+      "description": "Turn recent file changes into CHANGELOG / README snippets.",
+      "author": "HFQ",
+      "tags": ["docs", "planned"]
+    }
+  ]
+}

@@ -645,7 +645,7 @@ export class AgentSession {
           taskId: goalTaskId,
           title: `goal: ${parsed.body.slice(0, 80)}`,
           status: "completed",
-          detail: "goal turn finished",
+          detail: `goal turn finished · rounds≤${GOAL_MAX_ROUNDS} tools≤${GOAL_MAX_TOOL_CALLS}`,
           at: new Date().toISOString(),
         });
       }
@@ -718,7 +718,9 @@ export class AgentSession {
   private async runLoop(): Promise<void> {
     const maxRounds = this.turnMaxRounds ?? this.maxRounds;
     const maxToolCalls = this.turnMaxToolCalls ?? this.maxToolCalls;
+    let lastRound = -1;
     for (let round = 0; round < maxRounds; round++) {
+      lastRound = round;
       this.assertNotAborted();
       this.refreshTools();
       // Soft-compact long histories so multi-turn sessions stay within model budgets.
@@ -1192,6 +1194,18 @@ export class AgentSession {
           });
         }
       }
+    }
+
+    // Exhausted elevated / default round budget without a clean assistant stop.
+    if (lastRound >= maxRounds - 1 && maxRounds > 0) {
+      await this.emit({
+        type: "message.completed",
+        sessionId: this.info.id,
+        messageId: randomUUID(),
+        role: "system",
+        text: `本轮达到轮次上限（${maxRounds} 轮）。可用停止中断后，用 /goal 续写目标，或拆成更小步骤继续。`,
+        at: new Date().toISOString(),
+      });
     }
   }
 }

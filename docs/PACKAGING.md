@@ -4,13 +4,13 @@
 
 | Artifact | Command | Output |
 |----------|---------|--------|
-| NSIS installer + portable | `pnpm pack:win` | `apps/desktop/release/HFQ Code-1.0.4-x64.exe` + `…-portable.exe` |
+| NSIS installer + portable | `pnpm pack:win` | `apps/desktop/release/HFQ Code-1.0.5-x64.exe` + `…-portable.exe` |
 | SHA-256 sums | `pnpm sha256:release` | `apps/desktop/release/SHA256SUMS.txt` |
 | Portable only | `pnpm --filter @hfq/desktop pack:portable` | same dir |
 | Unpacked dir (debug) | `pnpm pack:dir` | `release/win-unpacked/` |
 | Unpacked smoke asserts | `pnpm pack:verify` | builds dir + checks tree |
 
-Release handoff notes: [RELEASE-1.0.4.md](./RELEASE-1.0.4.md) · [RELEASE-1.0.3.md](./RELEASE-1.0.3.md) · [RELEASE-1.0.2.md](./RELEASE-1.0.2.md) · [RELEASE-1.0.1.md](./RELEASE-1.0.1.md).
+Release handoff notes: [RELEASE-1.0.5.md](./RELEASE-1.0.5.md) · [RELEASE-1.0.4.md](./RELEASE-1.0.4.md) · [RELEASE-1.0.3.md](./RELEASE-1.0.3.md) · [RELEASE-1.0.2.md](./RELEASE-1.0.2.md).
 
 ## CI / CD (GitHub Actions)
 
@@ -33,7 +33,7 @@ Requires: Node 22+, pnpm 9+, Windows x64, network for electron-builder downloads
 
 ## Version
 
-Product version comes from `apps/desktop/package.json` (currently **1.0.4**). Keep root `package.json` version aligned.
+Product version comes from `apps/desktop/package.json` (currently **1.0.5**). Keep root `package.json` version aligned.
 
 App icon: `apps/desktop/build/icon.ico` (+ `icon.png`); electron-builder uses `directories.buildResources` / `win.icon`.
 
@@ -77,7 +77,7 @@ Manual:
 2. Confirm data dir under `%APPDATA%/HFQ-Code`
 3. Open a workspace → new session → list/read (worker or local fallback)
 4. Settings → 诊断包 export works
-5. Settings shows version **1.0.4**
+5. Settings shows version **1.0.5**
 6. Taskbar / shortcut / `HFQ Code.exe` icon is the HFQ monogram (not the default Electron atom)
 
 ## Signing

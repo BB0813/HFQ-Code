@@ -22,6 +22,16 @@ Last updated: 2026-07-15 · Product **1.0.0**
 1. electron-updater + code signing  
 2. node-pty / ConPTY  
 3. DPAPI credentials  
-4. Split `app.js` / React UI  
+4. Split `app.js` / React UI — tracked in [UI-REDESIGN.md](./UI-REDESIGN.md)  
+5. ClawHub store depth (remote packages) — scaffold in **1.0.5**  
+6. Update-check resilience — **Done in 1.0.5** (ghproxy → direct fallback)
+
+### Shipped after 1.0.0 (patch train)
+
+| Version | Notes |
+|---------|--------|
+| 1.0.1–1.0.3 | Identity, access modes, chat UI polish |
+| 1.0.4 | `/goal` + ghproxy default update checks |
+| 1.0.5 | Update fallback · goal budget hint · Skills store scaffold · UI redesign TODO |
 
 Plan: [PHASE3.md](./PHASE3.md)

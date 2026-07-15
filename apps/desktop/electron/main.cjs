@@ -554,6 +554,80 @@ function netFetchJson(url, timeoutMs = 12_000) {
  * Query GitHub Releases latest. Manual channel only — never downloads installers.
  * @param {{ force?: boolean, silent?: boolean }} [opts]
  */
+/**
+ * Build a successful update-check result from GitHub Releases JSON.
+ * @param {any} json
+ * @param {{ currentVersion: string, checkedAt: string, endpoint: { url: string, source: string, proxyBase: string | null }, fallbackUsed?: boolean, primaryError?: string | null }} ctx
+ */
+function buildUpdateSuccessResult(json, ctx) {
+  const currentVersion = ctx.currentVersion;
+  const checkedAt = ctx.checkedAt;
+  const endpoint = ctx.endpoint;
+  if (!json) {
+    return {
+      ok: true,
+      skipped: false,
+      currentVersion,
+      latestVersion: null,
+      updateAvailable: false,
+      releaseUrl: UPDATE_RELEASES_URL,
+      releaseNotes: null,
+      publishedAt: null,
+      assets: [],
+      checkedAt,
+      message: "暂无已发布的 Release",
+      source: endpoint.source,
+      proxyBase: endpoint.proxyBase,
+      apiUrl: endpoint.url,
+      fallbackUsed: Boolean(ctx.fallbackUsed),
+      primaryError: ctx.primaryError || null,
+    };
+  }
+
+  const tag = String(json.tag_name || json.name || "").trim();
+  const latestVersion = stripVersionNoise(tag);
+  const updateAvailable =
+    Boolean(latestVersion) && compareSemver(latestVersion, currentVersion) > 0;
+  const assets = Array.isArray(json.assets)
+    ? json.assets
+        .filter((a) => a && a.browser_download_url)
+        .map((a) => {
+          const direct = String(a.browser_download_url);
+          const mirrored =
+            endpoint.source === "ghproxy" && endpoint.proxyBase
+              ? `${endpoint.proxyBase}${direct}`
+              : direct;
+          return {
+            name: String(a.name || ""),
+            url: direct,
+            mirrorUrl: mirrored !== direct ? mirrored : undefined,
+            size: Number(a.size) || 0,
+            contentType: a.content_type ? String(a.content_type) : "",
+          };
+        })
+    : [];
+  return {
+    ok: true,
+    skipped: false,
+    currentVersion,
+    latestVersion,
+    updateAvailable,
+    releaseUrl: String(json.html_url || UPDATE_RELEASES_URL),
+    releaseNotes: typeof json.body === "string" ? json.body.slice(0, 4000) : null,
+    publishedAt: json.published_at ? String(json.published_at) : null,
+    assets,
+    checkedAt,
+    tagName: tag,
+    prerelease: Boolean(json.prerelease),
+    draft: Boolean(json.draft),
+    source: endpoint.source,
+    proxyBase: endpoint.proxyBase,
+    apiUrl: endpoint.url,
+    fallbackUsed: Boolean(ctx.fallbackUsed),
+    primaryError: ctx.primaryError || null,
+  };
+}
+
 async function checkForUpdates(opts = {}) {
   const force = Boolean(opts.force);
   const currentVersion = app.getVersion() || "0.0.0";
@@ -591,6 +665,8 @@ async function checkForUpdates(opts = {}) {
         source: endpoint.source,
         proxyBase: endpoint.proxyBase,
         apiUrl: endpoint.url,
+        fallbackUsed: false,
+        primaryError: null,
       };
     }
   }
@@ -598,74 +674,70 @@ async function checkForUpdates(opts = {}) {
   try {
     const { status, json } = await netFetchJson(endpoint.url);
     if (status === 404 || !json) {
-      const result = {
-        ok: true,
-        skipped: false,
+      const result = buildUpdateSuccessResult(null, {
         currentVersion,
-        latestVersion: null,
-        updateAvailable: false,
-        releaseUrl: UPDATE_RELEASES_URL,
-        releaseNotes: null,
-        publishedAt: null,
-        assets: [],
         checkedAt,
-        message: "暂无已发布的 Release",
-        source: endpoint.source,
-        proxyBase: endpoint.proxyBase,
-        apiUrl: endpoint.url,
-      };
+        endpoint,
+      });
       await persistUpdateCheckStamp(checkedAt).catch(() => {});
       return result;
     }
-
-    const tag = String(json.tag_name || json.name || "").trim();
-    const latestVersion = stripVersionNoise(tag);
-    const updateAvailable =
-      Boolean(latestVersion) && compareSemver(latestVersion, currentVersion) > 0;
-    const assets = Array.isArray(json.assets)
-      ? json.assets
-          .filter((a) => a && a.browser_download_url)
-          .map((a) => {
-            const direct = String(a.browser_download_url);
-            // When using ghproxy for API, also surface mirrored download URLs for convenience.
-            const mirrored =
-              endpoint.source === "ghproxy" && endpoint.proxyBase
-                ? `${endpoint.proxyBase}${direct}`
-                : direct;
-            return {
-              name: String(a.name || ""),
-              url: direct,
-              mirrorUrl: mirrored !== direct ? mirrored : undefined,
-              size: Number(a.size) || 0,
-              contentType: a.content_type ? String(a.content_type) : "",
-            };
-          })
-      : [];
-    const releaseUrl = String(json.html_url || UPDATE_RELEASES_URL);
-    const releaseNotes = typeof json.body === "string" ? json.body.slice(0, 4000) : null;
-    const publishedAt = json.published_at ? String(json.published_at) : null;
-
-    await persistUpdateCheckStamp(checkedAt).catch(() => {});
-
-    return {
-      ok: true,
-      skipped: false,
+    const result = buildUpdateSuccessResult(json, {
       currentVersion,
-      latestVersion,
-      updateAvailable,
-      releaseUrl,
-      releaseNotes,
-      publishedAt,
-      assets,
       checkedAt,
-      tagName: tag,
-      prerelease: Boolean(json.prerelease),
-      draft: Boolean(json.draft),
-      source: endpoint.source,
-      proxyBase: endpoint.proxyBase,
-      apiUrl: endpoint.url,
-    };
+      endpoint,
+    });
+    await persistUpdateCheckStamp(checkedAt).catch(() => {});
+    return result;
   } catch (err) {
+    const primaryError = err instanceof Error ? err.message : String(err);
+    // When ghproxy fails, automatically try direct GitHub once (manual check resilience).
+    if (endpoint.source === "ghproxy") {
+      try {
+        const directEp = resolveUpdateApiUrl({ source: "direct" });
+        const { status, json } = await netFetchJson(directEp.url, 15_000);
+        if (status === 404 || !json) {
+          const result = buildUpdateSuccessResult(null, {
+            currentVersion,
+            checkedAt,
+            endpoint: directEp,
+            fallbackUsed: true,
+            primaryError,
+          });
+          await persistUpdateCheckStamp(checkedAt).catch(() => {});
+          return result;
+        }
+        const result = buildUpdateSuccessResult(json, {
+          currentVersion,
+          checkedAt,
+          endpoint: directEp,
+          fallbackUsed: true,
+          primaryError,
+        });
+        await persistUpdateCheckStamp(checkedAt).catch(() => {});
+        return result;
+      } catch (err2) {
+        const secondary = err2 instanceof Error ? err2.message : String(err2);
+        return {
+          ok: false,
+          skipped: false,
+          currentVersion,
+          latestVersion: null,
+          updateAvailable: false,
+          releaseUrl: UPDATE_RELEASES_URL,
+          releaseNotes: null,
+          publishedAt: null,
+          assets: [],
+          checkedAt,
+          error: `ghproxy 失败（${primaryError}）；直连回退也失败（${secondary}）`,
+          source: endpoint.source,
+          proxyBase: endpoint.proxyBase,
+          apiUrl: endpoint.url,
+          fallbackUsed: true,
+          primaryError,
+        };
+      }
+    }
     return {
       ok: false,
       skipped: false,
@@ -677,10 +749,12 @@ async function checkForUpdates(opts = {}) {
       publishedAt: null,
       assets: [],
       checkedAt,
-      error: err instanceof Error ? err.message : String(err),
+      error: primaryError,
       source: endpoint.source,
       proxyBase: endpoint.proxyBase,
       apiUrl: endpoint.url,
+      fallbackUsed: false,
+      primaryError,
     };
   }
 }
@@ -770,6 +844,20 @@ function registerIpc() {
 
   ipcMain.handle("update:check", async (_evt, payload = {}) => {
     return checkForUpdates({ force: payload?.force !== false });
+  });
+
+  /** User-initiated https link open (skill homepage, docs). */
+  ipcMain.handle("shell:openExternal", async (_evt, payload = {}) => {
+    const raw = String(payload?.url || "").trim();
+    let url;
+    try {
+      url = new URL(raw);
+    } catch {
+      throw new Error("invalid URL");
+    }
+    if (url.protocol !== "https:") throw new Error("only https URLs allowed");
+    await shell.openExternal(url.toString());
+    return { ok: true, url: url.toString() };
   });
 
   ipcMain.handle("update:openRelease", async (_evt, payload = {}) => {
@@ -1585,6 +1673,81 @@ function registerIpc() {
       ineligibleReason: s.ineligibleReason,
       dir: s.dir,
     }));
+  });
+
+  /**
+   * ClawHub-style catalog (1.0.5 scaffold): curated offline list + optional remote JSON.
+   * Does not auto-download packages; install is local-folder only for now.
+   */
+  ipcMain.handle("skills:catalog", async (_evt, payload = {}) => {
+    const ws = payload.workspacePath || workspacePath;
+    const { agentCore, skillsMod } = await loadModules();
+    const dirs = await agentCore.ensureDataDirs();
+    const installed = await skillsMod.loadSkills({
+      workspacePath: ws || undefined,
+      userSkillsDir: dirs.skills,
+      sharedAgentsDir: path.join(os.homedir(), ".agents", "skills"),
+      bundledDir: bundledSkillsDir(),
+    });
+    const installedNames = installed.map((s) => s.name);
+    const curated = skillsMod.curatedCatalog();
+    let remote = [];
+    let remoteError;
+    let source = "curated";
+    const catalogUrl =
+      typeof payload.url === "string" && payload.url.trim()
+        ? payload.url.trim()
+        : skillsMod.DEFAULT_SKILL_CATALOG_URL;
+    const wantRemote = payload?.remote !== false;
+    if (wantRemote && catalogUrl.startsWith("https://")) {
+      try {
+        const { status, json } = await netFetchJson(catalogUrl, 10_000);
+        if (status >= 200 && status < 300 && json) {
+          remote = skillsMod.parseRemoteCatalogJson(json);
+          if (remote.length) source = curated.length ? "mixed" : "remote";
+        } else if (status === 404) {
+          remoteError = "remote catalog 404 (using curated)";
+        } else {
+          remoteError = `remote catalog HTTP ${status}`;
+        }
+      } catch (err) {
+        remoteError = err instanceof Error ? err.message : String(err);
+      }
+    }
+    const items = skillsMod.annotateInstalled(
+      skillsMod.mergeCatalog(curated, remote),
+      installedNames,
+    );
+    return {
+      items,
+      source,
+      remoteError: remoteError || null,
+      fetchedAt: new Date().toISOString(),
+      catalogUrl,
+      userSkillsDir: dirs.skills,
+    };
+  });
+
+  ipcMain.handle("skills:installFromDir", async (_evt, payload = {}) => {
+    const { agentCore, skillsMod } = await loadModules();
+    const dirs = await agentCore.ensureDataDirs();
+    let sourceDir = typeof payload.sourceDir === "string" ? payload.sourceDir.trim() : "";
+    if (!sourceDir) {
+      const picked = await dialog.showOpenDialog(mainWindow || undefined, {
+        title: "选择技能文件夹（需含 SKILL.md）",
+        properties: ["openDirectory"],
+      });
+      if (picked.canceled || !picked.filePaths?.[0]) {
+        return { ok: false, cancelled: true };
+      }
+      sourceDir = picked.filePaths[0];
+    }
+    const res = await skillsMod.installSkillFromDir({
+      sourceDir,
+      userSkillsDir: dirs.skills,
+      overwrite: Boolean(payload.overwrite),
+    });
+    return res;
   });
 
   ipcMain.handle("policy:matrix", async (_evt, payload = {}) => {

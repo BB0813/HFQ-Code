@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.0.5 — 2026-07-15
+
+### Update check resilience
+- When default **ghproxy** check fails, automatically retry **direct** GitHub once
+- Status line shows 已从 ghproxy 回退直连 when fallback succeeds
+- Both paths failing returns combined Chinese error detail
+
+### `/goal` polish
+- Exhausted round budget emits a clear system hint (continue with `/goal` or smaller steps)
+- Goal task detail records elevated round/tool caps on completion
+
+### Skills · ClawHub store scaffold
+- Skills page tabs: **已安装** / **技能商店 (beta)**
+- Offline curated catalog + optional remote `skills/catalog.json`
+- **从文件夹安装** copies a `SKILL.md` tree into the user skills dir (safe name + path checks)
+- IPC: `skills:catalog`, `skills:installFromDir`; `shell:openExternal` for https homepages
+
+### Docs / roadmap
+- [docs/UI-REDESIGN.md](./docs/UI-REDESIGN.md) — page redesign TODO (R0–R5)
+- COMPAT / PRODUCT: store is scaffold, not full ClawHub marketplace
+
+---
+
 ## 1.0.4 — 2026-07-14
 
 ### `/goal` long-running tasks

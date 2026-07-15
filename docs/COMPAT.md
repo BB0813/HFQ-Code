@@ -31,11 +31,21 @@ metadata:
 
 Also scan `~/.agents/skills` as a **read-only import source** (ZCode / shared agent skills), without writing back.
 
+### ClawHub-style store (1.0.5 scaffold)
+
+| Capability | Status |
+|------------|--------|
+| Skills page **商店** tab + curated catalog | Done |
+| Optional remote `skills/catalog.json` | Done (best-effort) |
+| Install from local folder → user skills dir | Done |
+| Remote package download / zip install | Not yet |
+| Full ClawHub marketplace / publish | Not yet |
+
 ### Not in MVP
 
 - Full `install` specs (brew/node/download UI)
 - `command-dispatch: tool` slash bypass parity
-- Node-hosted remote skills
+- Node-hosted remote skills auto-run
 - Publishing to ClawHub
 
 ## Project rules
