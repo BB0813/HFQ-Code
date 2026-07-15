@@ -1,6 +1,6 @@
 {
   "name": "@hfq/desktop",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "private": true,
   "description": "HFQ Code desktop shell",
   "main": "electron/main.cjs",

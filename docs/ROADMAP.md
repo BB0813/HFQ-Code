@@ -1,7 +1,7 @@
 # HFQ Code — Development roadmap (post-1.0.5)
 
 Status: **active plan**  
-Baseline: product **1.0.7** (`v1.0.7`) · 2026-07-15  
+Baseline: product **1.0.8** (`v1.0.8`) · 2026-07-15  
 Last updated: 2026-07-15
 
 ## Positioning (frozen)
@@ -13,11 +13,11 @@ Last updated: 2026-07-15
 
 ## Where we are
 
-| Area | State after 1.0.7 |
+| Area | State after 1.0.8 |
 |------|-------------------|
 | Agent loop + tools + worker | Shipped |
 | Access modes / permission modal | Shipped (1.0.2+) |
-| Chat composer polish | Shipped (1.0.3) |
+| Chat composer polish | Shipped (1.0.3 · **1.0.8** upward menus + model-only label) |
 | `/goal` long-run + Tasks + Chat banner | Shipped (1.0.4–1.0.6) |
 | Update check multi-source fallback | **Shipped** (1.0.5–1.0.7): mirrors → ungh → direct |
 | Skills store (preview / conflict / tags) | **Shipped** (1.0.6); remote zip **not yet** |
@@ -65,26 +65,31 @@ Small, shippable patches. Keep `pnpm release:check` green; tag `v*` + Actions + 
 | A2-u2 | Chain extra ghproxy-style bases + **ungh.cc** + direct | ✅ |
 | A2-u3 | Normalize ungh assets / release notes | ✅ |
 
-**Note:** original A2 remote zip deferred to **1.0.8** (hotfix priority for dead ghproxy.com).
+**Note:** original A2 remote zip deferred (hotfix priority for dead ghproxy.com → 1.0.7).
 
-### A3 · **1.0.8** — ClawHub remote packages (safe path) + permission polish
+### A3 · **1.0.8** — Composer model UI polish ✅ shipped
+
+| ID | Work | Done |
+|----|------|------|
+| A3-ui1 | Topbar provider · model badge | ✅ |
+| A3-ui2 | Model button shows model id only | ✅ |
+| A3-ui3 | Access/model menus open **upward** | ✅ |
+
+**Note:** remote zip + permission polish deferred to **1.0.9**.
+
+### A4 · **1.0.9** — ClawHub remote packages (safe path) + permission polish
 
 | ID | Work | Notes |
 |----|------|--------|
-| A3-z1 | Catalog item `packageUrl` → download **zip/tarball** to temp | https only; size limit; timeout |
-| A3-z2 | Extract under user skills with same safe-name rules as local install | Reject path escape / absolute paths in zip |
-| A3-z3 | Optional SHA256 in `catalog.json` | Fail closed if mismatch |
-| A3-z4 | UI: install progress + error surface | No auto-run of scripts from package |
-| A3-p1 | Permission modal multi-request queue hardening | timeouts, session label |
-| A3-p2 | Worker crash → clear modal + composer unlock | audit remaining paths |
+| A4-z1 | Catalog item `packageUrl` → download **zip/tarball** to temp | https only; size limit; timeout |
+| A4-z2 | Extract under user skills with same safe-name rules as local install | Reject path escape / absolute paths in zip |
+| A4-z3 | Optional SHA256 in `catalog.json` | Fail closed if mismatch |
+| A4-z4 | UI: install progress + error surface | No auto-run of scripts from package |
+| A4-p1 | Permission modal multi-request queue hardening | timeouts, session label |
+| A4-p2 | Worker crash → clear modal + composer unlock | audit remaining paths |
+| A4-p3 | `git_commit` message preview in UI before tool allow (when confirm mode) | |
 
 **Policy:** packages are **data + SKILL.md instructions**, not arbitrary installer executables.
-
-| ID | Work |
-|----|------|
-| A3-1 | Permission modal multi-request queue hardening (timeouts, session label) |
-| A3-2 | Worker crash → clear modal + composer unlock (audit remaining paths) |
-| A3-3 | `git_commit` message preview in UI before tool allow (when confirm mode) |
 
 ---
 
@@ -210,11 +215,11 @@ Parallelism allowed: **R1 module split** can start immediately alongside 1.0.6 f
 
 ---
 
-## Next concrete sprint (after 1.0.6)
+## Next concrete sprint (after 1.0.8)
 
-1. **1.0.7** remote zip install (https-only, size limit, optional SHA256)  
+1. **1.0.9** remote zip install (https-only, size limit, optional SHA256) + permission polish  
 2. Continue R1: more renderer extracts beyond `skills-ui.js`  
 3. **1.1** node-pty / ConPTY design spike when ready  
 4. Keep `pnpm release:check` green on main  
 
-Default next ship target: **1.0.7** unless product priority changes.
+Default next ship target: **1.0.9** unless product priority changes.

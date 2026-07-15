@@ -787,36 +787,66 @@ function setStatus(text, kind = "") {
   }
 }
 
+function getActiveProviderMeta() {
+  const providerId =
+    state.session?.providerId || state.config?.activeProviderId || "mock";
+  const providers = Array.isArray(state.config?.providers) ? state.config.providers : [];
+  const hit = providers.find((p) => p.id === providerId);
+  const model =
+    state.session?.model || state.config?.activeModel || hit?.defaultModel || "mock-hfq";
+  return {
+    providerId,
+    providerName: hit?.name || providerId,
+    model,
+  };
+}
+
+/** Topbar: 提供方 / 模型 — always visible above page content. */
+function updateModelProviderBadge() {
+  const badge = el("modelProviderBadge");
+  const text = el("modelProviderBadgeText");
+  if (!text) return;
+  const { providerId, providerName, model } = getActiveProviderMeta();
+  const label = `${providerName} · ${model}`;
+  text.textContent = truncateLabel(label, 42);
+  if (badge) {
+    badge.title = `提供方 ${providerName}（${providerId}）\n模型 ${model}\n点击打开模型页`;
+    badge.dataset.providerId = providerId;
+    badge.dataset.model = model;
+  }
+}
+
 function setSessionBadge() {
-	  const pill = el("sessionBadge");
-	  const label = el("sessionBadgeText");
-	  if (label && pill) {
-	    pill.classList.remove("live", "warn", "busy");
-	    if (!state.session) {
-	      label.textContent = "无会话";
-	    } else {
-	      const st = state.session.status || "idle";
-	      label.textContent = `${statusLabel(st)} · ${state.session.id.slice(0, 8)}`;
-	      if (st === "running") pill.classList.add("busy");
-	      else if (st === "waiting_permission") pill.classList.add("warn");
-	      else if (st === "idle" || st === "completed") pill.classList.add("live");
-	      else if (st === "failed") pill.classList.add("warn");
-	    }
-	  }
-	  // Chat toolbar status chip (separate from topbar badge).
-	  const statusNode = el("sessionStatusLabel");
-	  const statusPill = statusNode?.closest(".session-status-pill");
-	  if (statusNode) {
-	    statusNode.textContent = state.session
-	      ? statusLabel(state.session.status || "idle")
-	      : "无会话";
-	  }
-	  if (statusPill) {
-	    statusPill.classList.remove("live", "warn", "busy");
-	    const cls = sessionStatusClass();
-	    if (cls) statusPill.classList.add(cls);
-	  }
-	}
+		  const pill = el("sessionBadge");
+		  const label = el("sessionBadgeText");
+		  if (label && pill) {
+		    pill.classList.remove("live", "warn", "busy");
+		    if (!state.session) {
+		      label.textContent = "无会话";
+		    } else {
+		      const st = state.session.status || "idle";
+		      label.textContent = `${statusLabel(st)} · ${state.session.id.slice(0, 8)}`;
+		      if (st === "running") pill.classList.add("busy");
+		      else if (st === "waiting_permission") pill.classList.add("warn");
+		      else if (st === "idle" || st === "completed") pill.classList.add("live");
+		      else if (st === "failed") pill.classList.add("warn");
+		    }
+		  }
+		  // Chat toolbar status chip (separate from topbar badge).
+		  const statusNode = el("sessionStatusLabel");
+		  const statusPill = statusNode?.closest(".session-status-pill");
+		  if (statusNode) {
+		    statusNode.textContent = state.session
+		      ? statusLabel(state.session.status || "idle")
+		      : "无会话";
+		  }
+		  if (statusPill) {
+		    statusPill.classList.remove("live", "warn", "busy");
+		    const cls = sessionStatusClass();
+		    if (cls) statusPill.classList.add(cls);
+		  }
+		  updateModelProviderBadge();
+		}
 
 function setCrumb() {
   const node = el("crumb");
@@ -1094,15 +1124,15 @@ function renderAccessModeMenuHtml(mode, opts = {}) {
       </span>
     </button>`;
   }).join("");
-  return `<div class="mode-menu" id="${menuId}">
+  return `<div class="mode-menu mode-menu-up" id="${menuId}">
     <button type="button" class="btn ${modeBtnClass} sm composer-ctl" id="${buttonId}" title="${escapeHtml(
       mode.hint,
     )}" ${state.session?.id ? "" : "disabled"} aria-haspopup="menu" aria-expanded="false">
       <span class="composer-ctl-kicker">访问</span>
       <span class="composer-ctl-value">${escapeHtml(mode.short)}</span>
-      <span class="composer-ctl-caret">▾</span>
+      <span class="composer-ctl-caret">▴</span>
     </button>
-    <div class="mode-menu-panel hidden" id="${panelId}" role="menu">
+    <div class="mode-menu-panel mode-menu-panel-up hidden" id="${panelId}" role="menu">
       ${modeMenu}
       <div class="mode-menu-sep"></div>
       <button type="button" class="mode-menu-item" id="accessModeSetDefault" role="menuitem">
@@ -1146,26 +1176,20 @@ function renderModelMenuHtml(provider, model) {
         <span class="mode-menu-check">${active ? "✓" : ""}</span>
         <span class="mode-menu-text">
           <span class="mode-menu-label mono">${escapeHtml(m)}</span>
-          <span class="mode-menu-hint">${escapeHtml(activeProvider.name || activeProvider.id)}</span>
         </span>
       </button>`;
     })
     .join("");
-  return `<div class="mode-menu mode-menu-end" id="modelMenu">
+  const providerLabel = activeProvider.name || activeProvider.id || provider;
+  return `<div class="mode-menu mode-menu-up mode-menu-end" id="modelMenu">
     <button type="button" class="btn ghost sm composer-ctl" id="modelMenuBtn" title="${escapeHtml(
-      `${provider} / ${model}`,
+      `${providerLabel} / ${model}`,
     )}" aria-haspopup="menu" aria-expanded="false">
       <span class="composer-ctl-kicker">模型</span>
       <span class="composer-ctl-value mono" id="modelMenuLabel">${escapeHtml(truncateLabel(model, 28))}</span>
-      <span class="composer-ctl-caret">▾</span>
+      <span class="composer-ctl-caret">▴</span>
     </button>
-    <div class="mode-menu-panel mode-menu-panel-end hidden" id="modelMenuPanel" role="menu">
-      <div class="mode-menu-section">提供方</div>
-      ${providerItems || `<div class="mode-menu-empty">无提供方</div>`}
-      <div class="mode-menu-sep"></div>
-      <div class="mode-menu-section">模型 · ${escapeHtml(activeProvider.name || activeProvider.id)}</div>
-      ${modelItems}
-      <div class="mode-menu-sep"></div>
+    <div class="mode-menu-panel mode-menu-panel-up mode-menu-panel-end hidden" id="modelMenuPanel" role="menu">
       <button type="button" class="mode-menu-item" id="openModelsPageBtn" role="menuitem">
         <span class="mode-menu-check"></span>
         <span class="mode-menu-text">
@@ -1173,6 +1197,12 @@ function renderModelMenuHtml(provider, model) {
           <span class="mode-menu-hint">配置 API Key、baseURL 与模型列表</span>
         </span>
       </button>
+      <div class="mode-menu-sep"></div>
+      <div class="mode-menu-section">提供方</div>
+      ${providerItems || `<div class="mode-menu-empty">无提供方</div>`}
+      <div class="mode-menu-sep"></div>
+      <div class="mode-menu-section">模型</div>
+      ${modelItems}
     </div>
   </div>`;
 }
@@ -1748,10 +1778,10 @@ function pageChat() {
             </div>
             <div class="session-title-line" id="sessionTitleLabel">${escapeHtml(title)}</div>
             <div class="session-meta-sub">
+              <span class="session-provider-chip" title="模型提供方">${escapeHtml(provider)}</span>
               <span class="session-model-chip mono" title="${escapeHtml(`${provider} / ${model}`)}">${escapeHtml(
                 truncateLabel(model, 32),
               )}</span>
-              <span class="session-provider-chip">${escapeHtml(provider)}</span>
               <span class="faint mono" id="sessionUsage">${escapeHtml(usageText)}</span>
             </div>
           </div>
@@ -3700,6 +3730,7 @@ function bindChatHandlers() {
         const p = (state.config?.providers || []).find((x) => x.id === providerId);
         const model = p?.defaultModel || p?.models?.[0] || state.config?.activeModel;
         state.config = await window.hfq.setActiveModel({ providerId, model });
+        updateModelProviderBadge();
         setStatus(`提供方 · ${providerId}`, "live");
         modelMenuApi.close();
         renderPage("chat");
@@ -3716,6 +3747,7 @@ function bindChatHandlers() {
       if (!model || !providerId || !window.hfq?.setActiveModel) return;
       try {
         state.config = await window.hfq.setActiveModel({ providerId, model });
+        updateModelProviderBadge();
         setStatus(`模型 · ${model}（新会话生效）`, "live");
         modelMenuApi.close();
         renderPage("chat");
@@ -4590,55 +4622,58 @@ function bindModelsHandlers() {
   });
 
 el("saveActiveBtn")?.addEventListener("click", async () => {
-	    try {
+		    try {
+		      state.config = await window.hfq.setActiveModel({
+		        providerId: el("activeProviderSelect")?.value,
+		        model: el("activeModelSelect")?.value,
+		      });
+		      updateModelProviderBadge();
+		      const status = el("modelsStatus");
+		      if (status) status.textContent = "已保存。请新建会话后生效。";
+		      renderPage("models");
+		    } catch (err) {
+		      const status = el("modelsStatus");
+		      if (status) status.textContent = err instanceof Error ? err.message : String(err);
+		    }
+		  });
+
+		  el("testModelBtn")?.addEventListener("click", async () => {
+		    const status = el("modelsStatus");
+		    const providerId = el("activeProviderSelect")?.value || state.config?.activeProviderId;
+		    const model = el("activeModelSelect")?.value || state.config?.activeModel;
+		    if (status) status.textContent = "测试中…";
+		    try {
+		      // Persist selection first so test uses the form values when saved on disk.
+		      state.config = await window.hfq.setActiveModel({ providerId, model });
+		      updateModelProviderBadge();
+		      const res = await window.hfq.testModel({ providerId, model });
+		      if (res?.ok) {
+		        if (status) {
+		          status.textContent = `连通成功 · ${res.latencyMs}ms · ${String(res.reply || "").slice(0, 80)}`;
+		        }
+		        setStatus(`模型就绪 · ${providerId}/${model}`, "live");
+		      } else {
+		        if (status) status.textContent = `失败: ${res?.error || "unknown"}`;
+		        setStatus("模型连通失败", "warn");
+		      }
+		    } catch (err) {
+		      if (status) status.textContent = err instanceof Error ? err.message : String(err);
+		      setStatus("模型连通失败", "warn");
+		    }
+		  });
+
+	  document.querySelectorAll("[data-activate]").forEach((btn) => {
+	    btn.addEventListener("click", async () => {
+	      const providerId = btn.getAttribute("data-activate");
+	      const p = cfg.providers.find((x) => x.id === providerId);
 	      state.config = await window.hfq.setActiveModel({
-	        providerId: el("activeProviderSelect")?.value,
-	        model: el("activeModelSelect")?.value,
+	        providerId,
+	        model: p?.defaultModel || p?.models?.[0],
 	      });
-	      const status = el("modelsStatus");
-	      if (status) status.textContent = "已保存。请新建会话后生效。";
+	      updateModelProviderBadge();
 	      renderPage("models");
-	    } catch (err) {
-	      const status = el("modelsStatus");
-	      if (status) status.textContent = err instanceof Error ? err.message : String(err);
-	    }
+	    });
 	  });
-
-	  el("testModelBtn")?.addEventListener("click", async () => {
-	    const status = el("modelsStatus");
-	    const providerId = el("activeProviderSelect")?.value || state.config?.activeProviderId;
-	    const model = el("activeModelSelect")?.value || state.config?.activeModel;
-	    if (status) status.textContent = "测试中…";
-	    try {
-	      // Persist selection first so test uses the form values when saved on disk.
-	      state.config = await window.hfq.setActiveModel({ providerId, model });
-	      const res = await window.hfq.testModel({ providerId, model });
-	      if (res?.ok) {
-	        if (status) {
-	          status.textContent = `连通成功 · ${res.latencyMs}ms · ${String(res.reply || "").slice(0, 80)}`;
-	        }
-	        setStatus(`模型就绪 · ${providerId}/${model}`, "live");
-	      } else {
-	        if (status) status.textContent = `失败: ${res?.error || "unknown"}`;
-	        setStatus("模型连通失败", "warn");
-	      }
-	    } catch (err) {
-	      if (status) status.textContent = err instanceof Error ? err.message : String(err);
-	      setStatus("模型连通失败", "warn");
-	    }
-	  });
-
-  document.querySelectorAll("[data-activate]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const providerId = btn.getAttribute("data-activate");
-      const p = cfg.providers.find((x) => x.id === providerId);
-      state.config = await window.hfq.setActiveModel({
-        providerId,
-        model: p?.defaultModel || p?.models?.[0],
-      });
-      renderPage("models");
-    });
-  });
 
   el("fillFromActiveBtn")?.addEventListener("click", () => {
     const p =
@@ -4728,20 +4763,21 @@ async function refreshSkills() {
 }
 
 async function refreshConfig() {
-	  try {
-	    state.config = await window.hfq.getConfig();
-	    if (state.config?.prefs?.theme) applyTheme(state.config.prefs.theme);
-	  } catch (err) {
-	state.config = {
-		      activeProviderId: "mock",
-		      activeModel: "mock-hfq",
-		      providers: [],
-		      recentWorkspaces: [],
-		      prefs: { theme: "dark", proxyUrl: "", memoryEnabled: true, compactMaxChars: 48000 },
-		      error: err instanceof Error ? err.message : String(err),
-		    };
-	  }
-	}
+		  try {
+		    state.config = await window.hfq.getConfig();
+		    if (state.config?.prefs?.theme) applyTheme(state.config.prefs.theme);
+		  } catch (err) {
+		state.config = {
+			      activeProviderId: "mock",
+			      activeModel: "mock-hfq",
+			      providers: [],
+			      recentWorkspaces: [],
+			      prefs: { theme: "dark", proxyUrl: "", memoryEnabled: true, compactMaxChars: 48000 },
+			      error: err instanceof Error ? err.message : String(err),
+			    };
+		  }
+		  updateModelProviderBadge();
+		}
 
 async function refreshPolicy() {
   try {
@@ -4781,14 +4817,15 @@ async function refreshMcp() {
 }
 
 function renderPage(id) {
-	  state.page = id;
-	  const meta = NAV_META[id] || { label: id };
-	  el("pageTitle").textContent = meta.label;
-	  setCrumb();
-	  el("content").innerHTML = pageHtml(id);
-	  document.querySelectorAll(".nav button").forEach((btn) => {
-	    btn.classList.toggle("active", btn.dataset.id === id);
-	  });
+		  state.page = id;
+		  const meta = NAV_META[id] || { label: id };
+		  el("pageTitle").textContent = meta.label;
+		  setCrumb();
+		  updateModelProviderBadge();
+		  el("content").innerHTML = pageHtml(id);
+		  document.querySelectorAll(".nav button").forEach((btn) => {
+		    btn.classList.toggle("active", btn.dataset.id === id);
+		  });
 if (id === "home") {
 		    bindHomeHandlers();
 		    void Promise.all([refreshSessions(), refreshConfig()]).then(() => {
@@ -5121,11 +5158,16 @@ el("openWs").addEventListener("click", async () => {
     }
   }
 
-await refreshConfig();
-	  await Promise.all([refreshSessions(), refreshAppPaths()]);
-	  setSessionBadge();
-	  setCrumb();
-	  renderPage("home");
-	}
+el("modelProviderBadge")?.addEventListener("click", () => {
+	    renderPage("models");
+	  });
+
+	await refreshConfig();
+		  await Promise.all([refreshSessions(), refreshAppPaths()]);
+		  setSessionBadge();
+		  setCrumb();
+		  updateModelProviderBadge();
+		  renderPage("home");
+		}
 
 boot();

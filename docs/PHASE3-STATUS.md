@@ -23,8 +23,8 @@ Last updated: 2026-07-15 · Product **1.0.0**
 2. node-pty / ConPTY  
 3. DPAPI credentials  
 4. Split `app.js` / React UI — tracked in [UI-REDESIGN.md](./UI-REDESIGN.md)  
-5. ClawHub store depth — preview/conflict/tags in **1.0.6**; remote zip still **1.0.7**  
-6. Update-check resilience — **Done in 1.0.5** (ghproxy → direct fallback)
+5. ClawHub store depth — preview/conflict/tags in **1.0.6**; remote zip still **1.0.9**  
+6. Update-check resilience — **Done in 1.0.5–1.0.7** (mirrors → ungh → direct)
 
 ### Shipped after 1.0.0 (patch train)
 
@@ -35,5 +35,6 @@ Last updated: 2026-07-15 · Product **1.0.0**
 | 1.0.5 | Update fallback · goal budget hint · Skills store scaffold · UI redesign TODO |
 | 1.0.6 | Store preview/conflict/tags · goal banner · `skills-ui.js` R1 extract |
 | 1.0.7 | Update multi-source fallback (HTML ghproxy · ungh · direct) |
+| 1.0.8 | Topbar provider · model-only composer control · menus open upward |
 
 Plan: [PHASE3.md](./PHASE3.md) · **Forward plan:** [ROADMAP.md](./ROADMAP.md) · UI: [UI-REDESIGN.md](./UI-REDESIGN.md)
