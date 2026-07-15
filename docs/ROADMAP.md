@@ -1,7 +1,7 @@
 # HFQ Code — Development roadmap (post-1.0.5)
 
 Status: **active plan**  
-Baseline: product **1.0.8** (`v1.0.8`) · 2026-07-15  
+Baseline: product **1.0.9** (`v1.0.9`) · 2026-07-15  
 Last updated: 2026-07-15
 
 ## Positioning (frozen)
@@ -13,14 +13,14 @@ Last updated: 2026-07-15
 
 ## Where we are
 
-| Area | State after 1.0.8 |
+| Area | State after 1.0.9 |
 |------|-------------------|
 | Agent loop + tools + worker | Shipped |
-| Access modes / permission modal | Shipped (1.0.2+) |
+| Access modes / permission modal | Shipped (1.0.2+) · **1.0.9** timeout + crash unlock |
 | Chat composer polish | Shipped (1.0.3 · **1.0.8** upward menus + model-only label) |
 | `/goal` long-run + Tasks + Chat banner | Shipped (1.0.4–1.0.6) |
 | Update check multi-source fallback | **Shipped** (1.0.5–1.0.7): mirrors → ungh → direct |
-| Skills store (preview / conflict / tags) | **Shipped** (1.0.6); remote zip **not yet** |
+| Skills store (preview / conflict / tags / **remote zip**) | **Shipped** (1.0.6 + **1.0.9**) |
 | True interactive Terminal (PTY) | **Not shipped** (one-shot shell) |
 | DPAPI credentials / code signing / electron-updater | **Not shipped** |
 | Renderer split / full UI redesign | **R1 started** (`skills-ui.js`) — [UI-REDESIGN.md](./UI-REDESIGN.md) |
@@ -77,17 +77,17 @@ Small, shippable patches. Keep `pnpm release:check` green; tag `v*` + Actions + 
 
 **Note:** remote zip + permission polish deferred to **1.0.9**.
 
-### A4 · **1.0.9** — ClawHub remote packages (safe path) + permission polish
+### A4 · **1.0.9** — ClawHub remote packages (safe path) + permission polish ✅ shipped
 
-| ID | Work | Notes |
-|----|------|--------|
-| A4-z1 | Catalog item `packageUrl` → download **zip/tarball** to temp | https only; size limit; timeout |
-| A4-z2 | Extract under user skills with same safe-name rules as local install | Reject path escape / absolute paths in zip |
-| A4-z3 | Optional SHA256 in `catalog.json` | Fail closed if mismatch |
-| A4-z4 | UI: install progress + error surface | No auto-run of scripts from package |
-| A4-p1 | Permission modal multi-request queue hardening | timeouts, session label |
-| A4-p2 | Worker crash → clear modal + composer unlock | audit remaining paths |
-| A4-p3 | `git_commit` message preview in UI before tool allow (when confirm mode) | |
+| ID | Work | Done |
+|----|------|------|
+| A4-z1 | Catalog item `packageUrl` → download **zip/tarball** to temp | ✅ |
+| A4-z2 | Extract under user skills with same safe-name rules as local install | ✅ |
+| A4-z3 | Optional SHA256 in `catalog.json` | ✅ |
+| A4-z4 | UI: install progress + error surface | ✅ |
+| A4-p1 | Permission modal multi-request queue hardening | ✅ |
+| A4-p2 | Worker crash → clear modal + composer unlock | ✅ |
+| A4-p3 | `git_commit` message preview in UI before tool allow (when confirm mode) | ✅ |
 
 **Policy:** packages are **data + SKILL.md instructions**, not arbitrary installer executables.
 
@@ -215,11 +215,11 @@ Parallelism allowed: **R1 module split** can start immediately alongside 1.0.6 f
 
 ---
 
-## Next concrete sprint (after 1.0.8)
+## Next concrete sprint (after 1.0.9)
 
-1. **1.0.9** remote zip install (https-only, size limit, optional SHA256) + permission polish  
-2. Continue R1: more renderer extracts beyond `skills-ui.js`  
-3. **1.1** node-pty / ConPTY design spike when ready  
+1. Continue R1: more renderer extracts beyond `skills-ui.js`  
+2. **1.1** node-pty / ConPTY design spike when ready  
+3. Changes / Git UX polish (Track B2) when capacity allows  
 4. Keep `pnpm release:check` green on main  
 
-Default next ship target: **1.0.9** unless product priority changes.
+Default next ship target: **1.1** (PTY spike) unless product priority changes.

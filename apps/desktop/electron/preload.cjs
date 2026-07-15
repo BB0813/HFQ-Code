@@ -41,6 +41,8 @@ contextBridge.exposeInMainWorld("hfq", {
   listSkills: (payload) => ipcRenderer.invoke("skills:list", payload ?? {}),
   skillsCatalog: (payload) => ipcRenderer.invoke("skills:catalog", payload ?? {}),
   installSkillFromDir: (payload) => ipcRenderer.invoke("skills:installFromDir", payload ?? {}),
+  installSkillFromPackage: (payload) =>
+    ipcRenderer.invoke("skills:installFromPackage", payload ?? {}),
   previewSkill: (payload) => ipcRenderer.invoke("skills:preview", payload ?? {}),
   getPolicyMatrix: (payload) => ipcRenderer.invoke("policy:matrix", payload ?? {}),
   getSessionAllows: (payload) => ipcRenderer.invoke("policy:sessionAllows", payload ?? {}),

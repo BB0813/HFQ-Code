@@ -1,14 +1,21 @@
 /**
- * ClawHub-style skill catalog (1.0.5 scaffold).
+ * ClawHub-style skill catalog.
  *
- * Full remote ClawHub marketplace is phased; this module provides:
+ * Provides:
  * - a built-in curated catalog (bundled metadata)
  * - optional remote JSON catalog fetch (best-effort)
  * - local folder install into the user skills directory
+ * - remote zip/tarball install (https only, size limit, optional SHA-256)
  */
 
+import { createHash } from "node:crypto";
+import { createWriteStream } from "node:fs";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
+import * as tar from "tar";
+import yauzl from "yauzl";
 import { parseSkillMarkdown } from "./parse.js";
 
 export interface SkillCatalogItem {
@@ -25,8 +32,10 @@ export interface SkillCatalogItem {
   installed?: boolean;
   /** Optional author / publisher label. */
   author?: string;
-  /** Remote package hint (not auto-downloaded in 1.0.5). */
+  /** Remote package URL (https zip/tarball). */
   packageUrl?: string;
+  /** Optional expected SHA-256 (hex) of the package body. */
+  packageSha256?: string;
 }
 
 export interface SkillCatalogResult {
@@ -159,10 +168,30 @@ export function parseRemoteCatalogJson(data: unknown): SkillCatalogItem[] {
       tags: Array.isArray(o.tags) ? o.tags.map(String).slice(0, 12) : undefined,
       author: typeof o.author === "string" ? o.author : undefined,
       packageUrl: typeof o.packageUrl === "string" ? o.packageUrl : undefined,
+      packageSha256:
+        typeof o.packageSha256 === "string"
+          ? o.packageSha256
+          : typeof o.sha256 === "string"
+            ? o.sha256
+            : undefined,
     });
   }
   return out;
 }
+
+/** Default max remote skill package size (20 MiB). */
+export const DEFAULT_MAX_PACKAGE_BYTES = 20 * 1024 * 1024;
+/** Default download timeout. */
+export const DEFAULT_PACKAGE_TIMEOUT_MS = 60_000;
+
+export type InstallSkillCode =
+  | "already_exists"
+  | "invalid"
+  | "io"
+  | "cancelled"
+  | "network"
+  | "checksum"
+  | "unsafe_archive";
 
 export interface InstallSkillFromDirOptions {
   /** Absolute path to a folder containing SKILL.md */
@@ -181,7 +210,9 @@ export interface InstallSkillResult {
   sourceDir?: string;
   error?: string;
   /** Machine-readable conflict / error code for UI. */
-  code?: "already_exists" | "invalid" | "io" | "cancelled";
+  code?: InstallSkillCode;
+  /** Remote URL used when installing from package. */
+  packageUrl?: string;
 }
 
 export interface SkillPreviewResult {
@@ -370,5 +401,475 @@ async function copyDirRecursive(src: string, dest: string): Promise<void> {
     } else if (entry.isFile()) {
       await fs.copyFile(from, to);
     }
+  }
+}
+
+/**
+ * Validate a remote skill package URL: https only, no credentials, no localhost.
+ */
+export function assertSafePackageUrl(raw: string): { ok: true; url: URL } | { ok: false; error: string } {
+  const text = String(raw || "").trim();
+  if (!text) return { ok: false, error: "packageUrl required" };
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    return { ok: false, error: "invalid packageUrl" };
+  }
+  if (url.protocol !== "https:") {
+    return { ok: false, error: "packageUrl must be https" };
+  }
+  if (url.username || url.password) {
+    return { ok: false, error: "packageUrl must not include credentials" };
+  }
+  const host = url.hostname.toLowerCase();
+  if (
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "::1" ||
+    host.endsWith(".local") ||
+    host.startsWith("0.") ||
+    host === "0.0.0.0"
+  ) {
+    return { ok: false, error: "packageUrl host not allowed" };
+  }
+  // Block obvious link-local / private IPv4 literals (best-effort; DNS rebinding is out of scope).
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) {
+    const parts = host.split(".").map((p) => Number(p));
+    const [a, b] = parts;
+    if (
+      a === 10 ||
+      a === 127 ||
+      a === 0 ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168)
+    ) {
+      return { ok: false, error: "packageUrl host not allowed" };
+    }
+  }
+  return { ok: true, url };
+}
+
+function normalizeSha256(hex: string | undefined): string | undefined {
+  if (!hex) return undefined;
+  const s = String(hex).trim().toLowerCase().replace(/^sha-?256:/, "");
+  if (!/^[0-9a-f]{64}$/.test(s)) return undefined;
+  return s;
+}
+
+/**
+ * Find a directory that contains SKILL.md under `root` (depth-limited).
+ * Prefers the shallowest match.
+ */
+export async function findSkillRoot(root: string, maxDepth = 3): Promise<string | null> {
+  const rootReal = path.resolve(root);
+  async function walk(dir: string, depth: number): Promise<string | null> {
+    try {
+      await fs.access(path.join(dir, "SKILL.md"));
+      return dir;
+    } catch {
+      /* continue */
+    }
+    if (depth >= maxDepth) return null;
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return null;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name === "." || entry.name === ".." || entry.name === ".git" || entry.name === "__MACOSX") {
+        continue;
+      }
+      const child = path.join(dir, entry.name);
+      const hit = await walk(child, depth + 1);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  return walk(rootReal, 0);
+}
+
+/**
+ * Reject archive entry paths that escape the extract root.
+ */
+export function isSafeArchiveEntryPath(entryPath: string): boolean {
+  const raw = String(entryPath || "").replace(/\\/g, "/");
+  if (!raw || raw.startsWith("/") || /^[a-zA-Z]:/.test(raw)) return false;
+  if (raw.includes("\0")) return false;
+  const parts = raw.split("/").filter((p) => p && p !== ".");
+  if (parts.some((p) => p === "..")) return false;
+  // Windows device / alternate stream oddities
+  if (parts.some((p) => /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(p))) return false;
+  if (parts.some((p) => p.includes(":"))) return false;
+  return true;
+}
+
+async function downloadToFile(opts: {
+  url: string;
+  destFile: string;
+  maxBytes: number;
+  timeoutMs: number;
+  expectedSha256?: string;
+}): Promise<{ bytes: number; sha256: string }> {
+  const safe = assertSafePackageUrl(opts.url);
+  if (!safe.ok) throw Object.assign(new Error(safe.error), { code: "invalid" as const });
+
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), opts.timeoutMs);
+  try {
+    const res = await fetch(safe.url, {
+      method: "GET",
+      redirect: "follow",
+      signal: ac.signal,
+      headers: {
+        Accept: "application/octet-stream, application/zip, application/gzip, */*",
+        "User-Agent": "HFQ-Code-skills/1.0",
+      },
+    });
+    if (!res.ok) {
+      throw Object.assign(new Error(`download HTTP ${res.status}`), { code: "network" as const });
+    }
+    // Re-validate final URL after redirects when available.
+    if (res.url) {
+      const final = assertSafePackageUrl(res.url);
+      if (!final.ok) {
+        throw Object.assign(new Error(`redirect blocked: ${final.error}`), {
+          code: "invalid" as const,
+        });
+      }
+    }
+    const lenHeader = res.headers.get("content-length");
+    if (lenHeader) {
+      const n = Number(lenHeader);
+      if (Number.isFinite(n) && n > opts.maxBytes) {
+        throw Object.assign(new Error(`package too large (Content-Length ${n} > ${opts.maxBytes})`), {
+          code: "invalid" as const,
+        });
+      }
+    }
+    if (!res.body) {
+      throw Object.assign(new Error("empty response body"), { code: "network" as const });
+    }
+
+    const hash = createHash("sha256");
+    let bytes = 0;
+    await fs.mkdir(path.dirname(opts.destFile), { recursive: true });
+    const file = createWriteStream(opts.destFile);
+
+    const nodeStream = Readable.fromWeb(res.body as import("node:stream/web").ReadableStream);
+    for await (const chunk of nodeStream) {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      bytes += buf.length;
+      if (bytes > opts.maxBytes) {
+        file.destroy();
+        throw Object.assign(new Error(`package too large (> ${opts.maxBytes} bytes)`), {
+          code: "invalid" as const,
+        });
+      }
+      hash.update(buf);
+      if (!file.write(buf)) {
+        await new Promise<void>((resolve, reject) => {
+          file.once("drain", () => resolve());
+          file.once("error", reject);
+        });
+      }
+    }
+    await new Promise<void>((resolve, reject) => {
+      file.end(() => resolve());
+      file.once("error", reject);
+    });
+
+    const sha256 = hash.digest("hex");
+    const expected = normalizeSha256(opts.expectedSha256);
+    if (expected && expected !== sha256) {
+      throw Object.assign(new Error(`SHA-256 mismatch (expected ${expected}, got ${sha256})`), {
+        code: "checksum" as const,
+      });
+    }
+    return { bytes, sha256 };
+  } catch (err) {
+    if (err && typeof err === "object" && "code" in err) throw err;
+    if (err instanceof Error && err.name === "AbortError") {
+      throw Object.assign(new Error("package download timed out"), { code: "network" as const });
+    }
+    throw Object.assign(err instanceof Error ? err : new Error(String(err)), {
+      code: "network" as const,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function extractZipSafe(zipPath: string, destDir: string): Promise<void> {
+  await fs.mkdir(destDir, { recursive: true });
+  const destReal = await fs.realpath(destDir);
+
+  await new Promise<void>((resolve, reject) => {
+    yauzl.open(zipPath, { lazyEntries: true, autoClose: true }, (err, zip) => {
+      if (err || !zip) {
+        reject(err || new Error("failed to open zip"));
+        return;
+      }
+      zip.readEntry();
+      zip.on("error", reject);
+      zip.on("entry", (entry) => {
+        const name = String(entry.fileName || "");
+        if (/\/$/.test(name)) {
+          // directory entry
+          if (!isSafeArchiveEntryPath(name.replace(/\/$/, "") + "/x")) {
+            reject(
+              Object.assign(new Error(`unsafe zip path: ${name}`), {
+                code: "unsafe_archive" as const,
+              }),
+            );
+            return;
+          }
+          const dirPath = path.join(destReal, name);
+          if (!dirPath.startsWith(destReal + path.sep) && dirPath !== destReal) {
+            reject(
+              Object.assign(new Error(`zip path escapes extract root: ${name}`), {
+                code: "unsafe_archive" as const,
+              }),
+            );
+            return;
+          }
+          fs.mkdir(dirPath, { recursive: true })
+            .then(() => zip.readEntry())
+            .catch(reject);
+          return;
+        }
+        if (!isSafeArchiveEntryPath(name)) {
+          reject(
+            Object.assign(new Error(`unsafe zip path: ${name}`), {
+              code: "unsafe_archive" as const,
+            }),
+          );
+          return;
+        }
+        const outPath = path.join(destReal, name);
+        if (!outPath.startsWith(destReal + path.sep)) {
+          reject(
+            Object.assign(new Error(`zip path escapes extract root: ${name}`), {
+              code: "unsafe_archive" as const,
+            }),
+          );
+          return;
+        }
+        fs.mkdir(path.dirname(outPath), { recursive: true })
+          .then(
+            () =>
+              new Promise<void>((res, rej) => {
+                zip.openReadStream(entry, (e2, readStream) => {
+                  if (e2 || !readStream) {
+                    rej(e2 || new Error("zip read stream failed"));
+                    return;
+                  }
+                  const ws = createWriteStream(outPath);
+                  readStream.on("error", rej);
+                  ws.on("error", rej);
+                  ws.on("finish", () => res());
+                  readStream.pipe(ws);
+                });
+              }),
+          )
+          .then(() => zip.readEntry())
+          .catch(reject);
+      });
+      zip.on("end", () => resolve());
+    });
+  });
+}
+
+async function extractTarGzSafe(archivePath: string, destDir: string): Promise<void> {
+  await fs.mkdir(destDir, { recursive: true });
+  const destReal = await fs.realpath(destDir);
+  await tar.x({
+    file: archivePath,
+    cwd: destReal,
+    gzip: true,
+    // Fail closed on path escape / absolute paths.
+    filter: (p) => {
+      if (!isSafeArchiveEntryPath(p)) {
+        throw Object.assign(new Error(`unsafe tar path: ${p}`), {
+          code: "unsafe_archive" as const,
+        });
+      }
+      return true;
+    },
+  });
+}
+
+async function extractTarSafe(archivePath: string, destDir: string): Promise<void> {
+  await fs.mkdir(destDir, { recursive: true });
+  const destReal = await fs.realpath(destDir);
+  await tar.x({
+    file: archivePath,
+    cwd: destReal,
+    gzip: false,
+    filter: (p) => {
+      if (!isSafeArchiveEntryPath(p)) {
+        throw Object.assign(new Error(`unsafe tar path: ${p}`), {
+          code: "unsafe_archive" as const,
+        });
+      }
+      return true;
+    },
+  });
+}
+
+function detectArchiveKind(url: string, filePath: string): "zip" | "tar.gz" | "tar" | "unknown" {
+  const lower = `${url} ${filePath}`.toLowerCase();
+  if (lower.includes(".tar.gz") || lower.endsWith(".tgz") || lower.includes(".tgz")) return "tar.gz";
+  if (lower.includes(".tar") && !lower.includes(".tar.gz")) return "tar";
+  if (lower.includes(".zip")) return "zip";
+  return "unknown";
+}
+
+async function sniffArchiveKind(filePath: string): Promise<"zip" | "tar.gz" | "tar" | "unknown"> {
+  const fh = await fs.open(filePath, "r");
+  try {
+    const buf = Buffer.alloc(4);
+    await fh.read(buf, 0, 4, 0);
+    // ZIP local file header / empty archive
+    if (buf[0] === 0x50 && buf[1] === 0x4b) return "zip";
+    // gzip magic
+    if (buf[0] === 0x1f && buf[1] === 0x8b) return "tar.gz";
+    // ustar is further in; treat as tar when extension said so — default unknown
+    return "unknown";
+  } finally {
+    await fh.close();
+  }
+}
+
+export interface InstallSkillFromPackageOptions {
+  packageUrl: string;
+  userSkillsDir: string;
+  overwrite?: boolean;
+  /** Expected SHA-256 hex of package bytes. */
+  expectedSha256?: string;
+  maxBytes?: number;
+  timeoutMs?: number;
+  /**
+   * Optional injectable downloader for tests.
+   * When set, skips network and writes nothing — receives dest path to fill.
+   */
+  download?: (opts: {
+    url: string;
+    destFile: string;
+    maxBytes: number;
+    timeoutMs: number;
+    expectedSha256?: string;
+  }) => Promise<{ bytes: number; sha256: string }>;
+}
+
+/**
+ * Download a remote skill package (zip / tar.gz), extract safely, install into user skills.
+ * Does **not** execute scripts from the package — data + SKILL.md only.
+ */
+export async function installSkillFromPackage(
+  opts: InstallSkillFromPackageOptions,
+): Promise<InstallSkillResult> {
+  const packageUrl = String(opts.packageUrl || "").trim();
+  const safe = assertSafePackageUrl(packageUrl);
+  if (!safe.ok) {
+    return { ok: false, code: "invalid", error: safe.error, packageUrl };
+  }
+  const userSkillsDir = path.resolve(String(opts.userSkillsDir || ""));
+  if (!userSkillsDir) {
+    return { ok: false, code: "invalid", error: "userSkillsDir required", packageUrl };
+  }
+
+  const maxBytes = Math.max(64 * 1024, opts.maxBytes ?? DEFAULT_MAX_PACKAGE_BYTES);
+  const timeoutMs = Math.max(5_000, opts.timeoutMs ?? DEFAULT_PACKAGE_TIMEOUT_MS);
+  const expectedSha256 = normalizeSha256(opts.expectedSha256);
+  if (opts.expectedSha256 && !expectedSha256) {
+    return {
+      ok: false,
+      code: "checksum",
+      error: "invalid packageSha256 (need 64 hex chars)",
+      packageUrl,
+    };
+  }
+
+  const workRoot = await fs.mkdtemp(path.join(os.tmpdir(), "hfq-skill-pkg-"));
+  const archivePath = path.join(workRoot, "package.bin");
+  const extractDir = path.join(workRoot, "extract");
+
+  try {
+    const downloadFn = opts.download || downloadToFile;
+    await downloadFn({
+      url: packageUrl,
+      destFile: archivePath,
+      maxBytes,
+      timeoutMs,
+      expectedSha256,
+    });
+
+    let kind = detectArchiveKind(packageUrl, archivePath);
+    if (kind === "unknown") {
+      kind = await sniffArchiveKind(archivePath);
+    }
+    if (kind === "unknown") {
+      return {
+        ok: false,
+        code: "invalid",
+        error: "unsupported package format (need .zip / .tar.gz)",
+        packageUrl,
+      };
+    }
+
+    try {
+      if (kind === "zip") await extractZipSafe(archivePath, extractDir);
+      else if (kind === "tar.gz") await extractTarGzSafe(archivePath, extractDir);
+      else await extractTarSafe(archivePath, extractDir);
+    } catch (err) {
+      const code =
+        err && typeof err === "object" && "code" in err
+          ? (err as { code?: InstallSkillCode }).code
+          : undefined;
+      return {
+        ok: false,
+        code: code === "unsafe_archive" ? "unsafe_archive" : "io",
+        error: err instanceof Error ? err.message : String(err),
+        packageUrl,
+      };
+    }
+
+    const skillRoot = await findSkillRoot(extractDir);
+    if (!skillRoot) {
+      return {
+        ok: false,
+        code: "invalid",
+        error: "archive has no SKILL.md (checked up to depth 3)",
+        packageUrl,
+      };
+    }
+
+    const installed = await installSkillFromDir({
+      sourceDir: skillRoot,
+      userSkillsDir,
+      overwrite: opts.overwrite,
+    });
+    return {
+      ...installed,
+      packageUrl,
+      // Preserve sourceDir from dir install (extracted path) for overwrite retry.
+    };
+  } catch (err) {
+    const code =
+      err && typeof err === "object" && "code" in err
+        ? ((err as { code?: InstallSkillCode }).code as InstallSkillCode | undefined)
+        : undefined;
+    return {
+      ok: false,
+      code: code || "network",
+      error: err instanceof Error ? err.message : String(err),
+      packageUrl,
+    };
+  } finally {
+    await fs.rm(workRoot, { recursive: true, force: true }).catch(() => undefined);
   }
 }

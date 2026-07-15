@@ -809,7 +809,9 @@ export class AgentSession {
             ? `shell: ${String(call.arguments.command ?? "")}`
             : call.name === "spawn_subagent"
               ? `subagent: ${String(call.arguments.goal ?? "").slice(0, 80)}`
-              : `${call.name} ${JSON.stringify(call.arguments).slice(0, 200)}`;
+              : call.name === "git_commit"
+                ? `git_commit message: ${String(call.arguments.message ?? "").slice(0, 200)}`
+                : `${call.name} ${JSON.stringify(call.arguments).slice(0, 200)}`;
 
         if (!this.toolAllowedByProfile(call.name)) {
           const callId = call.id || randomUUID();

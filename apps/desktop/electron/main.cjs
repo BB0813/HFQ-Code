@@ -1903,6 +1903,36 @@ function registerIpc() {
   });
 
   /**
+   * Install skill from remote packageUrl (https zip/tar.gz only).
+   * Safe extract + optional SHA-256; never runs package scripts.
+   */
+  ipcMain.handle("skills:installFromPackage", async (_evt, payload = {}) => {
+    const { agentCore, skillsMod } = await loadModules();
+    const dirs = await agentCore.ensureDataDirs();
+    const packageUrl = typeof payload.packageUrl === "string" ? payload.packageUrl.trim() : "";
+    if (!packageUrl) {
+      return { ok: false, code: "invalid", error: "packageUrl required" };
+    }
+    if (typeof skillsMod.installSkillFromPackage !== "function") {
+      return { ok: false, code: "invalid", error: "installSkillFromPackage unavailable" };
+    }
+    const expectedSha256 =
+      typeof payload.expectedSha256 === "string"
+        ? payload.expectedSha256
+        : typeof payload.packageSha256 === "string"
+          ? payload.packageSha256
+          : undefined;
+    return skillsMod.installSkillFromPackage({
+      packageUrl,
+      userSkillsDir: dirs.skills,
+      overwrite: Boolean(payload.overwrite),
+      expectedSha256,
+      maxBytes: Number(payload.maxBytes) > 0 ? Number(payload.maxBytes) : undefined,
+      timeoutMs: Number(payload.timeoutMs) > 0 ? Number(payload.timeoutMs) : undefined,
+    });
+  });
+
+  /**
    * Preview SKILL.md under workspace / user / shared / bundled skill roots only.
    */
   ipcMain.handle("skills:preview", async (_evt, payload = {}) => {

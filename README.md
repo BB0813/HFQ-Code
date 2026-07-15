@@ -6,20 +6,60 @@ Windows desktop **coding agent** (WorkBuddy / ZCode class): full GUI, workspace-
 
 ## Status
 
-**1.0.1** — stable Windows coding agent (Phase-1+2 + Phase-3 M3.0/M3.1/M3.3/M3.4) + logo / model-identity / eval isolation patch:
+**1.0.9** — Windows coding agent (Phase-1+2 + Phase-3 M3.0/M3.1/M3.3/M3.4) with post-1.0 patch train:
 
 - Session loop: create / resume / stop / delete / rename + auto-title, streaming, tokens, compaction, **plan mode**, **sub-agents**
 - **Session worker** (child process) for agent loop isolation; in-process fallback
+- Access modes (变更前确认 / 自动编辑 / 计划 / 完全访问) · permission modal queue · timeout auto-deny
 - Tools: `read_file` · `list_dir` · `grep` · `git_status` · `git_diff` · `git_show` · `git_commit` · `memory_*` · `write_file` · `apply_patch` · `shell` · `network_fetch` · `spawn_subagent` + live `mcp__*`
 - Secrets in `credentials.json` (API keys / MCP auth headers)
-- Memory 2.0 (user/project scope) · Usage dashboard · Import wizard
-- MCP: stdio + HTTP (headers/auth) · ping · registry in `config.json`
-- Permissions + Audit · Changes · Terminal · Tasks · Skills · Models
-- Settings: theme / proxy / memory / pricing / diagnostics export
-- Packaging: NSIS + portable · **manual update** · `pnpm release:check` / `pack:verify`
-- Eval: `pnpm eval`
+- Memory 2.0 · Usage dashboard · Import wizard · `/goal` long-run + Tasks banner
+- Skills store: curated catalog · local folder + **remote https zip/tar.gz** · SKILL.md preview / conflict / tags
+- MCP: stdio + HTTP · Permissions + Audit · Changes · Terminal (one-shot) · Models
+- Update check: multi-source fallback (ghproxy mirrors → ungh → direct GitHub); **manual download only**
+- Packaging: NSIS + portable · `pnpm release:check` / `pack:verify`
+- Chat UI: topbar provider · model · model-id-only composer control · menus open upward
 
-See [docs/PHASE3-STATUS.md](./docs/PHASE3-STATUS.md) · [docs/PACKAGING.md](./docs/PACKAGING.md) · [docs/AUDIT.md](./docs/AUDIT.md) · [CHANGELOG.md](./CHANGELOG.md).
+See [docs/PHASE3-STATUS.md](./docs/PHASE3-STATUS.md) · [docs/ROADMAP.md](./docs/ROADMAP.md) · [docs/PACKAGING.md](./docs/PACKAGING.md) · [docs/AUDIT.md](./docs/AUDIT.md) · [CHANGELOG.md](./CHANGELOG.md).
+
+## Download & Windows SmartScreen
+
+Official builds: [GitHub Releases](https://github.com/BB0813/HFQ-Code/releases) (NSIS installer + portable).
+
+**Current releases are not Authenticode code-signed.** Windows may show:
+
+- 「无法验证发布者 / 未知发布者」
+- SmartScreen：「Windows 已保护你的电脑」
+
+This is expected for unsigned desktop apps, not a corrupt download.
+
+### What to do
+
+1. Download only from **this repo’s Releases** (or a build you produced yourself).
+2. Optionally verify the file against `SHA256SUMS.txt` on the same release.
+3. In the open-file dialog, choose **运行**.
+4. If SmartScreen appears: **更多信息 → 仍要运行**.
+
+### Free alternatives (no paid certificate)
+
+| Approach | Effect |
+|----------|--------|
+| Confirm **运行 / 仍要运行** after checking the Release URL + SHA-256 | Practical for self-use and small internal tests |
+| Use the **portable** build | Same trust model; often fewer reinstall prompts |
+| Build from source (`pnpm pack:win`) | You trust your own tree; the resulting exe is still unsigned |
+| Self-signed certificate | Does **not** remove the warning (Windows does not trust it by default) |
+
+There is **no reliable free way** to make Windows show a verified publisher for public `.exe` downloads. Paid OV/EV code signing is planned later ([docs/ROADMAP.md](./docs/ROADMAP.md) Track D · 1.2). Do **not** disable SmartScreen or UAC system-wide to “fix” this.
+
+### Installer vs portable
+
+| Artifact | Notes |
+|----------|--------|
+| `HFQ Code-*-x64.exe` | NSIS installer |
+| `HFQ Code-*-portable.exe` | Portable; no install wizard |
+| `SHA256SUMS.txt` | Checksums for the above |
+
+Update policy remains **manual**: in-app check → open download page; no silent auto-install.
 
 ## Decisions (frozen)
 

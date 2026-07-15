@@ -1,6 +1,6 @@
 {
   "name": "hfq-code",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "private": true,
   "description": "HFQ Code — Windows desktop coding agent",
   "packageManager": "pnpm@9.15.0",

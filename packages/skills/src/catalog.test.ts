@@ -1,11 +1,17 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import * as tar from "tar";
 import {
   annotateInstalled,
+  assertSafePackageUrl,
   curatedCatalog,
+  findSkillRoot,
   installSkillFromDir,
+  installSkillFromPackage,
+  isSafeArchiveEntryPath,
   mergeCatalog,
   parseRemoteCatalogJson,
   readSkillPreview,
@@ -109,5 +115,98 @@ describe("skill catalog scaffold", () => {
       allowedRoots: [path.join(root, "other")],
     });
     expect(denied.ok).toBe(false);
+  });
+
+  it("validates package URLs and archive paths", () => {
+    expect(assertSafePackageUrl("https://example.com/a.zip").ok).toBe(true);
+    expect(assertSafePackageUrl("http://example.com/a.zip").ok).toBe(false);
+    expect(assertSafePackageUrl("https://localhost/a.zip").ok).toBe(false);
+    expect(assertSafePackageUrl("https://127.0.0.1/a.zip").ok).toBe(false);
+    expect(assertSafePackageUrl("https://user:pass@example.com/a.zip").ok).toBe(false);
+
+    expect(isSafeArchiveEntryPath("skill/SKILL.md")).toBe(true);
+    expect(isSafeArchiveEntryPath("../escape")).toBe(false);
+    expect(isSafeArchiveEntryPath("/abs")).toBe(false);
+    expect(isSafeArchiveEntryPath("C:/windows")).toBe(false);
+    expect(isSafeArchiveEntryPath("foo/../../etc/passwd")).toBe(false);
+  });
+
+  it("finds nested SKILL.md roots", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "hfq-skill-root-"));
+    temps.push(root);
+    const nested = path.join(root, "pkg", "hello-skill");
+    await fs.mkdir(nested, { recursive: true });
+    await fs.writeFile(
+      path.join(nested, "SKILL.md"),
+      `---\nname: nested-skill\ndescription: Nested\n---\n\n# Nested\n`,
+      "utf8",
+    );
+    const found = await findSkillRoot(root);
+    expect(found).toBe(nested);
+  });
+
+  it("installs from a local tar.gz via installSkillFromPackage download hook", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "hfq-skill-pkg-"));
+    temps.push(root);
+    const packDir = path.join(root, "pack", "remote-demo");
+    const user = path.join(root, "user-skills");
+    await fs.mkdir(packDir, { recursive: true });
+    await fs.writeFile(
+      path.join(packDir, "SKILL.md"),
+      `---\nname: remote-demo\ndescription: From package\n---\n\n# Remote demo\n`,
+      "utf8",
+    );
+    await fs.writeFile(path.join(packDir, "extra.txt"), "payload", "utf8");
+
+    const tgz = path.join(root, "remote-demo.tar.gz");
+    await tar.c({ gzip: true, file: tgz, cwd: path.join(root, "pack") }, ["remote-demo"]);
+    const body = await fs.readFile(tgz);
+    const sha = createHash("sha256").update(body).digest("hex");
+
+    const badSha = await installSkillFromPackage({
+      packageUrl: "https://example.com/remote-demo.tar.gz",
+      userSkillsDir: user,
+      expectedSha256: "0".repeat(64),
+      download: async ({ destFile, expectedSha256 }) => {
+        await fs.copyFile(tgz, destFile);
+        const got = createHash("sha256").update(await fs.readFile(destFile)).digest("hex");
+        if (expectedSha256 && expectedSha256 !== got) {
+          throw Object.assign(new Error(`SHA-256 mismatch`), { code: "checksum" as const });
+        }
+        return { bytes: body.length, sha256: got };
+      },
+    });
+    expect(badSha.ok).toBe(false);
+    expect(badSha.code).toBe("checksum");
+
+    const res = await installSkillFromPackage({
+      packageUrl: "https://example.com/remote-demo.tar.gz",
+      userSkillsDir: user,
+      expectedSha256: sha,
+      download: async ({ destFile }) => {
+        await fs.copyFile(tgz, destFile);
+        return { bytes: body.length, sha256: sha };
+      },
+    });
+    expect(res.ok).toBe(true);
+    expect(res.name).toBe("remote-demo");
+    expect(await fs.readFile(path.join(user, "remote-demo", "extra.txt"), "utf8")).toBe("payload");
+
+    const again = await installSkillFromPackage({
+      packageUrl: "https://example.com/remote-demo.tar.gz",
+      userSkillsDir: user,
+      download: async ({ destFile }) => {
+        await fs.copyFile(tgz, destFile);
+        return { bytes: body.length, sha256: sha };
+      },
+    });
+    expect(again.ok).toBe(false);
+    expect(again.code).toBe("already_exists");
+  });
+
+  it("rejects path-escape entries in zip-like layout via isSafeArchiveEntryPath", () => {
+    // extractZipSafe uses the same helper; unit-level assert is enough without crafting zip bytes.
+    expect(isSafeArchiveEntryPath("ok/SKILL.md")).toBe(true);
+    expect(isSafeArchiveEntryPath("..\\windows\\system32")).toBe(false);
   });
 });

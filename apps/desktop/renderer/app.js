@@ -99,6 +99,10 @@ policyMatrix: /** @type {any[] | null} */ (null),
   permissionQueue: [],
   /** @type {boolean} */
   permissionResolving: false,
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  permissionTimeoutId: null,
+  /** Auto-deny if user does not respond (ms). */
+  permissionTimeoutMs: 10 * 60 * 1000,
 /** @type {Array<any>} */
 		  recentSessions: [],
 		  /** @type {any | null} */
@@ -403,12 +407,16 @@ function resetLiveSurfaces() {
 					  state.usage = { inputTokens: 0, outputTokens: 0 };
 					  state.changeActionNote = null;
 					  state.agentsEditor = null;
-					  state.busy = false;
-					  state.permissionQueue = [];
-					  state.permissionResolving = false;
-					  state.pendingPermission = null;
-					  el("permModal")?.classList.add("hidden");
-					}
+state.busy = false;
+						  state.permissionQueue = [];
+						  state.permissionResolving = false;
+						  state.pendingPermission = null;
+						  if (state.permissionTimeoutId != null) {
+						    clearTimeout(state.permissionTimeoutId);
+						    state.permissionTimeoutId = null;
+						  }
+						  el("permModal")?.classList.add("hidden");
+						}
 
 		async function refreshChildSessions() {
 		  try {
@@ -1256,6 +1264,27 @@ function applyPermissionModeState(mode, planMode) {
   }
 }
 
+function clearPermissionTimeout() {
+  if (state.permissionTimeoutId != null) {
+    clearTimeout(state.permissionTimeoutId);
+    state.permissionTimeoutId = null;
+  }
+}
+
+function armPermissionTimeout(requestId) {
+  clearPermissionTimeout();
+  const ms = Number(state.permissionTimeoutMs) || 10 * 60 * 1000;
+  state.permissionTimeoutId = setTimeout(() => {
+    if (state.pendingPermission?.requestId !== requestId || state.permissionResolving) return;
+    pushMessage({
+      role: "system",
+      text: `授权超时（${Math.round(ms / 60000)} 分钟无响应），已自动拒绝`,
+    });
+    setStatus("授权超时，已自动拒绝", "warn");
+    void resolveCurrentPermission("deny");
+  }, ms);
+}
+
 function enqueuePermissionRequest(req) {
   if (!req?.requestId) return;
   const exists = state.permissionQueue.some((r) => r.requestId === req.requestId);
@@ -1273,6 +1302,7 @@ function presentNextPermission() {
   if (state.pendingPermission) return;
   const next = state.permissionQueue.shift();
   if (!next) {
+    clearPermissionTimeout();
     el("permModal")?.classList.add("hidden");
     return;
   }
@@ -1285,16 +1315,32 @@ function showPermissionModal(req) {
   const sessionHint =
     req.sessionId && state.session?.id && req.sessionId !== state.session.id
       ? `\n（来自会话 ${String(req.sessionId).slice(0, 8)}…）`
-      : "";
+      : req.sessionId && !state.session?.id
+        ? `\n（会话 ${String(req.sessionId).slice(0, 8)}…）`
+        : "";
   const queueHint =
     state.permissionQueue.length > 0 ? `\n队列中还有 ${state.permissionQueue.length} 项` : "";
-  el("permSummary").textContent = summary + sessionHint + queueHint;
+  // git_commit: surface commit message clearly when present in summary/input.
+  let commitHint = "";
+  if (req.toolName === "git_commit") {
+    const msgMatch =
+      String(summary).match(/message[:：]\s*([^\n]+)/i) ||
+      String(summary).match(/commit\s+(.+)$/i);
+    if (msgMatch?.[1]) {
+      commitHint = `\n提交说明: ${msgMatch[1].trim().slice(0, 200)}`;
+    } else if (summary) {
+      commitHint = `\n（请确认提交说明无误后再允许）`;
+    }
+  }
+  el("permSummary").textContent = summary + commitHint + sessionHint + queueHint;
   el("permTool").textContent = req.toolName || "工具";
   el("permRisk").textContent = riskLabel(req.risk);
   el("permModal").classList.remove("hidden");
+  armPermissionTimeout(req.requestId);
 }
 
 function hidePermissionModal() {
+  clearPermissionTimeout();
   state.pendingPermission = null;
   el("permModal").classList.add("hidden");
 }
@@ -1302,6 +1348,7 @@ function hidePermissionModal() {
 function clearPermissionQueue(reason) {
   state.permissionQueue = [];
   state.permissionResolving = false;
+  clearPermissionTimeout();
   if (state.pendingPermission) {
     hidePermissionModal();
     if (reason) {
@@ -1310,6 +1357,9 @@ function clearPermissionQueue(reason) {
   } else {
     el("permModal")?.classList.add("hidden");
   }
+  // Always unlock composer when clearing after crash/fail paths.
+  state.busy = false;
+  setComposerEnabled(true);
 }
 
 async function resolveCurrentPermission(decision) {
@@ -1317,6 +1367,7 @@ async function resolveCurrentPermission(decision) {
   if (!pending?.requestId || state.permissionResolving) return;
   const requestId = pending.requestId;
   state.permissionResolving = true;
+  clearPermissionTimeout();
   const actions = el("permModal")?.querySelectorAll("[data-perm]");
   actions?.forEach((btn) => {
     if (btn instanceof HTMLButtonElement) btn.disabled = true;
@@ -1324,7 +1375,7 @@ async function resolveCurrentPermission(decision) {
   try {
     const res = await window.hfq.resolvePermission({ requestId, decision });
     const ok = res === true || res?.ok === true || res == null;
-    // Main returns boolean; treat explicit false as failure.
+    // Main returns { ok } or boolean; treat explicit false as failure.
     if (res === false || res?.ok === false) {
       throw new Error("授权请求已失效或会话已结束");
     }
@@ -1351,6 +1402,7 @@ async function resolveCurrentPermission(decision) {
     setStatus("授权提交失败，请重试或拒绝", "warn");
     if (state.pendingPermission?.requestId === requestId) {
       el("permModal")?.classList.remove("hidden");
+      armPermissionTimeout(requestId);
     }
   }
 }
@@ -1450,13 +1502,13 @@ if (state.session && event.sessionId === state.session.id) {
 	      else setStatus("空闲", "live");
 	    }
 if (event.type === "session.failed") {
-		      clearPermissionQueue("会话失败，已取消待处理授权");
-		      pushMessage({ role: "error", text: event.error || "会话失败" });
-		    }
-		    if (event.type === "session.aborted") {
-		      clearPermissionQueue();
-		      pushMessage({ role: "system", text: "会话已由用户停止" });
-		    }
+			      clearPermissionQueue("会话失败，已取消待处理授权并解锁输入");
+			      pushMessage({ role: "error", text: event.error || "会话失败" });
+			    }
+			    if (event.type === "session.aborted") {
+			      clearPermissionQueue("会话已停止，已清除待处理授权");
+			      pushMessage({ role: "system", text: "会话已由用户停止" });
+			    }
 		  }
 
 switch (event.type) {
@@ -2815,17 +2867,26 @@ function pageSkills() {
                 }
                 ${
                   it.packageUrl
-                    ? `<button type="button" class="btn ghost sm" data-open-skill-home="${escapeHtml(
+                    ? `<button type="button" class="btn sm primary" data-install-package-url="${escapeHtml(
                         it.packageUrl,
-                      )}">包地址</button>`
+                      )}" data-package-sha="${escapeHtml(
+                        it.packageSha256 || "",
+                      )}" data-skill-name="${escapeHtml(it.name || "")}" ${
+                        it.installed ? "disabled" : ""
+                      }>远程安装</button>
+                    <button type="button" class="btn ghost sm" data-open-skill-home="${escapeHtml(
+                      it.packageUrl,
+                    )}">包地址</button>`
                     : ""
                 }
                 <span class="faint" style="font-size:11px">${
                   it.installed
                     ? "已在本地 · 可预览 SKILL.md"
-                    : it.tags?.includes?.("planned") || /planned|coming/i.test(it.description || "")
-                      ? "规划中 · 可本地文件夹安装同类技能"
-                      : "从本地文件夹安装 SKILL.md 包"
+                    : it.packageUrl
+                      ? "https 包 · 安全解压 · 可选 SHA-256"
+                      : it.tags?.includes?.("planned") || /planned|coming/i.test(it.description || "")
+                        ? "规划中 · 可本地文件夹安装同类技能"
+                        : "从本地文件夹安装 SKILL.md 包"
                 }</span>
               </div>
             </article>`;
@@ -2855,7 +2916,7 @@ function pageSkills() {
       <div class="panel-head">
         <div>
           <h2>技能 · ClawHub 商店</h2>
-          <p>策展目录 + 本地安装 · 标签筛选 · SKILL.md 预览（远程 zip 安装见后续版本）</p>
+          <p>策展目录 + 本地 / 远程包安装 · 标签筛选 · SKILL.md 预览（包为数据+说明，不执行安装脚本）</p>
         </div>
         <div class="row" style="gap:8px;flex-wrap:wrap">
           <button type="button" class="btn ghost sm" id="skillsCatalogRefreshBtn">刷新目录</button>
@@ -4018,6 +4079,91 @@ function bindSkillsHandlers() {
       if (status) status.textContent = msg;
       setStatus(msg, "warn");
     }
+  });
+
+  /**
+   * @param {{ packageUrl: string, expectedSha256?: string, overwrite?: boolean, name?: string }} opts
+   */
+  async function runSkillPackageInstall(opts) {
+    const status = el("skillsStoreStatus");
+    if (!window.hfq?.installSkillFromPackage) {
+      throw new Error("installSkillFromPackage unavailable");
+    }
+    const packageUrl = String(opts.packageUrl || "").trim();
+    if (!packageUrl) throw new Error("packageUrl required");
+    if (status) {
+      status.textContent = `正在下载并安装远程包…\n${packageUrl}`;
+    }
+    setStatus("远程技能安装中…", "busy");
+    const payload = {
+      packageUrl,
+      overwrite: Boolean(opts.overwrite),
+    };
+    if (opts.expectedSha256) payload.expectedSha256 = opts.expectedSha256;
+    const res = await window.hfq.installSkillFromPackage(payload);
+    if (!res?.ok && res?.code === "already_exists") {
+      const name = res.name || opts.name || "该技能";
+      const ok = window.confirm(
+        `技能「${name}」已安装在用户目录。\n\n是否覆盖安装远程包？\n${packageUrl}`,
+      );
+      if (!ok) {
+        if (status) status.textContent = "已取消覆盖";
+        setStatus("已取消覆盖", "warn");
+        return;
+      }
+      return runSkillPackageInstall({
+        packageUrl,
+        expectedSha256: opts.expectedSha256,
+        overwrite: true,
+        name: opts.name,
+      });
+    }
+    if (!res?.ok) {
+      const msg = res?.error || "远程安装失败";
+      if (status) status.textContent = `${res?.code || "error"}: ${msg}`;
+      setStatus(msg, "warn");
+      return;
+    }
+    await Promise.all([refreshSkills(), refreshSkillsCatalog({ remote: false })]);
+    if (status) {
+      status.textContent = `已从远程安装 ${res.name} → ${res.destDir || "用户技能目录"}`;
+    }
+    setStatus(`远程技能已安装：${res.name}`, "live");
+    if (state.page === "skills") {
+      el("content").innerHTML = pageHtml("skills");
+      bindSkillsHandlers();
+    }
+  }
+
+  document.querySelectorAll("[data-install-package-url]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const status = el("skillsStoreStatus");
+      const packageUrl = btn.getAttribute("data-install-package-url") || "";
+      const sha = btn.getAttribute("data-package-sha") || "";
+      const name = btn.getAttribute("data-skill-name") || "";
+      if (!packageUrl) return;
+      if (
+        !window.confirm(
+          `从远程安装技能${name ? `「${name}」` : ""}？\n\n${packageUrl}\n\n仅下载 zip/tar.gz 并解压 SKILL.md 包，不会执行包内脚本。`,
+        )
+      ) {
+        return;
+      }
+      try {
+        if (btn instanceof HTMLButtonElement) btn.disabled = true;
+        await runSkillPackageInstall({
+          packageUrl,
+          expectedSha256: sha || undefined,
+          name,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (status) status.textContent = msg;
+        setStatus(msg, "warn");
+      } finally {
+        if (btn instanceof HTMLButtonElement) btn.disabled = false;
+      }
+    });
   });
 
   async function showSkillPreview(payload) {

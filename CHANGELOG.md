@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.0.9 — 2026-07-15
+
+### Skills · remote packages
+- Catalog `packageUrl` → **https** zip/tar.gz download to temp (size limit · timeout)
+- Safe extract: reject absolute paths / `..` escapes; find nested `SKILL.md` (depth ≤ 3)
+- Optional `packageSha256` / `sha256` — fail closed on mismatch
+- UI: **远程安装** button, progress/status, overwrite confirm; packages are data + SKILL.md only (no script execution)
+- IPC: `skills:installFromPackage`
+
+### Permission modal polish
+- 10-minute **auto-deny** timeout while modal is open
+- Session label + queue length in modal; clear queue + unlock composer on session fail/abort/worker crash
+- `git_commit` permission summary highlights **message:** for confirm-mode review
+
+### Docs
+- README: unsigned Windows / SmartScreen install notes + free alternatives
+
+---
+
 ## 1.0.8 — 2026-07-15
 
 ### Chat model / provider UI
