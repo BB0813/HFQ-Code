@@ -54,6 +54,7 @@ Last updated: 2026-07-15
 
 ## Related
 
+- **Post-1.0.5 plan:** [ROADMAP.md](./ROADMAP.md) (Track C maps R1–R5 to releases)  
 - Product map: [PRODUCT.md](./PRODUCT.md)  
 - Phase-3 backlog: [PHASE3-STATUS.md](./PHASE3-STATUS.md)  
 - Skills compatibility: [COMPAT.md](./COMPAT.md)  

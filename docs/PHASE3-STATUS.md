@@ -34,4 +34,4 @@ Last updated: 2026-07-15 · Product **1.0.0**
 | 1.0.4 | `/goal` + ghproxy default update checks |
 | 1.0.5 | Update fallback · goal budget hint · Skills store scaffold · UI redesign TODO |
 
-Plan: [PHASE3.md](./PHASE3.md)
+Plan: [PHASE3.md](./PHASE3.md) · **Forward plan:** [ROADMAP.md](./ROADMAP.md) · UI: [UI-REDESIGN.md](./UI-REDESIGN.md)

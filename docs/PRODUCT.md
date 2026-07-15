@@ -39,7 +39,7 @@
 - Secrets: `credentials.json` · Session **worker** process · Manual packaging channel  
 - Evidence: [PHASE3-STATUS.md](./PHASE3-STATUS.md) · [PACKAGING.md](./PACKAGING.md) · [CHANGELOG.md](../CHANGELOG.md)
 
-完整里程碑见 **[PHASE2.md](./PHASE2.md)** · **[PHASE2-STATUS.md](./PHASE2-STATUS.md)** · 审计 **[AUDIT.md](./AUDIT.md)** · Phase-3 **[PHASE3.md](./PHASE3.md)**。
+完整里程碑见 **[ROADMAP.md](./ROADMAP.md)**（1.0.5 后主计划）· **[UI-REDESIGN.md](./UI-REDESIGN.md)** · **[PHASE2.md](./PHASE2.md)** · **[PHASE3.md](./PHASE3.md)** · 审计 **[AUDIT.md](./AUDIT.md)**。
 
 ## Core user loops
 

@@ -1,6 +1,6 @@
 # Product Decisions (Frozen)
 
-Last updated: 2026-07-14
+Last updated: 2026-07-15
 
 ## Positioning
 
@@ -52,3 +52,7 @@ Phase-1 page set: **Home, Chat/Session, Changes/Diff, Terminal, Tasks, Skills, M
 ## Q4 — Naming
 
 See [NAMING.md](./NAMING.md). **Recommended product name: HFQ Code.**
+
+## Forward plan
+
+Post-1.0.5 execution plan (patches, 1.1 coding depth, store, UI redesign, 1.2 security): **[ROADMAP.md](./ROADMAP.md)**.
