@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.7 — 2026-07-15
+
+### Update check multi-source fallback
+- Detect when a mirror returns **HTML** (not JSON) and surface a clear Chinese error instead of raw `Unexpected token '<'`
+- On ghproxy failure, try **extra mirrors** (`gh-proxy.com`, `ghfast.top`, …) then **ungh.cc**, then **direct** GitHub API
+- Normalize ungh latest-release JSON (tag / assets / markdown notes)
+- Settings copy: explain automatic fallback; suggest alternate ghproxy base when `ghproxy.com` is dead
+
+### Note
+- Users on **1.0.4** still lack auto-fallback — install **1.0.7** (or at least 1.0.5+) for resilient checks; or temporarily set 更新源 to **直连** / 改基址
+
+---
+
 ## 1.0.6 — 2026-07-15
 
 ### Skills store depth

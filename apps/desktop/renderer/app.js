@@ -1868,11 +1868,17 @@ function formatUpdateStatus(result, currentVersionFallback) {
   const via =
     result?.source === "direct"
       ? "直连 GitHub"
-      : result?.source === "ghproxy"
-        ? `ghproxy${result.proxyBase ? ` · ${result.proxyBase}` : ""}`
-        : "";
+      : result?.source === "ungh"
+        ? "ungh.cc 镜像"
+        : result?.source === "ghproxy"
+          ? `ghproxy${result.proxyBase ? ` · ${result.proxyBase}` : ""}`
+          : "";
   const fallbackNote = result?.fallbackUsed
-    ? " · 已从 ghproxy 回退直连"
+    ? result?.source === "direct"
+      ? " · 已自动回退直连"
+      : result?.source === "ungh"
+        ? " · 已自动回退 ungh"
+        : " · 已切换备用源"
     : "";
   const viaSuffix = via ? ` · 经由 ${via}${fallbackNote}` : fallbackNote;
   const apiNote =
@@ -1880,7 +1886,7 @@ function formatUpdateStatus(result, currentVersionFallback) {
       ? ` · API ${String(result.apiUrl).length > 72 ? `${String(result.apiUrl).slice(0, 72)}…` : result.apiUrl}`
       : "";
   if (!result) {
-    return `当前版本 ${current} · 尚未检查（默认 ghproxy，失败时自动回退直连）`;
+    return `当前版本 ${current} · 尚未检查（默认 ghproxy；失败时依次尝试备用镜像 / ungh / 直连）`;
   }
   if (result.skipped && result.reason === "throttled") {
     return `当前版本 ${current} · 距上次检查不足 6 小时（可点「检查新版本」强制查询）${viaSuffix}`;
@@ -2117,7 +2123,7 @@ return `
 								      <div class="panel-head">
 								        <div>
 								          <h2>检查更新</h2>
-								          <p>查询 GitHub Releases 最新版；默认经 <strong>ghproxy</strong>，避免直连 GitHub 超时。仅提示/打开下载页，不会自动安装</p>
+								          <p>查询 GitHub Releases 最新版；默认经 <strong>ghproxy</strong>，失败时自动回退备用镜像 / ungh / 直连。仅提示/打开下载页，不会自动安装</p>
 								        </div>
 								        <div class="row" style="gap:6px">
 								          <button type="button" class="btn sm" id="updateCheckBtn">检查新版本</button>
@@ -2137,7 +2143,7 @@ return `
 								          )}" />
 								        </label>
 								      </div>
-								      <p class="faint" style="margin:0 0 8px">API 请求形态：<code>{基址}https://api.github.com/repos/BB0813/HFQ-Code/releases/latest</code>。改源后点「保存更新源」或「保存偏好」即可生效。</p>
+								      <p class="faint" style="margin:0 0 8px">API 请求形态：<code>{基址}https://api.github.com/repos/BB0813/HFQ-Code/releases/latest</code>。若 <code>ghproxy.com</code> 返回 HTML，程序会自动换源；也可把基址改成 <code>https://gh-proxy.com/</code> 后点「保存更新源」。</p>
 								      <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:8px">
 								        <button type="button" class="btn sm ghost" id="updateSourceSaveBtn">保存更新源</button>
 								        <label class="field row" style="align-items:center;gap:10px;margin:0">
@@ -4317,7 +4323,7 @@ const checkUpdatesOnStartup =
 				    const status = el("updateStatus");
 				    const btn = el("updateCheckBtn");
 				    if (btn instanceof HTMLButtonElement) btn.disabled = true;
-				    if (status) status.textContent = "正在查询 Releases（优先 ghproxy）…";
+				    if (status) status.textContent = "正在查询 Releases（多源自动回退）…";
 				    try {
 				      if (!window.hfq?.checkForUpdates) throw new Error("checkForUpdates unavailable");
 				      const res = await window.hfq.checkForUpdates({ force: true });

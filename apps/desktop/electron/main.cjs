@@ -7,9 +7,23 @@ const fs = require("node:fs/promises");
 const UPDATE_REPO = { owner: "BB0813", name: "HFQ-Code" };
 const UPDATE_RELEASES_URL = `https://github.com/${UPDATE_REPO.owner}/${UPDATE_REPO.name}/releases`;
 const UPDATE_API_LATEST = `https://api.github.com/repos/${UPDATE_REPO.owner}/${UPDATE_REPO.name}/releases/latest`;
+/** ungh.cc mirrors Releases JSON without api.github.com (good CN fallback). */
+const UPDATE_UNGH_LATEST = `https://ungh.cc/repos/${UPDATE_REPO.owner}/${UPDATE_REPO.name}/releases/latest`;
 const UPDATE_CHECK_MIN_INTERVAL_MS = 6 * 60 * 60 * 1000;
-/** Default public mirror for CN networks (wraps full https://… URL). */
+/**
+ * Default public mirror for CN networks (wraps full https://… URL).
+ * Note: ghproxy.com often returns HTML interstitial now — checkForUpdates falls back.
+ */
 const DEFAULT_GHPROXY_BASE = "https://ghproxy.com/";
+/**
+ * Extra ghproxy-style bases tried after the user-configured base fails.
+ * Each wraps: {base}https://api.github.com/repos/.../releases/latest
+ */
+const GHPROXY_FALLBACK_BASES = [
+  "https://gh-proxy.com/",
+  "https://ghfast.top/",
+  "https://mirror.ghproxy.com/",
+];
 
 /**
  * Normalize a ghproxy-style base to end with exactly one trailing slash.
@@ -32,19 +46,60 @@ function normalizeGhproxyBase(base) {
 /**
  * Build the Releases latest API URL, optionally via ghproxy.
  * ghproxy expects: {base}https://api.github.com/repos/.../releases/latest
- * @param {{ source?: string, proxyBase?: string }} [opts]
+ * @param {{ source?: string, proxyBase?: string, kind?: string }} [opts]
  */
 function resolveUpdateApiUrl(opts = {}) {
+  if (opts.kind === "ungh" || opts.source === "ungh") {
+    return { url: UPDATE_UNGH_LATEST, source: "ungh", proxyBase: null, kind: "ungh" };
+  }
   const source = opts.source === "direct" ? "direct" : "ghproxy";
   if (source === "direct") {
-    return { url: UPDATE_API_LATEST, source: "direct", proxyBase: null };
+    return { url: UPDATE_API_LATEST, source: "direct", proxyBase: null, kind: "github" };
   }
   const proxyBase = normalizeGhproxyBase(opts.proxyBase);
   return {
     url: `${proxyBase}${UPDATE_API_LATEST}`,
     source: "ghproxy",
     proxyBase,
+    kind: "github",
   };
+}
+
+/**
+ * Ordered endpoints for a check. Primary source first, then resilient fallbacks.
+ * @param {{ source: string, proxyBase: string }} prefs
+ * @returns {Array<{ url: string, source: string, proxyBase: string | null, kind?: string }>}
+ */
+function buildUpdateEndpointChain(prefs) {
+  const primarySource = prefs.source === "direct" ? "direct" : "ghproxy";
+  const userBase = normalizeGhproxyBase(prefs.proxyBase);
+  /** @type {Array<{ url: string, source: string, proxyBase: string | null, kind?: string }>} */
+  const chain = [];
+  const seen = new Set();
+
+  const push = (ep) => {
+    if (!ep?.url || seen.has(ep.url)) return;
+    seen.add(ep.url);
+    chain.push(ep);
+  };
+
+  if (primarySource === "direct") {
+    push(resolveUpdateApiUrl({ source: "direct" }));
+    push(resolveUpdateApiUrl({ kind: "ungh" }));
+    // mirrors after ungh for asset mirroring preference when direct rate-limits
+    push(resolveUpdateApiUrl({ source: "ghproxy", proxyBase: userBase }));
+    for (const base of GHPROXY_FALLBACK_BASES) {
+      push(resolveUpdateApiUrl({ source: "ghproxy", proxyBase: base }));
+    }
+  } else {
+    push(resolveUpdateApiUrl({ source: "ghproxy", proxyBase: userBase }));
+    for (const base of GHPROXY_FALLBACK_BASES) {
+      push(resolveUpdateApiUrl({ source: "ghproxy", proxyBase: base }));
+    }
+    push(resolveUpdateApiUrl({ kind: "ungh" }));
+    push(resolveUpdateApiUrl({ source: "direct" }));
+  }
+  return chain;
 }
 
 /**
@@ -56,8 +111,11 @@ const UPDATE_OPEN_HOST_ALLOW = new Set([
   "api.github.com",
   "objects.githubusercontent.com",
   "release-assets.githubusercontent.com",
+  "ungh.cc",
   "ghproxy.com",
   "mirror.ghproxy.com",
+  "gh-proxy.com",
+  "ghfast.top",
   "gh.ddlc.top",
   "ghproxy.net",
   "gitclone.com",
@@ -483,11 +541,39 @@ function compareSemver(a, b) {
 }
 
 /**
+ * Human-readable reason when a body is not usable JSON.
+ * @param {string} body
+ * @param {unknown} [parseErr]
+ */
+function describeNonJsonBody(body, parseErr) {
+  const sample = String(body || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+  const lower = sample.toLowerCase();
+  if (
+    lower.startsWith("<!doctype") ||
+    lower.startsWith("<html") ||
+    lower.includes("<head") ||
+    sample.startsWith("<")
+  ) {
+    return "镜像返回了网页 HTML（不是 GitHub JSON）。常见于 ghproxy.com 失效/拦截，请改用其它基址或等待自动回退";
+  }
+  if (/rate limit/i.test(sample)) {
+    return "API 速率限制";
+  }
+  const base =
+    parseErr instanceof Error ? parseErr.message : parseErr ? String(parseErr) : "invalid JSON";
+  return sample ? `${base} · 响应片段: ${sample}` : base;
+}
+
+/**
  * Fetch JSON via Electron net (uses Chromium network stack / system proxy).
  * @param {string} url
  * @param {number} [timeoutMs]
+ * @param {{ accept?: string }} [opts]
  */
-function netFetchJson(url, timeoutMs = 12_000) {
+function netFetchJson(url, timeoutMs = 12_000, opts = {}) {
   return new Promise((resolve, reject) => {
     const request = net.request({
       method: "GET",
@@ -506,7 +592,7 @@ function netFetchJson(url, timeoutMs = 12_000) {
       reject(new Error("update check timed out"));
     }, timeoutMs);
 
-    request.setHeader("Accept", "application/vnd.github+json");
+    request.setHeader("Accept", opts.accept || "application/vnd.github+json, application/json");
     request.setHeader("User-Agent", `HFQ-Code/${app.getVersion() || "desktop"}`);
     request.setHeader("X-GitHub-Api-Version", "2022-11-28");
 
@@ -524,13 +610,24 @@ function netFetchJson(url, timeoutMs = 12_000) {
           return;
         }
         if (status < 200 || status >= 300) {
-          reject(new Error(`GitHub API HTTP ${status}`));
+          const hint = describeNonJsonBody(body);
+          reject(new Error(`HTTP ${status}${hint ? ` · ${hint}` : ""}`));
+          return;
+        }
+        const trimmed = body.trim();
+        if (
+          trimmed.startsWith("<!DOCTYPE") ||
+          trimmed.startsWith("<!doctype") ||
+          trimmed.startsWith("<html") ||
+          trimmed.startsWith("<HTML")
+        ) {
+          reject(new Error(describeNonJsonBody(body)));
           return;
         }
         try {
           resolve({ status, json: JSON.parse(body), body });
         } catch (err) {
-          reject(err instanceof Error ? err : new Error(String(err)));
+          reject(new Error(describeNonJsonBody(body, err)));
         }
       });
       response.on("error", (err) => {
@@ -548,6 +645,73 @@ function netFetchJson(url, timeoutMs = 12_000) {
     });
     request.end();
   });
+}
+
+/**
+ * Normalize ungh.cc latest release payload into GitHub Releases-like JSON.
+ * @param {any} raw
+ */
+function normalizeUnghReleaseJson(raw) {
+  const rel = raw?.release || raw;
+  if (!rel || typeof rel !== "object") return null;
+  const tag = String(rel.tag || rel.tag_name || rel.name || "").trim();
+  if (!tag) return null;
+  const assets = Array.isArray(rel.assets)
+    ? rel.assets.map((a) => {
+        const downloadUrl = String(
+          a.downloadUrl || a.browser_download_url || a.url || "",
+        );
+        let name = String(a.name || a.label || "").trim();
+        if (!name && downloadUrl) {
+          try {
+            const pathPart = new URL(downloadUrl).pathname;
+            name = decodeURIComponent(pathPart.split("/").pop() || "");
+          } catch {
+            name = downloadUrl.split("/").pop() || "";
+          }
+        }
+        // GitHub release assets may use dots for spaces (HFQ.Code-…)
+        if (name.startsWith("HFQ.Code-")) {
+          name = name.replace(/^HFQ\.Code-/, "HFQ Code-");
+        }
+        return {
+          name,
+          browser_download_url: downloadUrl,
+          size: Number(a.size) || 0,
+          content_type: a.contentType || a.content_type || "",
+        };
+      })
+    : [];
+  const body =
+    typeof rel.markdown === "string"
+      ? rel.markdown
+      : typeof rel.body === "string"
+        ? rel.body
+        : typeof rel.notes === "string"
+          ? rel.notes
+          : "";
+  return {
+    tag_name: tag,
+    name: rel.name || tag,
+    html_url:
+      rel.html_url ||
+      `https://github.com/${UPDATE_REPO.owner}/${UPDATE_REPO.name}/releases/tag/${encodeURIComponent(tag)}`,
+    body,
+    published_at: rel.publishedAt || rel.published_at || null,
+    prerelease: Boolean(rel.prerelease),
+    draft: Boolean(rel.draft),
+    assets,
+  };
+}
+
+/**
+ * True if JSON looks like a usable GitHub Releases (or normalized) latest payload.
+ * @param {any} json
+ */
+function isUsableReleaseJson(json) {
+  if (!json || typeof json !== "object") return false;
+  const tag = String(json.tag_name || json.name || "").trim();
+  return Boolean(tag);
 }
 
 /**
@@ -642,7 +806,7 @@ async function checkForUpdates(opts = {}) {
   const updateSource =
     cfg?.prefs?.updateSource === "direct" ? "direct" : "ghproxy";
   const updateProxyBase = normalizeGhproxyBase(cfg?.prefs?.updateProxyBase);
-  const endpoint = resolveUpdateApiUrl({
+  const preferred = resolveUpdateApiUrl({
     source: updateSource,
     proxyBase: updateProxyBase,
   });
@@ -662,101 +826,89 @@ async function checkForUpdates(opts = {}) {
         publishedAt: null,
         assets: [],
         checkedAt: cfg.prefs.lastUpdateCheckAt,
-        source: endpoint.source,
-        proxyBase: endpoint.proxyBase,
-        apiUrl: endpoint.url,
+        source: preferred.source,
+        proxyBase: preferred.proxyBase,
+        apiUrl: preferred.url,
         fallbackUsed: false,
         primaryError: null,
       };
     }
   }
 
-  try {
-    const { status, json } = await netFetchJson(endpoint.url);
-    if (status === 404 || !json) {
-      const result = buildUpdateSuccessResult(null, {
-        currentVersion,
-        checkedAt,
-        endpoint,
-      });
-      await persistUpdateCheckStamp(checkedAt).catch(() => {});
-      return result;
-    }
-    const result = buildUpdateSuccessResult(json, {
-      currentVersion,
-      checkedAt,
-      endpoint,
-    });
-    await persistUpdateCheckStamp(checkedAt).catch(() => {});
-    return result;
-  } catch (err) {
-    const primaryError = err instanceof Error ? err.message : String(err);
-    // When ghproxy fails, automatically try direct GitHub once (manual check resilience).
-    if (endpoint.source === "ghproxy") {
-      try {
-        const directEp = resolveUpdateApiUrl({ source: "direct" });
-        const { status, json } = await netFetchJson(directEp.url, 15_000);
-        if (status === 404 || !json) {
+  const chain = buildUpdateEndpointChain({
+    source: updateSource,
+    proxyBase: updateProxyBase,
+  });
+  /** @type {string[]} */
+  const errors = [];
+  let primaryError = null;
+
+  for (let i = 0; i < chain.length; i++) {
+    const endpoint = chain[i];
+    try {
+      const timeout = endpoint.source === "direct" || endpoint.source === "ungh" ? 15_000 : 12_000;
+      const accept =
+        endpoint.source === "ungh" ? "application/json" : "application/vnd.github+json, application/json";
+      const { status, json: rawJson } = await netFetchJson(endpoint.url, timeout, { accept });
+      let json = rawJson;
+      if (endpoint.source === "ungh" || endpoint.kind === "ungh") {
+        json = normalizeUnghReleaseJson(rawJson);
+      }
+      if (status === 404 || !json) {
+        // empty release list is success-shaped only for primary github API
+        if (i === 0 && endpoint.source !== "ungh") {
           const result = buildUpdateSuccessResult(null, {
             currentVersion,
             checkedAt,
-            endpoint: directEp,
-            fallbackUsed: true,
-            primaryError,
+            endpoint,
           });
           await persistUpdateCheckStamp(checkedAt).catch(() => {});
           return result;
         }
-        const result = buildUpdateSuccessResult(json, {
-          currentVersion,
-          checkedAt,
-          endpoint: directEp,
-          fallbackUsed: true,
-          primaryError,
-        });
-        await persistUpdateCheckStamp(checkedAt).catch(() => {});
-        return result;
-      } catch (err2) {
-        const secondary = err2 instanceof Error ? err2.message : String(err2);
-        return {
-          ok: false,
-          skipped: false,
-          currentVersion,
-          latestVersion: null,
-          updateAvailable: false,
-          releaseUrl: UPDATE_RELEASES_URL,
-          releaseNotes: null,
-          publishedAt: null,
-          assets: [],
-          checkedAt,
-          error: `ghproxy 失败（${primaryError}）；直连回退也失败（${secondary}）`,
-          source: endpoint.source,
-          proxyBase: endpoint.proxyBase,
-          apiUrl: endpoint.url,
-          fallbackUsed: true,
-          primaryError,
-        };
+        errors.push(`${endpoint.source}: empty/404`);
+        if (!primaryError) primaryError = `${endpoint.source}: empty/404`;
+        continue;
       }
+      if (!isUsableReleaseJson(json)) {
+        const msg = `${endpoint.source}: 响应缺少 tag_name`;
+        errors.push(msg);
+        if (!primaryError) primaryError = msg;
+        continue;
+      }
+      const result = buildUpdateSuccessResult(json, {
+        currentVersion,
+        checkedAt,
+        endpoint,
+        fallbackUsed: i > 0,
+        primaryError: i > 0 ? primaryError : null,
+      });
+      await persistUpdateCheckStamp(checkedAt).catch(() => {});
+      return result;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`${endpoint.source}${endpoint.proxyBase ? `@${endpoint.proxyBase}` : ""}: ${msg}`);
+      if (!primaryError) primaryError = msg;
     }
-    return {
-      ok: false,
-      skipped: false,
-      currentVersion,
-      latestVersion: null,
-      updateAvailable: false,
-      releaseUrl: UPDATE_RELEASES_URL,
-      releaseNotes: null,
-      publishedAt: null,
-      assets: [],
-      checkedAt,
-      error: primaryError,
-      source: endpoint.source,
-      proxyBase: endpoint.proxyBase,
-      apiUrl: endpoint.url,
-      fallbackUsed: false,
-      primaryError,
-    };
   }
+
+  return {
+    ok: false,
+    skipped: false,
+    currentVersion,
+    latestVersion: null,
+    updateAvailable: false,
+    releaseUrl: UPDATE_RELEASES_URL,
+    releaseNotes: null,
+    publishedAt: null,
+    assets: [],
+    checkedAt,
+    error: `全部更新源失败：${errors.slice(0, 4).join(" → ")}${errors.length > 4 ? " …" : ""}`,
+    source: preferred.source,
+    proxyBase: preferred.proxyBase,
+    apiUrl: preferred.url,
+    fallbackUsed: errors.length > 1,
+    primaryError,
+  };
 }
 
 async function persistUpdateCheckStamp(checkedAt) {

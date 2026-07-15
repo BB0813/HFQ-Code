@@ -1,7 +1,7 @@
 # HFQ Code — Development roadmap (post-1.0.5)
 
 Status: **active plan**  
-Baseline: product **1.0.6** (`v1.0.6`) · 2026-07-15  
+Baseline: product **1.0.7** (`v1.0.7`) · 2026-07-15  
 Last updated: 2026-07-15
 
 ## Positioning (frozen)
@@ -13,13 +13,13 @@ Last updated: 2026-07-15
 
 ## Where we are
 
-| Area | State after 1.0.6 |
+| Area | State after 1.0.7 |
 |------|-------------------|
 | Agent loop + tools + worker | Shipped |
 | Access modes / permission modal | Shipped (1.0.2+) |
 | Chat composer polish | Shipped (1.0.3) |
 | `/goal` long-run + Tasks + Chat banner | Shipped (1.0.4–1.0.6) |
-| Update check via ghproxy + direct fallback | Shipped (1.0.4–1.0.5) |
+| Update check multi-source fallback | **Shipped** (1.0.5–1.0.7): mirrors → ungh → direct |
 | Skills store (preview / conflict / tags) | **Shipped** (1.0.6); remote zip **not yet** |
 | True interactive Terminal (PTY) | **Not shipped** (one-shot shell) |
 | DPAPI credentials / code signing / electron-updater | **Not shipped** |
@@ -55,21 +55,30 @@ Small, shippable patches. Keep `pnpm release:check` green; tag `v*` + Actions + 
 | A1-5 | Update check `apiUrl` faint line | Settings | ✅ |
 | A1-6 | catalog install/preview unit tests | `catalog.test.ts` | ✅ |
 
-**Out of scope (carry to later):** remote zip (1.0.7), PTY, React rewrite.
+**Out of scope (carry to later):** remote zip, PTY, React rewrite.
 
-### A2 · **1.0.7** — ClawHub remote packages (safe path)
+### A2 · **1.0.7** — Update multi-source fallback ✅ shipped
+
+| ID | Work | Done |
+|----|------|------|
+| A2-u1 | Detect HTML/non-JSON mirror responses | ✅ |
+| A2-u2 | Chain extra ghproxy-style bases + **ungh.cc** + direct | ✅ |
+| A2-u3 | Normalize ungh assets / release notes | ✅ |
+
+**Note:** original A2 remote zip deferred to **1.0.8** (hotfix priority for dead ghproxy.com).
+
+### A3 · **1.0.8** — ClawHub remote packages (safe path) + permission polish
 
 | ID | Work | Notes |
 |----|------|--------|
-| A2-1 | Catalog item `packageUrl` → download **zip/tarball** to temp | https only; size limit; timeout |
-| A2-2 | Extract under user skills with same safe-name rules as local install | Reject path escape / absolute paths in zip |
-| A2-3 | Optional SHA256 in `catalog.json` | Fail closed if mismatch |
-| A2-4 | UI: install progress + error surface | No auto-run of scripts from package |
-| A2-5 | Security review note in [COMPAT.md](./COMPAT.md) | Document threat model |
+| A3-z1 | Catalog item `packageUrl` → download **zip/tarball** to temp | https only; size limit; timeout |
+| A3-z2 | Extract under user skills with same safe-name rules as local install | Reject path escape / absolute paths in zip |
+| A3-z3 | Optional SHA256 in `catalog.json` | Fail closed if mismatch |
+| A3-z4 | UI: install progress + error surface | No auto-run of scripts from package |
+| A3-p1 | Permission modal multi-request queue hardening | timeouts, session label |
+| A3-p2 | Worker crash → clear modal + composer unlock | audit remaining paths |
 
-**Policy:** packages are **data + SKILL.md instructions**, not arbitrary installer executables. No brew/node install specs UI yet.
-
-### A3 · **1.0.8** — Permissions / worker edge polish
+**Policy:** packages are **data + SKILL.md instructions**, not arbitrary installer executables.
 
 | ID | Work |
 |----|------|
