@@ -12,3 +12,4 @@ coverage/
 apps/desktop/release/
 .hfq/
 credentials.json
+/.zcode
