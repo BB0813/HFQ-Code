@@ -177,7 +177,75 @@ export interface InstallSkillResult {
   ok: boolean;
   name?: string;
   destDir?: string;
+  /** Source folder used for install (so UI can retry overwrite without re-picking). */
+  sourceDir?: string;
   error?: string;
+  /** Machine-readable conflict / error code for UI. */
+  code?: "already_exists" | "invalid" | "io" | "cancelled";
+}
+
+export interface SkillPreviewResult {
+  ok: boolean;
+  name?: string;
+  description?: string;
+  body?: string;
+  path?: string;
+  source?: string;
+  error?: string;
+}
+
+/**
+ * Read SKILL.md for preview. `skillDir` must resolve under one of `allowedRoots`.
+ */
+export async function readSkillPreview(opts: {
+  skillDir?: string;
+  allowedRoots: string[];
+  maxChars?: number;
+}): Promise<SkillPreviewResult> {
+  const maxChars = Math.max(2_000, Math.min(200_000, opts.maxChars ?? 48_000));
+  const skillDir = path.resolve(String(opts.skillDir || ""));
+  if (!skillDir) return { ok: false, error: "skillDir required" };
+
+  let realDir: string;
+  try {
+    realDir = await fs.realpath(skillDir);
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+
+  const roots: string[] = [];
+  for (const r of opts.allowedRoots || []) {
+    try {
+      roots.push(await fs.realpath(path.resolve(r)));
+    } catch {
+      /* skip missing root */
+    }
+  }
+  const underRoot = roots.some(
+    (root) => realDir === root || realDir.startsWith(root + path.sep),
+  );
+  if (!underRoot) {
+    return { ok: false, error: "skill path outside allowed skill roots" };
+  }
+
+  const mdPath = path.join(realDir, "SKILL.md");
+  try {
+    const raw = await fs.readFile(mdPath, "utf8");
+    const { frontmatter } = parseSkillMarkdown(raw);
+    const text = raw.length > maxChars ? `${raw.slice(0, maxChars)}\n\n…` : raw;
+    return {
+      ok: true,
+      name: frontmatter.name,
+      description: frontmatter.description,
+      body: text,
+      path: mdPath,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 /**
@@ -190,7 +258,11 @@ export async function installSkillFromDir(
   const sourceDir = path.resolve(String(opts.sourceDir || ""));
   const userSkillsDir = path.resolve(String(opts.userSkillsDir || ""));
   if (!sourceDir || !userSkillsDir) {
-    return { ok: false, error: "sourceDir and userSkillsDir required" };
+    return {
+      ok: false,
+      code: "invalid",
+      error: "sourceDir and userSkillsDir required",
+    };
   }
 
   let sourceReal: string;
@@ -202,7 +274,9 @@ export async function installSkillFromDir(
   } catch (err) {
     return {
       ok: false,
+      code: "io",
       error: err instanceof Error ? err.message : String(err),
+      sourceDir,
     };
   }
 
@@ -211,7 +285,12 @@ export async function installSkillFromDir(
   try {
     raw = await fs.readFile(skillMd, "utf8");
   } catch {
-    return { ok: false, error: "SKILL.md not found in source folder" };
+    return {
+      ok: false,
+      code: "invalid",
+      error: "SKILL.md not found in source folder",
+      sourceDir: sourceReal,
+    };
   }
 
   let name: string;
@@ -221,23 +300,43 @@ export async function installSkillFromDir(
   } catch (err) {
     return {
       ok: false,
+      code: "invalid",
       error: err instanceof Error ? err.message : "invalid SKILL.md",
+      sourceDir: sourceReal,
     };
   }
   if (!isSafeSkillName(name)) {
-    return { ok: false, error: `unsafe skill name: ${name || "(empty)"}` };
+    return {
+      ok: false,
+      code: "invalid",
+      error: `unsafe skill name: ${name || "(empty)"}`,
+      sourceDir: sourceReal,
+    };
   }
 
   const destDir = path.join(userReal, name);
   // Destination must stay under user skills root
   if (!destDir.startsWith(userReal + path.sep) && destDir !== userReal) {
-    return { ok: false, error: "destination escapes user skills directory" };
+    return {
+      ok: false,
+      code: "invalid",
+      error: "destination escapes user skills directory",
+      name,
+      sourceDir: sourceReal,
+    };
   }
 
   try {
     await fs.access(destDir);
     if (!opts.overwrite) {
-      return { ok: false, error: `skill already installed: ${name}`, name, destDir };
+      return {
+        ok: false,
+        code: "already_exists",
+        error: `skill already installed: ${name}`,
+        name,
+        destDir,
+        sourceDir: sourceReal,
+      };
     }
     await fs.rm(destDir, { recursive: true, force: true });
   } catch {
@@ -249,12 +348,14 @@ export async function installSkillFromDir(
   } catch (err) {
     return {
       ok: false,
+      code: "io",
       error: err instanceof Error ? err.message : String(err),
       name,
+      sourceDir: sourceReal,
     };
   }
 
-  return { ok: true, name, destDir };
+  return { ok: true, name, destDir, sourceDir: sourceReal };
 }
 
 async function copyDirRecursive(src: string, dest: string): Promise<void> {

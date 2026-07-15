@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.0.6 — 2026-07-15
+
+### Skills store depth
+- **SKILL.md 预览抽屉**：已安装技能、商店卡片、任选文件夹均可预览（路径限制在技能根目录内）
+- **安装冲突**：同名已存在时确认是否覆盖；覆盖时复用 `sourceDir`，不再二次选文件夹
+- **标签 chips**：商店按 tag 筛选（git / test / docs / planned 等）
+- Install result codes：`already_exists` | `invalid` | `io` | `cancelled`；IPC `skills:preview`
+
+### Goal UX
+- Chat 顶部 **/goal 横幅**（进行中任务 + 任务页 / 停止）
+- `task.updated` 时局部刷新横幅，避免整页重绘
+
+### UI R1 起步
+- 抽出 `apps/desktop/renderer/skills-ui.js`（`HFQSkillsUI` 纯函数：tags / filter / activeGoal）
+
+### Update diagnostics
+- Settings 更新状态行附加截断后的 `apiUrl`，便于排查 ghproxy / 直连
+
+---
+
 ## 1.0.5 — 2026-07-15
 
 ### Update check resilience

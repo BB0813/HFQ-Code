@@ -21,6 +21,7 @@ Last updated: 2026-07-15
 - [x] Note hotspots: `app.js` pages, chat composer, Skills store tabs, Settings update panel  
 
 ### R1 — Shell structure
+- [x] First extract: `skills-ui.js` (`HFQSkillsUI` pure helpers) — **1.0.6**  
 - [ ] Split renderer into modules: `nav.js`, `pages/*`, `chat/*`, `settings/*` (still vanilla or light bundler)  
 - [ ] Shared layout primitives: panel head, empty state, seg-tabs, data tables  
 - [ ] Keyboard map doc (focus traps for modal / palette)  
@@ -29,12 +30,13 @@ Last updated: 2026-07-15
 - [ ] Message virtualization for long transcripts  
 - [ ] Tool-call cards with collapsible I/O  
 - [ ] Sticky composer + clearer permission mode / model chips  
-- [ ] Goal turn banner (budget + stop) first-class, not only system text  
+- [x] Goal turn banner (budget + stop) first-class — **1.0.6**  
 
 ### R3 — Skills / ClawHub store visual system
 - [ ] Store grid polish (cover/icon optional, category rails)  
-- [ ] Install progress + conflict UI  
-- [ ] Detail drawer for SKILL.md preview  
+- [x] Install conflict UI (overwrite confirm) — **1.0.6**  
+- [x] Detail drawer for SKILL.md preview — **1.0.6**  
+- [ ] Tag chips / filter rails polish (functional in 1.0.6; visual polish later)  
 - [ ] Remote package install (after security review)  
 
 ### R4 — Home / Tasks / Changes

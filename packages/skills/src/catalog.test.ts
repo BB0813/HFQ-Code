@@ -8,6 +8,7 @@ import {
   installSkillFromDir,
   mergeCatalog,
   parseRemoteCatalogJson,
+  readSkillPreview,
 } from "./catalog.js";
 
 const temps: string[] = [];
@@ -75,13 +76,38 @@ describe("skill catalog scaffold", () => {
 
     const again = await installSkillFromDir({ sourceDir: src, userSkillsDir: user });
     expect(again.ok).toBe(false);
+    expect(again.code).toBe("already_exists");
     expect(again.error).toMatch(/already installed/);
+    expect(again.sourceDir).toBeTruthy();
 
     const overwrite = await installSkillFromDir({
-      sourceDir: src,
+      sourceDir: again.sourceDir || src,
       userSkillsDir: user,
       overwrite: true,
     });
     expect(overwrite.ok).toBe(true);
+
+    const empty = path.join(root, "empty");
+    await fs.mkdir(empty, { recursive: true });
+    const bad = await installSkillFromDir({
+      sourceDir: empty,
+      userSkillsDir: user,
+    });
+    expect(bad.ok).toBe(false);
+    expect(bad.code).toBe("invalid");
+
+    const preview = await readSkillPreview({
+      skillDir: path.join(user, "demo-install"),
+      allowedRoots: [user],
+    });
+    expect(preview.ok).toBe(true);
+    expect(preview.name).toBe("demo-install");
+    expect(preview.body).toContain("Demo");
+
+    const denied = await readSkillPreview({
+      skillDir: path.join(user, "demo-install"),
+      allowedRoots: [path.join(root, "other")],
+    });
+    expect(denied.ok).toBe(false);
   });
 });

@@ -13,7 +13,7 @@
 | **Changes** | File diff list, accept/reject all or selected hunks, open file |
 | **Terminal** | Session-linked terminal, re-run, approval for commands |
 | **Tasks** | Multi-step task list, status, retry |
-| **Skills** | Installed list + **商店** tab (ClawHub scaffold); local folder install; open folder |
+| **Skills** | Installed list + **商店** tab (preview / tags / conflict); local folder install; open folder |
 | **MCP** | Server list (persisted in config.json), connect status, tool inventory; live **stdio + HTTP** tools inject as `mcp__*` |
 | **Models** | Providers, API keys, default/fallback models |
 | **Permissions** | Tool risk matrix; ask/allow/deny; session overrides |

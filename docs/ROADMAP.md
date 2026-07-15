@@ -1,7 +1,7 @@
 # HFQ Code — Development roadmap (post-1.0.5)
 
 Status: **active plan**  
-Baseline: product **1.0.5** (`v1.0.5`) · 2026-07-15  
+Baseline: product **1.0.6** (`v1.0.6`) · 2026-07-15  
 Last updated: 2026-07-15
 
 ## Positioning (frozen)
@@ -13,17 +13,17 @@ Last updated: 2026-07-15
 
 ## Where we are
 
-| Area | State after 1.0.5 |
+| Area | State after 1.0.6 |
 |------|-------------------|
 | Agent loop + tools + worker | Shipped |
 | Access modes / permission modal | Shipped (1.0.2+) |
 | Chat composer polish | Shipped (1.0.3) |
-| `/goal` long-run + Tasks | Shipped (1.0.4–1.0.5) |
+| `/goal` long-run + Tasks + Chat banner | Shipped (1.0.4–1.0.6) |
 | Update check via ghproxy + direct fallback | Shipped (1.0.4–1.0.5) |
-| Skills store scaffold (curated + local install) | **Scaffold only** (1.0.5) |
+| Skills store (preview / conflict / tags) | **Shipped** (1.0.6); remote zip **not yet** |
 | True interactive Terminal (PTY) | **Not shipped** (one-shot shell) |
 | DPAPI credentials / code signing / electron-updater | **Not shipped** |
-| Renderer split / full UI redesign | **R0 docs only** — [UI-REDESIGN.md](./UI-REDESIGN.md) |
+| Renderer split / full UI redesign | **R1 started** (`skills-ui.js`) — [UI-REDESIGN.md](./UI-REDESIGN.md) |
 
 ---
 
@@ -42,20 +42,20 @@ Do **not** expand into multi-tenant cloud agent or IM gateway.
 
 Small, shippable patches. Keep `pnpm release:check` green; tag `v*` + Actions + SHA256.
 
-### A1 · **1.0.6** — Store depth + goal UX (next recommended)
+### A1 · **1.0.6** — Store depth + goal UX ✅ shipped
 
 **Goal:** make Skills store usable day-to-day; tighten long-run feedback.
 
 | ID | Work | Files / area | Done when |
 |----|------|--------------|-----------|
-| A1-1 | SKILL.md **preview drawer** in store (read local installed / selected path) | `renderer/app.js`, `skills:*` IPC | User can preview body before install |
-| A1-2 | Install **conflict UI** (exists → overwrite confirm / rename) | `installSkillFromDir`, Skills UI | No silent fail on duplicate |
-| A1-3 | Catalog filter chips (tags: git / test / docs / planned) | Skills store | Chips filter cards |
-| A1-4 | Goal **banner** in Chat while `taskId` in_progress (budget + 停止) | Chat + `task.updated` | Visible without hunting system messages |
-| A1-5 | Update check: show `apiUrl` in diagnostics / Settings faint line | Settings | Easier support |
-| A1-6 | Eval/smoke note for catalog parse + install (unit already in catalog.test) | tests | No regression on install |
+| A1-1 | SKILL.md **preview drawer** | `skills:preview`, drawer UI | ✅ |
+| A1-2 | Install **conflict UI** (overwrite confirm + `sourceDir` retry) | catalog + Skills UI | ✅ |
+| A1-3 | Catalog filter chips | `HFQSkillsUI` + store | ✅ |
+| A1-4 | Goal **banner** in Chat | Chat + `task.updated` | ✅ |
+| A1-5 | Update check `apiUrl` faint line | Settings | ✅ |
+| A1-6 | catalog install/preview unit tests | `catalog.test.ts` | ✅ |
 
-**Out of scope for 1.0.6:** remote zip download, PTY, React rewrite.
+**Out of scope (carry to later):** remote zip (1.0.7), PTY, React rewrite.
 
 ### A2 · **1.0.7** — ClawHub remote packages (safe path)
 
@@ -172,9 +172,8 @@ Parallelism allowed: **R1 module split** can start immediately alongside 1.0.6 f
 
 | Priority | Item | Why |
 |----------|------|-----|
-| **P0** | 1.0.6 A1-1…A1-4 | Unblocks store + goal daily use |
-| **P0** | R1 extract Skills/Settings modules | Enables all later UI work |
-| **P1** | 1.0.7 remote packages | Real “ClawHub slowly” |
+| **P0** | 1.0.7 remote packages (A2) | Real “ClawHub slowly” |
+| **P0** | R1 continue (nav/settings modules) | Enables later UI work |
 | **P1** | 1.1 PTY | Largest coding-agent gap vs peers |
 | **P2** | 1.0.8 permission polish | Reliability |
 | **P2** | 1.2 signing/DPAPI | Distribution trust |
@@ -202,12 +201,11 @@ Parallelism allowed: **R1 module split** can start immediately alongside 1.0.6 f
 
 ---
 
-## Next concrete sprint (1.0.6 proposal)
+## Next concrete sprint (after 1.0.6)
 
-1. Preview drawer for skill body (installed + catalog planned packs from bundled text if any)  
-2. Overwrite confirm on install  
-3. Chat goal in-progress banner wired to Tasks  
-4. Extract `apps/desktop/renderer/pages/skills.js` (or equivalent) — first R1 slice  
-5. Ship 1.0.6 with SHA256  
+1. **1.0.7** remote zip install (https-only, size limit, optional SHA256)  
+2. Continue R1: more renderer extracts beyond `skills-ui.js`  
+3. **1.1** node-pty / ConPTY design spike when ready  
+4. Keep `pnpm release:check` green on main  
 
-When starting implementation, open with **1.0.6 P0 items** unless product priority changes.
+Default next ship target: **1.0.7** unless product priority changes.

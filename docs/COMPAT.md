@@ -31,14 +31,16 @@ metadata:
 
 Also scan `~/.agents/skills` as a **read-only import source** (ZCode / shared agent skills), without writing back.
 
-### ClawHub-style store (1.0.5 scaffold)
+### ClawHub-style store (1.0.5 scaffold · 1.0.6 depth)
 
 | Capability | Status |
 |------------|--------|
 | Skills page **商店** tab + curated catalog | Done |
 | Optional remote `skills/catalog.json` | Done (best-effort) |
 | Install from local folder → user skills dir | Done |
-| Remote package download / zip install | Not yet |
+| SKILL.md preview drawer + tag chips | Done (1.0.6) |
+| Install conflict / overwrite confirm | Done (1.0.6) |
+| Remote package download / zip install | Not yet (1.0.7) |
 | Full ClawHub marketplace / publish | Not yet |
 
 ### Not in MVP

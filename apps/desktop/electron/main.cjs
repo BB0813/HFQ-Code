@@ -1738,7 +1738,7 @@ function registerIpc() {
         properties: ["openDirectory"],
       });
       if (picked.canceled || !picked.filePaths?.[0]) {
-        return { ok: false, cancelled: true };
+        return { ok: false, cancelled: true, code: "cancelled" };
       }
       sourceDir = picked.filePaths[0];
     }
@@ -1748,6 +1748,55 @@ function registerIpc() {
       overwrite: Boolean(payload.overwrite),
     });
     return res;
+  });
+
+  /**
+   * Preview SKILL.md under workspace / user / shared / bundled skill roots only.
+   */
+  ipcMain.handle("skills:preview", async (_evt, payload = {}) => {
+    const ws = payload.workspacePath || workspacePath;
+    const { agentCore, skillsMod } = await loadModules();
+    const dirs = await agentCore.ensureDataDirs();
+    const allowedRoots = [
+      dirs.skills,
+      path.join(os.homedir(), ".agents", "skills"),
+      bundledSkillsDir(),
+    ].filter(Boolean);
+    if (ws) {
+      allowedRoots.push(path.join(ws, "skills"), path.join(ws, ".agents", "skills"));
+    }
+    // Also allow a one-shot folder pick when skillDir omitted
+    let skillDir = typeof payload.skillDir === "string" ? payload.skillDir.trim() : "";
+    if (!skillDir && payload.pick) {
+      const picked = await dialog.showOpenDialog(mainWindow || undefined, {
+        title: "选择技能文件夹预览（需含 SKILL.md）",
+        properties: ["openDirectory"],
+      });
+      if (picked.canceled || !picked.filePaths?.[0]) {
+        return { ok: false, cancelled: true };
+      }
+      skillDir = picked.filePaths[0];
+      // Temporary allow the picked path's parent for preview
+      allowedRoots.push(path.dirname(skillDir), skillDir);
+    }
+    if (!skillDir && payload.name) {
+      const records = await skillsMod.loadSkills({
+        workspacePath: ws || undefined,
+        userSkillsDir: dirs.skills,
+        sharedAgentsDir: path.join(os.homedir(), ".agents", "skills"),
+        bundledDir: bundledSkillsDir(),
+      });
+      const hit = records.find(
+        (s) => String(s.name).toLowerCase() === String(payload.name).toLowerCase(),
+      );
+      if (!hit?.dir) return { ok: false, error: `skill not found: ${payload.name}` };
+      skillDir = hit.dir;
+    }
+    return skillsMod.readSkillPreview({
+      skillDir,
+      allowedRoots,
+      maxChars: payload.maxChars,
+    });
   });
 
   ipcMain.handle("policy:matrix", async (_evt, payload = {}) => {
