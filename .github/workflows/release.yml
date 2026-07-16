@@ -124,6 +124,9 @@ jobs:
       - name: Package Windows (NSIS + portable)
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          # node-pty is optional; CI runners may lack full VS for node-gyp.
+          # Runtime falls back to spawn-pipe when native binding is unavailable.
+          npm_config_build_from_source: "false"
         run: pnpm pack:win
 
       - name: Assert no private keys in release tree

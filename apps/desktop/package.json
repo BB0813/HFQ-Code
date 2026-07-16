@@ -15,9 +15,9 @@
     "prepack:dir": "pnpm run build:renderer",
     "prepack:win": "pnpm run build:renderer",
     "prepack:portable": "pnpm run build:renderer",
-    "pack:dir": "electron-builder --win dir --x64",
-    "pack:win": "electron-builder --win nsis portable --x64",
-    "pack:portable": "electron-builder --win portable --x64"
+    "pack:dir": "electron-builder --win dir --x64 --publish never",
+    "pack:win": "electron-builder --win nsis portable --x64 --publish never",
+    "pack:portable": "electron-builder --win portable --x64 --publish never"
   },
   "dependencies": {
     "@hfq/agent-core": "workspace:*",
@@ -90,6 +90,10 @@
       "package.json"
     ],
     "asar": false,
+    "npmRebuild": false,
+    "buildDependenciesFromSource": false,
+    "nodeGypRebuild": false,
+    "publish": null,
     "extraResources": [
       {
         "from": "../../skills/bundled",

@@ -33,4 +33,5 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           HFQ_SIGN_SKIP: "1"
+          npm_config_build_from_source: "false"
         run: pnpm pack:verify
