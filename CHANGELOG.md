@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.1.1 — 2026-07-16
+
+### Updates (D3)
+- `update:install` auto-downloads recommended installer when no local file (`autoDownload` default on)
+- `resolveInstallerPath`: recover newest `updates/*.exe` from disk after restart
+- Chinese error strings for concurrent download / missing installer paths
+
+### Session identity
+- `SessionInfo` / `session.meta` / list+open carry optional **`providerId`**
+- `config:setActive` returns `sessionApplied: { id, model, providerId }`
+- Empty providers: stable keywords `providers empty` / `no model provider` on hard + soft paths
+
+### Sub-agent persistence (Tasks)
+- **`listChildren` / `listChildSessions`**: cold-start rebuild from disk JSONL via `parentSessionId`
+- **`listSpawnAttempts`**: durable `%data%/sessions/<parentId>.spawn-attempts.json` (cap 50; failed depth/goal kept)
+- `open` restores parent/goal/profile/depth and re-links children map
+
+### Docs / tests
+- FRONTEND-IPC Tasks cold-start table · SUBAGENT-OBS persistence · session cold-start tests
+
+---
+
 ## 1.1.0 — 2026-07-16
 
 ### Providers / Models

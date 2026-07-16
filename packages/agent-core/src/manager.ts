@@ -101,39 +101,142 @@ export class SessionManager {
     return [...this.sessions.values()].map((s) => ({ ...s.info }));
   }
 
-  listChildren(parentSessionId: string): SessionInfo[] {
-    const ids = this.children.get(parentSessionId);
-    if (!ids?.size) return [];
-    return [...ids]
-      .map((id) => this.sessions.get(id)?.info)
-      .filter((x): x is SessionInfo => Boolean(x))
-      .map((s) => ({ ...s }));
+  /**
+   * Children of a parent session.
+   * Live map first; if empty/partial, rebuild from disk JSONL via listAll
+   * (`SessionInfo.parentSessionId`) so Tasks tree survives cold start.
+   */
+  async listChildren(parentSessionId: string): Promise<SessionInfo[]> {
+    const parentId = String(parentSessionId ?? "").trim();
+    if (!parentId) return [];
+
+    const byId = new Map<string, SessionInfo>();
+    const memIds = this.children.get(parentId);
+    if (memIds?.size) {
+      for (const id of memIds) {
+        const live = this.sessions.get(id)?.info;
+        if (live) byId.set(id, { ...live });
+      }
+    }
+
+    try {
+      const all = await this.listAll();
+      for (const s of all) {
+        if (s.parentSessionId !== parentId) continue;
+        const prev = byId.get(s.id);
+        // Prefer live memory fields when both exist.
+        byId.set(s.id, prev ? { ...s, ...prev } : { ...s });
+        const set = this.children.get(parentId) ?? new Set();
+        set.add(s.id);
+        this.children.set(parentId, set);
+      }
+    } catch {
+      /* disk scan best-effort */
+    }
+
+    return [...byId.values()].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
   }
 
-  /** Recent spawn attempts for a parent (success + failed), newest first. */
-  listSpawnAttempts(parentSessionId: string): SubagentSpawnAttempt[] {
-    const list = this.spawnAttempts.get(parentSessionId) ?? [];
+  /**
+   * Recent spawn attempts for a parent (success + failed), newest first.
+   * Loads from `%data%/sessions/<parentId>.spawn-attempts.json` when memory is cold.
+   */
+  async listSpawnAttempts(parentSessionId: string): Promise<SubagentSpawnAttempt[]> {
+    const parentId = String(parentSessionId ?? "").trim();
+    if (!parentId) return [];
+    const list = await this.loadSpawnAttempts(parentId);
     return list.map((a) => ({ ...a })).reverse();
   }
 
-  private pushSpawnAttempt(attempt: SubagentSpawnAttempt): void {
+  private spawnAttemptsPath(sessionsDir: string, parentSessionId: string): string {
+    // Keep beside JSONL transcripts; sanitize path segment.
+    const safe = String(parentSessionId).replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
+    return path.join(sessionsDir, `${safe}.spawn-attempts.json`);
+  }
+
+  private async loadSpawnAttempts(parentSessionId: string): Promise<SubagentSpawnAttempt[]> {
+    if (this.spawnAttempts.has(parentSessionId)) {
+      return this.spawnAttempts.get(parentSessionId) ?? [];
+    }
+    try {
+      const dirs = await ensureDataDirs();
+      const file = this.spawnAttemptsPath(dirs.sessions, parentSessionId);
+      const raw = await fs.readFile(file, "utf8");
+      const parsed = JSON.parse(raw) as unknown;
+      const arr = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray((parsed as { attempts?: unknown })?.attempts)
+          ? (parsed as { attempts: unknown[] }).attempts
+          : [];
+      const cleaned: SubagentSpawnAttempt[] = [];
+      for (const item of arr) {
+        if (!item || typeof item !== "object") continue;
+        const a = item as Record<string, unknown>;
+        const attemptId = String(a.attemptId ?? "").trim();
+        const profile = a.profile;
+        if (!attemptId) continue;
+        if (profile !== "explore" && profile !== "edit" && profile !== "shell") continue;
+        const status = a.status;
+        if (status !== "started" && status !== "completed" && status !== "failed") continue;
+        cleaned.push({
+          attemptId,
+          parentSessionId: String(a.parentSessionId ?? parentSessionId),
+          childSessionId: a.childSessionId ? String(a.childSessionId) : undefined,
+          profile,
+          goal: String(a.goal ?? ""),
+          status,
+          error: a.error != null ? String(a.error) : undefined,
+          errorCode: a.errorCode != null ? String(a.errorCode) : undefined,
+          at: String(a.at ?? new Date().toISOString()),
+          updatedAt: String(a.updatedAt ?? a.at ?? new Date().toISOString()),
+        });
+      }
+      const capped = cleaned.slice(-50);
+      this.spawnAttempts.set(parentSessionId, capped);
+      return capped;
+    } catch {
+      this.spawnAttempts.set(parentSessionId, []);
+      return [];
+    }
+  }
+
+  private async persistSpawnAttempts(parentSessionId: string): Promise<void> {
+    try {
+      const dirs = await ensureDataDirs();
+      const list = this.spawnAttempts.get(parentSessionId) ?? [];
+      const file = this.spawnAttemptsPath(dirs.sessions, parentSessionId);
+      await fs.writeFile(
+        file,
+        `${JSON.stringify({ version: 1, attempts: list })}\n`,
+        "utf8",
+      );
+    } catch {
+      /* ignore disk errors — memory list still works this process */
+    }
+  }
+
+  private async pushSpawnAttempt(attempt: SubagentSpawnAttempt): Promise<void> {
+    await this.loadSpawnAttempts(attempt.parentSessionId);
     const list = this.spawnAttempts.get(attempt.parentSessionId) ?? [];
     list.push(attempt);
     if (list.length > 50) list.splice(0, list.length - 50);
     this.spawnAttempts.set(attempt.parentSessionId, list);
+    await this.persistSpawnAttempts(attempt.parentSessionId);
   }
 
-  private updateSpawnAttempt(
+  private async updateSpawnAttempt(
     parentSessionId: string,
     attemptId: string,
     patch: Partial<SubagentSpawnAttempt>,
-  ): SubagentSpawnAttempt | undefined {
+  ): Promise<SubagentSpawnAttempt | undefined> {
+    await this.loadSpawnAttempts(parentSessionId);
     const list = this.spawnAttempts.get(parentSessionId);
     if (!list) return undefined;
     const idx = list.findIndex((a) => a.attemptId === attemptId);
     if (idx < 0) return undefined;
     const next = { ...list[idx], ...patch, updatedAt: new Date().toISOString() };
     list[idx] = next;
+    await this.persistSpawnAttempts(parentSessionId);
     return next;
   }
 
@@ -296,7 +399,7 @@ export class SessionManager {
       error?: string;
       errorCode?: string;
     }> => {
-      this.pushSpawnAttempt({
+      await this.pushSpawnAttempt({
         attemptId,
         parentSessionId: params.parentSessionId,
         profile: params.profile,
@@ -337,7 +440,7 @@ export class SessionManager {
       return failEarly("sub-agent depth exceeded (max 2)", "depth");
     }
 
-    this.pushSpawnAttempt({
+    await this.pushSpawnAttempt({
       attemptId,
       parentSessionId: params.parentSessionId,
       profile: params.profile,
@@ -382,7 +485,7 @@ export class SessionManager {
       });
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
-      this.updateSpawnAttempt(params.parentSessionId, attemptId, {
+      await this.updateSpawnAttempt(params.parentSessionId, attemptId, {
         status: "failed",
         error,
         errorCode: "create_failed",
@@ -413,7 +516,7 @@ export class SessionManager {
       };
     }
 
-    this.updateSpawnAttempt(params.parentSessionId, attemptId, {
+    await this.updateSpawnAttempt(params.parentSessionId, attemptId, {
       childSessionId: childInfo.id,
     });
     await this.emitParentSubagent(parent, {
@@ -445,7 +548,7 @@ export class SessionManager {
         changePaths,
         ok: true,
       });
-      this.updateSpawnAttempt(params.parentSessionId, attemptId, {
+      await this.updateSpawnAttempt(params.parentSessionId, attemptId, {
         status: "completed",
         childSessionId: childInfo.id,
       });
@@ -469,7 +572,7 @@ export class SessionManager {
         ok: false,
         error,
       });
-      this.updateSpawnAttempt(params.parentSessionId, attemptId, {
+      await this.updateSpawnAttempt(params.parentSessionId, attemptId, {
         status: "failed",
         childSessionId: childInfo.id,
         error,
@@ -583,6 +686,11 @@ export class SessionManager {
       model,
       title: prelim.info.title,
       resume: true,
+      // Restore sub-agent identity from transcript so listChildren/listAll stay consistent.
+      parentSessionId: prelim.info.parentSessionId,
+      subagentDepth: prelim.info.subagentDepth,
+      subagentProfile: prelim.info.subagentProfile,
+      goal: prelim.info.goal,
       bundledSkillsDir: params.bundledSkillsDir ?? this.opts.bundledSkillsDir,
       sharedAgentsDir,
       getExtraTools: this.opts.getExtraTools,
@@ -609,6 +717,13 @@ export class SessionManager {
     const snap = await session.init();
     this.sessions.set(session.info.id, session);
     this.sessionProviders.set(session.info.id, { provider, model });
+    // Re-link parent→child map for Tasks after cold open.
+    const parentId = session.info.parentSessionId;
+    if (parentId) {
+      const set = this.children.get(parentId) ?? new Set();
+      set.add(session.info.id);
+      this.children.set(parentId, set);
+    }
     return snap ?? session.getSnapshot();
   }
 

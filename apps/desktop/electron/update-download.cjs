@@ -72,11 +72,59 @@ class UpdateDownloader {
   }
 
   /**
+   * Prefer in-memory completed path; else newest .exe under updatesDir.
+   * Survives app restart after a successful download.
+   * @returns {Promise<string|null>}
+   */
+  async resolveInstallerPath() {
+    const fromState = String(this.state.filePath || "").trim();
+    if (fromState) {
+      try {
+        await fsp.access(fromState);
+        if (fromState.toLowerCase().endsWith(".exe")) return path.resolve(fromState);
+      } catch {
+        /* fall through to disk scan */
+      }
+    }
+    try {
+      await fsp.mkdir(this.updatesDir, { recursive: true });
+      const names = await fsp.readdir(this.updatesDir);
+      /** @type {{ p: string, mtime: number }[]} */
+      const exes = [];
+      for (const name of names) {
+        if (!name.toLowerCase().endsWith(".exe")) continue;
+        if (name.toLowerCase().endsWith(".blockmap")) continue;
+        const p = path.join(this.updatesDir, name);
+        try {
+          const st = await fsp.stat(p);
+          if (st.isFile() && st.size > 1024 * 1024) {
+            exes.push({ p: path.resolve(p), mtime: st.mtimeMs });
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      if (!exes.length) return null;
+      exes.sort((a, b) => b.mtime - a.mtime);
+      const best = exes[0].p;
+      this.state = {
+        ...this.state,
+        status: this.state.status === "idle" ? "completed" : this.state.status,
+        filePath: best,
+        fileName: path.basename(best),
+      };
+      return best;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * @param {{ url: string, fileName?: string, expectedSize?: number }} payload
    */
   async start(payload) {
     if (this.state.status === "downloading") {
-      throw new Error("download already in progress");
+      throw new Error("正在下载安装包，请勿重复点击");
     }
     const urlObj = this.assertUrl(String(payload.url || ""));
     const url = urlObj.toString();

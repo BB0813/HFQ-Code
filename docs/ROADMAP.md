@@ -1,8 +1,8 @@
 # HFQ Code — Development roadmap (post-1.0.5)
 
 Status: **active plan**  
-Baseline: product **1.1.0** (`v1.1.0`) · 2026-07-16  
-Last updated: 2026-07-16 · 1.1.0: providers delete/empty + models:list + session model rebind/identity pin
+Baseline: product **1.1.1** (`v1.1.1`) · 2026-07-16  
+Last updated: 2026-07-16 · **1.1.1 shipped** (D3 install auto-download · Tasks cold-start) · next: frontend coding-depth polish (B2/B3)
 
 ## Positioning (frozen)
 
@@ -22,16 +22,26 @@ Last updated: 2026-07-16 · 1.1.0: providers delete/empty + models:list + sessio
 | `/goal` long-run + Tasks + Chat banner | Shipped (1.0.4–1.0.6) |
 | Update check multi-source fallback | **Shipped** (1.0.5–1.0.7): mirrors → ungh → direct |
 | Skills store (preview / conflict / tags / **remote zip**) | **Shipped** (1.0.6 + **1.0.9**) |
-| True interactive Terminal (PTY) | **T1 backend shipped** (`@hfq/pty` + IPC); xterm UI pending frontend |
-| Changes / Git workspace IPC | **B2-0 shipped** (`git:*` + git-ops); commit/stage UI pending frontend |
-| Sub-agent observability | **B3-0 shipped** (`subagent.updated` + listSpawnAttempts + child meta); Tasks tree UI polish pending frontend |
+| True interactive Terminal (PTY) | **Backend shipped** · React xterm UI present; reattach polish → frontend |
+| Changes / Git workspace IPC | **B2-0 shipped** · stage/commit UI present; **B2-1/B2-2** keyboard + ask-agent → frontend |
+| Sub-agent observability | **B3-0 shipped** · Tasks panel present; parent stack / tree polish → frontend |
 | DPAPI credentials | **D1 shipped** (Windows envelope; Settings shows encoding) — [DPAPI-1.2.md](./DPAPI-1.2.md) |
 | Code signing (Authenticode) | **Shipped** — HFQ-ClodBreeze self-signed + trust pack + CI secrets — [PACKAGING.md](./PACKAGING.md) |
-| In-app update download (D3) | **Shipped** (download + confirm open installer; no silent install) — [UPDATE-D3.md](./UPDATE-D3.md) |
+| In-app update download (D3) | **Shipped** · **1.1.1 backend:** install auto-download + disk recover + CN errors — [UPDATE-D3.md](./UPDATE-D3.md) |
 | Diagnostics redaction (export) | **D4 shipped** (v2 bundle; credentials never exported) |
 | Usage CSV export | **Shipped** (`usage:export` + CSV bundle + Usage page export button) — [USAGE-CSV-1.3.md](./USAGE-CSV-1.3.md) |
-| Thinking / reasoning stream | **Backend shipped** (`thinking.delta` / `thinking.completed` + provider parse) — [THINKING-STREAM.md](./THINKING-STREAM.md); collapsed CoT UI → frontend |
-| Renderer split / full UI redesign | **R0–R5 landed** (modules + chat UX + store + home/tasks/changes + islands); handlers still mostly in `app.js` — [UI-REDESIGN.md](./UI-REDESIGN.md) |
+| Thinking / reasoning stream | **Backend shipped** · ThinkingBlock UI present — polish optional |
+| React shell (Q6) | **Shipped** (1.0.10+) — pages under `apps/desktop/renderer` |
+
+### Next train (post-1.1.1)
+
+| Owner | Work | Notes |
+|-------|------|--------|
+| **Backend** | **1.1.1** D3 install auto-download · `providerId` · Tasks cold-start children/attempts | **Shipped** (`v1.1.1`) |
+| **Frontend** | Settings update UX (progress + install success copy) | APIs stable in [UPDATE-D3.md](./UPDATE-D3.md) / FRONTEND-IPC |
+| **Frontend** | B2-1 keyboard next/prev file · B2-2「让智能体修」prefill · B2-3 commit polish | APIs already in [CHANGES-GIT-1.1.md](./CHANGES-GIT-1.1.md) |
+| **Frontend** | B3-1/2/3 Tasks tree + parent stack + failed spawn chips | Cold-start APIs in [SUBAGENT-OBS-1.1.md](./SUBAGENT-OBS-1.1.md) |
+| Later | Track E (embeddings, Python sidecar, MCP OAuth, cost charts) | Not Phase-1 |
 
 ---
 
@@ -130,18 +140,18 @@ Small, shippable patches. Keep `pnpm release:check` green; tag `v*` + Actions + 
 | ID | Work |
 |----|------|
 | B2-0 | Workspace git IPC (`git:status|diff|show|stage|unstage|commit|log`) + `packages/tools` git-ops | ✅ backend; UI contract in [CHANGES-GIT-1.1.md](./CHANGES-GIT-1.1.md) · [FRONTEND-IPC.md](./FRONTEND-IPC.md) |
-| B2-1 | Multi-file review layout polish (keyboard next/prev file) | frontend |
-| B2-2 | From diff → “ask agent to fix” prefilled composer | frontend |
-| B2-3 | Commit flow: stage summary + message draft | frontend on B2-0 |
+| B2-1 | Multi-file review layout polish (keyboard next/prev file) | **frontend** (backend ready) |
+| B2-2 | From diff → “ask agent to fix” prefilled composer | **frontend** (no new IPC; composer draft local) |
+| B2-3 | Commit flow: stage summary + message draft | **frontend** on B2-0 |
 
 ### B3 · Sub-agents observability
 
 | ID | Work | Notes |
 |----|------|--------|
 | B3-0 | Backend: `SessionInfo` parent/profile/goal · `subagent.updated` · `listSpawnAttempts` · spawn `errorCode` | ✅ see [SUBAGENT-OBS-1.1.md](./SUBAGENT-OBS-1.1.md) |
-| B3-1 | Tasks tree: parent goal → tool tasks → child sessions | frontend on B3-0 |
-| B3-2 | Open child transcript without losing parent context | frontend (local parent stack) |
-| B3-3 | Failed spawn reasons in UI | frontend: `subagent.updated` / `listSpawnAttempts` |
+| B3-1 | Tasks tree: parent goal → tool tasks → child sessions | **frontend** on B3-0 |
+| B3-2 | Open child transcript without losing parent context | **frontend** (local parent stack) |
+| B3-3 | Failed spawn reasons in UI | **frontend**: `subagent.updated` / `listSpawnAttempts` |
 
 **1.1 exit:** developer can interactively run commands, review multi-file diffs, and follow sub-agent trees without guessing.
 
@@ -179,7 +189,7 @@ Canonical checklist: [UI-REDESIGN.md](./UI-REDESIGN.md).
 |----|------|------------|
 | D1 | DPAPI (or OS keychain) for `credentials.json` | ✅ Windows DPAPI CurrentUser + soft migrate — [DPAPI-1.2.md](./DPAPI-1.2.md) |
 | D2 | Authenticode code signing | ✅ self-signed **HFQ-ClodBreeze** + trust pack + CI secrets — [PACKAGING.md](./PACKAGING.md) |
-| D3 | In-app update download + open installer | ✅ not silent — [UPDATE-D3.md](./UPDATE-D3.md) |
+| D3 | In-app update download + open installer | ✅ not silent · **1.1.1** install auto-download if missing file — [UPDATE-D3.md](./UPDATE-D3.md) |
 | D4 | Diagnostics redaction pass | ✅ hardened export + patterns — [DIAGNOSTICS-1.2.md](./DIAGNOSTICS-1.2.md) |
 
 Release channel: GitHub Releases + multi-source check + optional in-app download. Installers are self-signed; SmartScreen may still warn until reputation builds.
@@ -201,22 +211,18 @@ Release channel: GitHub Releases + multi-source check + optional in-app download
 ## Suggested sequencing
 
 ```text
-1.0.5–1.0.9 (done)  patch train: store, update, composer UI, remote zip, permissions
+1.0.5–1.0.10 (done)  patch + React shell + D1–D4 + PTY/git/subagent backends
    │
-   ├─► NOW     Track C · R1 UI architecture split  ◄── pulled forward
-   │           (nav / settings / skills / chat shell modules)
+1.1.0 (done)         providers lifecycle + models:list + session model rebind
    │
-   ├─► next    R2 Chat UX (on top of split modules)
-   │           + 1.1 PTY design spike (can start docs/spike in parallel)
+1.1.1 (done)         D3 install auto-download · providerId · Tasks cold-start
    │
-   ├─► 1.1     PTY Terminal + Changes/Git depth + Tasks observability
-   │           (UI work lands as modules, not more app.js megacommits)
+   ├─► NOW     Frontend polish train: B2-1/2/3 · B3-1/2/3 · Settings update UX
    │
-   └─► 1.2     DPAPI + D2 self-sign + D3 in-app download
+   └─► later   Track E stretch (embeddings / Python sidecar / MCP OAuth / cost charts)
 ```
 
-**Parallelism:** PTY **spike** (design + spike branch) may run while R1 extracts land on main.  
-**Sequencing rule:** avoid large **Chat / Terminal / Tasks page rewrites** until R1 exit criteria are met.
+**Owner split:** backend owns IPC/packages; frontend owns React pages under `apps/desktop/renderer`. Cross-team handoff via [FRONTEND-IPC.md](./FRONTEND-IPC.md) + explicit Prompts.
 
 ---
 

@@ -557,8 +557,9 @@ async function resolveActiveProvider() {
   const cfg = await readConfig();
   const providers = Array.isArray(cfg.providers) ? cfg.providers : [];
   if (!providers.length) {
+    // Stable keywords for frontend humanize: "no model provider" / "providers empty"
     throw new Error(
-      "No model provider configured. Add a channel in Models before chatting or testing.",
+      "No model provider configured (providers empty). Add a channel in Models before chatting or testing.",
     );
   }
   const providerCfg =
@@ -567,7 +568,7 @@ async function resolveActiveProvider() {
     providers[0];
   if (!providerCfg) {
     throw new Error(
-      "No model provider configured. Add a channel in Models before chatting or testing.",
+      "No model provider configured (providers empty). Add a channel in Models before chatting or testing.",
     );
   }
   const providerSpec = {
@@ -1224,26 +1225,76 @@ function registerIpc() {
 
   /**
    * Open downloaded installer after explicit user confirm (no silent install).
-   * payload: { filePath?, confirm?: boolean } — confirm=false skips dialog (UI already confirmed).
+   * payload: { filePath?, confirm?: boolean, autoDownload?: boolean }
+   * - confirm=false skips dialog (UI already confirmed)
+   * - autoDownload!==false: if no local installer, download recommended asset then open
    */
   ipcMain.handle("update:install", async (_evt, payload = {}) => {
     const downloader = getUpdateDownloader();
-    const st = downloader.getState();
-    let filePath = String(payload?.filePath || st.filePath || "").trim();
-    if (!filePath) throw new Error("no installer file — download first");
+    let filePath = String(payload?.filePath || "").trim();
+
+    if (!filePath) {
+      filePath = (await downloader.resolveInstallerPath()) || "";
+    }
+
+    const allowAutoDl = payload?.autoDownload !== false;
+    if (!filePath && allowAutoDl) {
+      // Convenience: 安装更新 without prior 下载更新 still works (check → download → open).
+      if (downloader.getState().status === "downloading") {
+        throw new Error("正在下载安装包，请稍候完成后再安装");
+      }
+      try {
+        const check = await checkForUpdates({ force: true });
+        if (!check?.ok) {
+          throw new Error(check?.error || "检查更新失败");
+        }
+        if (!check.updateAvailable) {
+          throw new Error("当前已是最新版本，无需安装");
+        }
+        let asset = check.recommendedAsset || null;
+        if (payload?.preferPortable && Array.isArray(check.assets)) {
+          const port = check.assets.find((a) => /portable/i.test(String(a.name || "")));
+          if (port) asset = port;
+        }
+        if (!asset) throw new Error("Release 中没有可下载的 .exe 安装包");
+        const preferMirror = payload?.preferMirror !== false;
+        const url =
+          preferMirror && asset.mirrorUrl
+            ? String(asset.mirrorUrl)
+            : String(asset.url || asset.mirrorUrl || "");
+        const dl = await downloader.start({
+          url,
+          fileName: String(asset.name || ""),
+          expectedSize: Number(asset.size) || undefined,
+        });
+        filePath = String(dl?.filePath || (await downloader.resolveInstallerPath()) || "");
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (/download already|正在下载/.test(msg)) throw e;
+        throw new Error(
+          msg.includes("无需") || msg.includes("没有可下载") || msg.includes("检查更新")
+            ? msg
+            : `自动下载安装包失败：${msg}。请先点「下载更新」`,
+        );
+      }
+    }
+
+    if (!filePath) {
+      throw new Error("尚未下载安装包，请先点「下载更新」");
+    }
     filePath = path.resolve(filePath);
     const updatesRoot = path.resolve(getUpdatesDir());
     const rel = path.relative(updatesRoot, filePath);
     if (rel.startsWith("..") || path.isAbsolute(rel)) {
-      throw new Error("installer path outside updates directory");
+      throw new Error("安装包路径不在 updates 目录内");
     }
     if (!filePath.toLowerCase().endsWith(".exe")) {
-      throw new Error("installer must be a .exe");
+      throw new Error("安装包必须是 .exe 文件");
     }
     try {
       await fs.access(filePath);
     } catch {
-      throw new Error("installer file missing — re-download");
+      throw new Error("安装包文件已丢失，请重新「下载更新」");
     }
 
     const skipDialog = payload?.confirm === false;
@@ -1257,7 +1308,7 @@ function registerIpc() {
         title: "安装更新",
         message: "即将打开 HFQ Code 安装程序",
         detail:
-          "安装程序未做代码签名，Windows 可能提示「未知发布者」——属预期行为。\n" +
+          "安装包由发布者 HFQ-ClodBreeze 签名（自签）；首次可能需信任，Windows SmartScreen 仍可能提示。\n" +
           "请按安装向导完成升级；完成后可关闭本窗口。\n\n" +
           filePath,
       });
@@ -1766,7 +1817,7 @@ function registerIpc() {
     const providers = Array.isArray(cfg.providers) ? cfg.providers : [];
     if (!providers.length) {
       throw new Error(
-        "No model provider configured. Add a channel in Models before selecting a model.",
+        "No model provider configured (providers empty). Add a channel in Models before selecting a model.",
       );
     }
 
@@ -1847,7 +1898,14 @@ function registerIpc() {
     return {
       ...pub,
       sessionApplied: sessionApplied
-        ? { id: sessionApplied.id, model: sessionApplied.model }
+        ? {
+            id: sessionApplied.id,
+            model: sessionApplied.model,
+            providerId:
+              sessionApplied.providerId ||
+              cfg.activeProviderId ||
+              null,
+          }
         : null,
       sessionApplyError,
     };
@@ -1897,7 +1955,7 @@ function registerIpc() {
         providerId: "",
         model: "",
         latencyMs: 0,
-        error: "No model provider configured. Add a channel in Models first.",
+        error: "No model provider configured (providers empty). Add a channel in Models first.",
       };
     }
     const providerId = String(payload.providerId || cfg.activeProviderId || "").trim();
@@ -1985,7 +2043,7 @@ function registerIpc() {
         providerId: "",
         source: "config",
         models: [],
-        error: "No model provider configured",
+        error: "No model provider configured (providers empty)",
       };
     }
     const providerId = String(

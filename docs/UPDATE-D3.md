@@ -73,11 +73,22 @@ off();
 
 ## Frontend wiring (Settings)
 
-1. After check with `updateAvailable` → show **下载安装包**  
-2. Progress bar from `onUpdateDownload`  
-3. On `completed` → **运行安装程序** → `installUpdate()`  
+1. After check with `updateAvailable` → toast「发现新版本，可下载安装」  
+2. **下载更新** → `downloadUpdate({})` + `onUpdateDownload` progress  
+3. **安装更新** → `installUpdate({})`  
+   - If local installer exists (memory or `%APPDATA%/HFQ-Code/updates/*.exe`) → confirm → open  
+   - If missing → **auto download** recommended asset, then confirm → open (`autoDownload: false` disables)  
 4. Keep **打开发布页** fallback (`openReleasePage`)  
 5. Copy: 安装包使用自签发布者 **HFQ-ClodBreeze**；首次安装可能导入信任并仍可能出现 SmartScreen  
+
+### Errors (Chinese, fail-closed)
+
+| Condition | Message |
+|-----------|---------|
+| No file + `autoDownload: false` | 尚未下载安装包，请先点「下载更新」 |
+| Auto-download fails | 自动下载安装包失败：… |
+| Already latest on install | 当前已是最新版本，无需安装 |
+| Concurrent download | 正在下载安装包，请稍候完成后再安装 |
 
 ## Tests
 

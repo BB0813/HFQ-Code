@@ -293,6 +293,26 @@ describe("config store", () => {
     expect(cfg.activeModel).toBe("");
   });
 
+  it("empty providers round-trips without resurrecting mock", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "hfq-cfg-"));
+    temps.push(dir);
+    const file = path.join(dir, "config.json");
+    let cfg = defaultAppConfig();
+    for (const id of [...cfg.providers.map((p) => p.id)]) {
+      cfg = removeProvider(cfg, id);
+    }
+    expect(cfg.providers).toEqual([]);
+    await saveAppConfig(file, cfg);
+    const loaded = await loadAppConfig(file);
+    expect(loaded.providers).toEqual([]);
+    expect(loaded.activeProviderId).toBe("");
+    expect(loaded.activeModel).toBe("");
+    // Second save/load still empty (fail-closed seed only on missing config file).
+    await saveAppConfig(file, loaded);
+    const again = await loadAppConfig(file);
+    expect(again.providers).toEqual([]);
+  });
+
   it("removeProvider does not resurrect deleted anthropic or mock on save/load", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "hfq-cfg-"));
     temps.push(dir);

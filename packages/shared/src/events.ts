@@ -29,6 +29,8 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
     sessionId: z.string(),
     title: z.string().optional(),
     model: z.string().optional(),
+    /** Provider channel id bound to this session (list/open / rebind). */
+    providerId: z.string().optional(),
     parentSessionId: z.string().optional(),
     subagentProfile: z.enum(["explore", "edit", "shell"]).optional(),
     subagentDepth: z.number().int().min(0).max(8).optional(),

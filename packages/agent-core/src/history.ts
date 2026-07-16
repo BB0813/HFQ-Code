@@ -80,6 +80,7 @@ export function buildSessionSnapshot(
   let status: SessionInfo["status"] = fallback.status ?? "idle";
   let title = fallback.title ?? "Session";
   let model = fallback.model;
+  let providerId = fallback.providerId;
   let parentSessionId = fallback.parentSessionId;
   let subagentProfile = fallback.subagentProfile;
   let subagentDepth = fallback.subagentDepth;
@@ -121,6 +122,7 @@ export function buildSessionSnapshot(
           title = metaTitle;
         }
         if (event.model?.trim()) model = event.model.trim();
+        if (event.providerId?.trim()) providerId = event.providerId.trim();
         if (event.parentSessionId) parentSessionId = event.parentSessionId;
         if (event.subagentProfile) subagentProfile = event.subagentProfile;
         if (event.subagentDepth != null) subagentDepth = event.subagentDepth;
@@ -305,6 +307,7 @@ export function buildSessionSnapshot(
     workspacePath,
     title: metaTitle || explicitFallback || title,
     model,
+    providerId,
     createdAt,
     updatedAt,
     status,

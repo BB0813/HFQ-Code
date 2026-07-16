@@ -92,10 +92,12 @@ Detail: [CHANGES-GIT-1.1.md](./CHANGES-GIT-1.1.md)
 
 ```js
 const children = await hfq.listChildSessions({ sessionId });
-// SessionInfo may include parentSessionId, subagentProfile, subagentDepth, goal
+// SessionInfo may include parentSessionId, subagentProfile, subagentDepth, goal, model, providerId
+// Cold start: merges live parent→children map + disk sessions (filter parentSessionId)
 
 const attempts = await hfq.listSpawnAttempts({ sessionId });
 // failed spawns without childSessionId included
+// Cold start: loads %data%/sessions/<parentId>.spawn-attempts.json (cap 50)
 
 await hfq.spawnSubagent({ sessionId, goal: "…", profile: "explore" });
 // { ok, childSessionId, summary, error?, errorCode? }
@@ -107,6 +109,12 @@ hfq.onSessionEvent((ev) => {
   }
 });
 ```
+
+| API | Cold-start behavior (1.1.1) |
+|-----|------------------------------|
+| `listChildSessions` | Memory map + scan session JSONL by `parentSessionId` (dedupe; prefer live fields) |
+| `listSpawnAttempts` | Memory first; else `%data%/sessions/<parentId>.spawn-attempts.json` (incl. depth/goal failures) |
+| `open` child | Restores parent/goal/profile/depth from meta and re-links children map |
 
 Detail: [SUBAGENT-OBS-1.1.md](./SUBAGENT-OBS-1.1.md)
 
@@ -209,7 +217,8 @@ const r = await hfq.checkForUpdates({ force: true });
 
 const off = hfq.onUpdateDownload((st) => { /* progress */ });
 await hfq.downloadUpdate({}); // or { url, fileName }
-await hfq.installUpdate({});  // confirm dialog in main
+// install: opens local .exe; if missing, auto-downloads recommended asset first
+await hfq.installUpdate({});  // confirm dialog in main; { autoDownload: false } to require prior download
 await hfq.cancelUpdateDownload();
 await hfq.clearUpdateDownloads();
 off();
@@ -252,16 +261,28 @@ const probe = await hfq.testModel({ providerId, model });
 await hfq.removeProvider({ id: "mock" });
 // → public config; may be providers: [], activeProviderId: "", activeModel: ""
 
-// Create/send session with empty providers throws:
-// "No model provider configured. Add a channel in Models before chatting or testing."
+// Create/send session with empty providers throws (stable keywords for humanize):
+// "No model provider configured (providers empty). …"
+// Soft paths (test/list) → { ok: false, error: "… providers empty …" }
+
+// setActive hot-swap return (when a live session exists):
+// {
+//   ...publicConfig,
+//   sessionApplied: { id, model, providerId } | null,
+//   sessionApplyError?: string | null, // e.g. busy
+// }
+
+// listSessions / open / listChildren SessionInfo includes (when known):
+// model, providerId, parentSessionId, goal, subagentProfile, subagentDepth
 ```
 
 | Rule | Behavior |
 |------|----------|
 | `removeProvider` | Any id including `mock`; last channel → empty list |
 | Load / save | No auto re-inject of mock/anthropic |
-| `setActiveModel` | Rejects empty providers; unknown providerId throws |
+| `setActiveModel` | Rejects empty providers; unknown providerId throws; returns `sessionApplied.providerId` |
 | Credentials | Deleted provider apiKey dropped on next `saveAppConfig` |
+| Empty providers keywords | `no model provider` + `providers empty` in error strings |
 
 ---
 

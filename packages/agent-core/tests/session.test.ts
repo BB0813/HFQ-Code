@@ -304,15 +304,22 @@ describe("SessionManager integration", () => {
     expect(spawned.ok).toBe(true);
     expect(spawned.childSessionId).toBeTruthy();
 
-    const children = mgr.listChildren(parent.id);
+    const children = await mgr.listChildren(parent.id);
     expect(children.some((c) => c.id === spawned.childSessionId)).toBe(true);
     const child = children.find((c) => c.id === spawned.childSessionId);
     expect(child?.parentSessionId).toBe(parent.id);
     expect(child?.subagentProfile).toBe("explore");
     expect(child?.goal).toMatch(/list the workspace/i);
     expect(child?.subagentDepth).toBe(1);
+    // listAll must not drop model/provider/parent fields (sidebar + return-to-parent).
+    const listed = await mgr.listAll(ws);
+    const listedChild = listed.find((s) => s.id === spawned.childSessionId);
+    expect(listedChild?.model).toBeTruthy();
+    expect(listedChild?.providerId).toBeTruthy();
+    expect(listedChild?.parentSessionId).toBe(parent.id);
+    expect(listedChild?.goal).toMatch(/list the workspace/i);
 
-    const attempts = mgr.listSpawnAttempts(parent.id);
+    const attempts = await mgr.listSpawnAttempts(parent.id);
     expect(attempts.some((a) => a.status === "completed" && a.childSessionId)).toBe(true);
 
     const subEvents = events.filter((e) => e.type === "subagent.updated");
@@ -346,8 +353,26 @@ describe("SessionManager integration", () => {
     expect(deepFail.errorCode).toBe("depth");
     expect(deepFail.childSessionId).toBe("");
 
-    const failAttempts = mgr.listSpawnAttempts(d2.id);
+    const failAttempts = await mgr.listSpawnAttempts(d2.id);
     expect(failAttempts.some((a) => a.status === "failed" && a.errorCode === "depth")).toBe(true);
+
+    // Cold start: new manager instance rebuilds children + failed attempts from disk.
+    const cold = new SessionManager();
+    const coldChildren = await cold.listChildren(parent.id);
+    expect(coldChildren.some((c) => c.id === spawned.childSessionId)).toBe(true);
+    const coldChild = coldChildren.find((c) => c.id === spawned.childSessionId);
+    expect(coldChild?.parentSessionId).toBe(parent.id);
+    expect(coldChild?.goal).toMatch(/list the workspace/i);
+    expect(coldChild?.subagentProfile).toBe("explore");
+    expect(coldChild?.subagentDepth).toBe(1);
+
+    const coldFailAttempts = await cold.listSpawnAttempts(d2.id);
+    expect(
+      coldFailAttempts.some((a) => a.status === "failed" && a.errorCode === "depth"),
+    ).toBe(true);
+
+    const empty = await cold.listChildren("no-such-parent");
+    expect(empty).toEqual([]);
     expect(
       events.some(
         (e) =>

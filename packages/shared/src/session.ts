@@ -13,6 +13,8 @@ export const SessionInfoSchema = z.object({
   workspacePath: z.string(),
   title: z.string(),
   model: z.string().optional(),
+  /** Provider channel id (config.providers[].id); stable for list/open UI. */
+  providerId: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   status: z.enum(["idle", "running", "waiting_permission", "completed", "failed"]),

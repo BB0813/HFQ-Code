@@ -78,6 +78,7 @@ describe("SessionEventSchema", () => {
         sessionId: "s1",
         title: "Rename me",
         model: "mock-hfq",
+        providerId: "mock",
         parentSessionId: "parent-1",
         subagentProfile: "explore",
         subagentDepth: 1,

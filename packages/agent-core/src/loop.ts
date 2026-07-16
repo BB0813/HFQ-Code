@@ -174,6 +174,7 @@ export class AgentSession {
       workspacePath: opts.workspacePath,
       title: opts.title ?? "New session",
       model: opts.model,
+      providerId: opts.provider?.id,
       createdAt: now,
       updatedAt: now,
       status: "idle",
@@ -316,6 +317,7 @@ export class AgentSession {
       sessionId: this.info.id,
       title: next,
       model: this.info.model,
+      providerId: this.info.providerId ?? this.provider?.id,
       at: this.info.updatedAt,
     });
     return { ...this.info };
@@ -342,6 +344,7 @@ export class AgentSession {
     this.provider = provider;
     this.model = nextModel;
     this.info.model = nextModel;
+    this.info.providerId = provider.id;
     this.info.updatedAt = new Date().toISOString();
     if (sameBinding) {
       // No meta spam / switch notes on every session:send re-pin.
@@ -356,6 +359,7 @@ export class AgentSession {
       sessionId: this.info.id,
       title: this.info.title,
       model: nextModel,
+      providerId: provider.id,
       at: this.info.updatedAt,
     });
     return { ...this.info };
@@ -533,6 +537,12 @@ export class AgentSession {
         ...snap.chatMessages.filter((m) => m.role !== "system"),
       ];
       // If open rebound to a different model than last transcript meta, break identity stickiness.
+      // Keep providerId in live info; persist if missing from transcript or rebind changed model.
+      const transcriptProviderId = String(snap.info.providerId ?? "").trim();
+      const liveProviderId = String(this.provider?.id ?? "").trim();
+      if (liveProviderId) {
+        this.info.providerId = liveProviderId;
+      }
       if (this.model && transcriptModel && transcriptModel !== this.model) {
         this.appendModelSwitchNote(transcriptModel, this.model, this.provider?.id);
         // Persist rebind so listAll / next cold open see the new model (not only in-memory).
@@ -541,6 +551,15 @@ export class AgentSession {
           sessionId: this.info.id,
           title: this.info.title,
           model: this.model,
+          providerId: liveProviderId || undefined,
+          at: new Date().toISOString(),
+        });
+      } else if (liveProviderId && liveProviderId !== transcriptProviderId) {
+        await this.emit({
+          type: "session.meta",
+          sessionId: this.info.id,
+          model: this.model,
+          providerId: liveProviderId,
           at: new Date().toISOString(),
         });
       }
@@ -587,6 +606,7 @@ export class AgentSession {
       sessionId: this.info.id,
       ...(this.titleLocked || hasSubMeta ? { title: this.info.title } : {}),
       model: this.info.model,
+      providerId: this.info.providerId ?? this.provider?.id,
       parentSessionId: this.opts.parentSessionId,
       subagentProfile: this.opts.subagentProfile,
       subagentDepth: this.opts.subagentDepth,
@@ -844,6 +864,7 @@ export class AgentSession {
           sessionId: this.info.id,
           title: short,
           model: this.info.model,
+          providerId: this.info.providerId ?? this.provider?.id,
           at: new Date().toISOString(),
         });
       }

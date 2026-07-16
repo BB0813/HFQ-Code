@@ -147,4 +147,34 @@ describe("buildSessionSnapshot", () => {
     const snap = buildSessionSnapshot(events, { id: "s2" });
     expect(snap.info.title).toBe("fix the login bug please");
   });
+
+  it("restores model + providerId + subagent fields from session.meta", () => {
+    const events: SessionEvent[] = [
+      {
+        type: "session.started",
+        sessionId: "s3",
+        workspacePath: "D:/proj",
+        at: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        type: "session.meta",
+        sessionId: "s3",
+        title: "child scan",
+        model: "mimo-v2.5-free",
+        providerId: "opencode",
+        parentSessionId: "parent-9",
+        subagentProfile: "explore",
+        subagentDepth: 1,
+        goal: "list root",
+        at: "2026-01-01T00:00:01.000Z",
+      },
+    ];
+    const snap = buildSessionSnapshot(events, { id: "s3" });
+    expect(snap.info.model).toBe("mimo-v2.5-free");
+    expect(snap.info.providerId).toBe("opencode");
+    expect(snap.info.parentSessionId).toBe("parent-9");
+    expect(snap.info.subagentProfile).toBe("explore");
+    expect(snap.info.subagentDepth).toBe(1);
+    expect(snap.info.goal).toBe("list root");
+  });
 });
