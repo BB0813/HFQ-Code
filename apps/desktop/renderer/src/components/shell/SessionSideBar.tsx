@@ -149,6 +149,12 @@ export function SessionSideBar() {
             const active = s.id === activeSessionId;
             const title = s.title || s.goal || "未命名会话";
             const running = String(s.status || "").toLowerCase() === "running";
+            const isChild = Boolean(
+              s.parentSessionId && String(s.parentSessionId).trim(),
+            );
+            const profile = s.subagentProfile
+              ? String(s.subagentProfile).trim()
+              : "";
             return (
               <div
                 key={s.id}
@@ -158,6 +164,7 @@ export function SessionSideBar() {
                   active
                     ? "bg-white/[0.08] text-foreground ring-1 ring-white/[0.06]"
                     : "text-sidebar-foreground/90 hover:bg-white/[0.04]",
+                  isChild && "pl-4",
                 )}
               >
                 {active && (
@@ -170,6 +177,13 @@ export function SessionSideBar() {
                   type="button"
                   className="interactive min-w-0 flex-1 rounded-sm pl-1 text-left"
                   aria-current={active ? "true" : undefined}
+                  title={
+                    isChild
+                      ? `子会话${profile ? ` · ${profile}` : ""}${
+                          s.goal ? ` · ${s.goal}` : ""
+                        }`
+                      : title
+                  }
                   onClick={async () => {
                     await selectSession(s.id);
                     navigate("/chat");
@@ -180,10 +194,19 @@ export function SessionSideBar() {
                       <span className="status-dot-running status-pulse" aria-label="运行中" />
                     )}
                     <span className="truncate text-sm font-medium leading-snug">{title}</span>
+                    {isChild && (
+                      <span className="shrink-0 rounded border border-border/60 px-1 py-px font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+                        {profile || "sub"}
+                      </span>
+                    )}
                   </div>
                   <div className="mt-1 text-xs text-muted-foreground">
                     {formatRelativeTime(s.updatedAt ?? s.createdAt)}
                     {s.status ? ` · ${s.status}` : ""}
+                    {s.model ? ` · ${String(s.model).slice(0, 18)}` : ""}
+                    {isChild && s.parentSessionId
+                      ? ` · ↳ ${String(s.parentSessionId).slice(0, 6)}`
+                      : ""}
                   </div>
                 </button>
                 <button

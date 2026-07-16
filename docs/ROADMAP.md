@@ -1,8 +1,8 @@
 # HFQ Code — Development roadmap (post-1.0.5)
 
 Status: **active plan**  
-Baseline: product **1.1.1** (`v1.1.1`) · 2026-07-16  
-Last updated: 2026-07-16 · **1.1.1 shipped** (D3 install auto-download · Tasks cold-start) · next: frontend coding-depth polish (B2/B3)
+Baseline: product **1.1.2** (`v1.1.2`) · 2026-07-16  
+Last updated: 2026-07-16 · **1.1.2 full ship** (1.1.1 backend + Settings/Tasks/Changes/Models UI)
 
 ## Positioning (frozen)
 
@@ -33,14 +33,13 @@ Last updated: 2026-07-16 · **1.1.1 shipped** (D3 install auto-download · Tasks
 | Thinking / reasoning stream | **Backend shipped** · ThinkingBlock UI present — polish optional |
 | React shell (Q6) | **Shipped** (1.0.10+) — pages under `apps/desktop/renderer` |
 
-### Next train (post-1.1.1)
+### Next train (post-1.1.2)
 
 | Owner | Work | Notes |
 |-------|------|--------|
-| **Backend** | **1.1.1** D3 install auto-download · `providerId` · Tasks cold-start children/attempts | **Shipped** (`v1.1.1`) |
-| **Frontend** | Settings update UX (progress + install success copy) | APIs stable in [UPDATE-D3.md](./UPDATE-D3.md) / FRONTEND-IPC |
-| **Frontend** | B2-1 keyboard next/prev file · B2-2「让智能体修」prefill · B2-3 commit polish | APIs already in [CHANGES-GIT-1.1.md](./CHANGES-GIT-1.1.md) |
-| **Frontend** | B3-1/2/3 Tasks tree + parent stack + failed spawn chips | Cold-start APIs in [SUBAGENT-OBS-1.1.md](./SUBAGENT-OBS-1.1.md) |
+| **Product** | **1.1.2** full installer = 1.1.1 backend + Settings/Tasks/Changes/Models UI | **Shipped** (`v1.1.2`) |
+| **Backend** | **1.1.1** D3 · `providerId` · Tasks cold-start | In 1.1.1/1.1.2 tree |
+| **Frontend** | Settings update UX · B2 · B3 polish | **In 1.1.2** |
 | Later | Track E (embeddings, Python sidecar, MCP OAuth, cost charts) | Not Phase-1 |
 
 ---
@@ -215,9 +214,9 @@ Release channel: GitHub Releases + multi-source check + optional in-app download
    │
 1.1.0 (done)         providers lifecycle + models:list + session model rebind
    │
-1.1.1 (done)         D3 install auto-download · providerId · Tasks cold-start
+1.1.1 (done)         D3 install auto-download · providerId · Tasks cold-start (backend tag)
    │
-   ├─► NOW     Frontend polish train: B2-1/2/3 · B3-1/2/3 · Settings update UX
+1.1.2 (done)         Full ship: 1.1.1 backend + Settings/Tasks/Changes/Models UI
    │
    └─► later   Track E stretch (embeddings / Python sidecar / MCP OAuth / cost charts)
 ```

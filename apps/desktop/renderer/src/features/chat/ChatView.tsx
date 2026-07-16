@@ -53,6 +53,8 @@ export function ChatView() {
   const abortSession = useAppStore((s) => s.abortSession);
   const createSession = useAppStore((s) => s.createSession);
   const openWorkspace = useAppStore((s) => s.openWorkspace);
+  const composerDraft = useAppStore((s) => s.composerDraft);
+  const consumeComposerDraft = useAppStore((s) => s.consumeComposerDraft);
 
   const [draft, setDraft] = useState("");
   const [caret, setCaret] = useState(0);
@@ -79,6 +81,25 @@ export function ChatView() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingText, streamingThinking]);
+
+  // Consume one-shot prefill from Changes「让智能体修」etc. — never auto-send.
+  useEffect(() => {
+    if (!composerDraft) return;
+    const text = consumeComposerDraft();
+    if (!text) return;
+    setDraft(text);
+    setCaret(text.length);
+    window.requestAnimationFrame(() => {
+      const el = taRef.current;
+      if (!el) return;
+      el.focus();
+      try {
+        el.setSelectionRange(text.length, text.length);
+      } catch {
+        /* ignore */
+      }
+    });
+  }, [composerDraft, consumeComposerDraft]);
 
   useEffect(() => {
     const el = taRef.current;
@@ -407,6 +428,18 @@ export function ChatView() {
                     {activeSessionId.slice(0, 8)}
                   </Badge>
                 )}
+                {session?.parentSessionId ? (
+                  <Badge
+                    variant="outline"
+                    className="font-normal"
+                    title={`父会话 ${session.parentSessionId}`}
+                  >
+                    子会话
+                    {session.subagentProfile
+                      ? ` · ${session.subagentProfile}`
+                      : ""}
+                  </Badge>
+                ) : null}
               </div>
               <div className="mt-6 grid w-full max-w-lg gap-2 sm:grid-cols-2">
                 {[

@@ -39,6 +39,8 @@ interface AppState {
   permissionMode: string;
   planMode: boolean;
   statusLine: string;
+  /** Prefill for Chat composer (e.g. Changes「让智能体修」); consumed once by ChatView. */
+  composerDraft: string | null;
 
   bootstrap: () => Promise<void>;
   consumeBootRoute: () => string | null;
@@ -52,6 +54,8 @@ interface AppState {
   abortSession: () => Promise<void>;
   resolvePermission: (allow: boolean, remember?: boolean) => Promise<void>;
   setSessionPermissionMode: (mode: string) => Promise<void>;
+  setComposerDraft: (text: string | null) => void;
+  consumeComposerDraft: () => string | null;
   applySessionEvent: (ev: Record<string, unknown>) => void;
 }
 
@@ -125,6 +129,18 @@ function patchSessionStatus(
   return patchSessionFields(sessions, sessionId, { status });
 }
 
+const EMPTY_PROVIDER_MSG = "尚未配置模型渠道，请到模型页添加";
+
+function isEmptyProviderError(msg: string): boolean {
+  return /no model provider|no provider|not configured|providers?\s*(empty|required)|empty providers?/i.test(
+    msg,
+  );
+}
+
+function humanizeProviderError(msg: string): string {
+  return isEmptyProviderError(msg) ? EMPTY_PROVIDER_MSG : msg;
+}
+
 /** Merge identity/status fields into sessions[] (model must stay in sync with open/rebind). */
 function patchSessionFields(
   sessions: SessionInfo[],
@@ -158,15 +174,45 @@ function patchSessionFields(
     if ("status" in patch && patch.status != null) {
       merged.status = String(patch.status);
     }
+    if ("parentSessionId" in patch) {
+      const p = patch.parentSessionId;
+      merged.parentSessionId =
+        p == null || String(p).trim() === "" ? null : String(p).trim();
+    }
+    if ("goal" in patch) {
+      const g = patch.goal;
+      merged.goal =
+        g == null || String(g).trim() === "" ? null : String(g).trim();
+    }
+    if ("subagentProfile" in patch) {
+      const p = patch.subagentProfile;
+      merged.subagentProfile =
+        p == null || String(p).trim() === "" ? null : String(p).trim();
+    }
+    if ("subagentDepth" in patch) {
+      const d = patch.subagentDepth;
+      merged.subagentDepth =
+        d == null || Number.isNaN(Number(d)) ? undefined : Number(d);
+    }
     return merged;
   });
   return hit ? next : sessions;
 }
 
-/** Extract model/provider from open/snapshot info or session.meta events. */
+type SessionIdentityPatch = {
+  model?: string;
+  providerId?: string;
+  status?: string;
+  parentSessionId?: string | null;
+  goal?: string | null;
+  subagentProfile?: string | null;
+  subagentDepth?: number;
+};
+
+/** Extract model/provider + subagent fields from open/snapshot info or session.meta events. */
 function sessionIdentityFrom(
   source: Record<string, unknown> | SessionInfo | null | undefined,
-): { model?: string; providerId?: string; status?: string } {
+): SessionIdentityPatch {
   if (!source) return {};
   const rec = source as Record<string, unknown>;
   const nested =
@@ -182,11 +228,67 @@ function sessionIdentityFrom(
     nested?.providerId ??
     nested?.provider;
   const statusRaw = rec.status ?? nested?.status;
-  const out: { model?: string; providerId?: string; status?: string } = {};
+  const parentRaw = rec.parentSessionId ?? nested?.parentSessionId;
+  const goalRaw = rec.goal ?? nested?.goal;
+  const profileRaw = rec.subagentProfile ?? nested?.subagentProfile;
+  const depthRaw = rec.subagentDepth ?? nested?.subagentDepth;
+  const out: SessionIdentityPatch = {};
   if (modelRaw != null) out.model = String(modelRaw).trim();
   if (providerRaw != null) out.providerId = String(providerRaw).trim();
   if (statusRaw != null) out.status = String(statusRaw);
+  if (parentRaw != null) {
+    const p = String(parentRaw).trim();
+    out.parentSessionId = p || null;
+  }
+  if (goalRaw != null) {
+    const g = String(goalRaw).trim();
+    out.goal = g || null;
+  }
+  if (profileRaw != null) {
+    const p = String(profileRaw).trim();
+    out.subagentProfile = p || null;
+  }
+  if (depthRaw != null && depthRaw !== "") {
+    const n = Number(depthRaw);
+    if (!Number.isNaN(n)) out.subagentDepth = n;
+  }
   return out;
+}
+
+/** Prefer list values; keep previously known subagent / model identity when list omits them. */
+function mergeSessionListItem(
+  prev: SessionInfo | undefined,
+  listed: SessionInfo,
+): SessionInfo {
+  if (!prev) return listed;
+  const listModel = listed.model != null ? String(listed.model).trim() : "";
+  const listProvider =
+    listed.providerId != null ? String(listed.providerId).trim() : "";
+  const listParent =
+    listed.parentSessionId != null
+      ? String(listed.parentSessionId).trim()
+      : "";
+  const listGoal = listed.goal != null ? String(listed.goal).trim() : "";
+  const listProfile =
+    listed.subagentProfile != null
+      ? String(listed.subagentProfile).trim()
+      : "";
+  const listDepth =
+    listed.subagentDepth != null && listed.subagentDepth !== ("" as unknown)
+      ? Number(listed.subagentDepth)
+      : NaN;
+  return {
+    ...prev,
+    ...listed,
+    model: listModel || prev.model,
+    providerId: listProvider || prev.providerId,
+    parentSessionId: listParent || prev.parentSessionId || null,
+    goal: listGoal || prev.goal || null,
+    subagentProfile: listProfile || prev.subagentProfile || null,
+    subagentDepth: !Number.isNaN(listDepth)
+      ? listDepth
+      : prev.subagentDepth,
+  };
 }
 
 /** Poll snapshot if UI still thinks a turn is live (heals missed session.completed). */
@@ -275,11 +377,23 @@ export const useAppStore = create<AppState>((set, get) => ({
   permissionMode: "confirm_before_change",
   planMode: false,
   statusLine: "Starting…",
+  composerDraft: null,
 
   consumeBootRoute: () => {
     const r = get().bootRoute;
     if (r) set({ bootRoute: null });
     return r;
+  },
+
+  setComposerDraft: (text) => {
+    const t = text == null ? null : String(text);
+    set({ composerDraft: t && t.trim() ? t : null });
+  },
+
+  consumeComposerDraft: () => {
+    const d = get().composerDraft;
+    if (d) set({ composerDraft: null });
+    return d;
   },
 
   bootstrap: async () => {
@@ -368,21 +482,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       const tb = Date.parse(b.updatedAt ?? b.createdAt ?? "") || 0;
       return tb - ta;
     });
-    // Preserve model/provider known from open/session.meta when list omits them.
+    // Preserve model/provider + subagent meta when list omits them.
     const prevById = new Map(get().sessions.map((s) => [s.id, s]));
-    const sessions = listed.map((s) => {
-      const prev = prevById.get(s.id);
-      if (!prev) return s;
-      const listModel = s.model != null ? String(s.model).trim() : "";
-      const listProvider =
-        s.providerId != null ? String(s.providerId).trim() : "";
-      return {
-        ...prev,
-        ...s,
-        model: listModel || prev.model,
-        providerId: listProvider || prev.providerId,
-      };
-    });
+    const sessions = listed.map((s) =>
+      mergeSessionListItem(prevById.get(s.id), s),
+    );
     set({ sessions });
   },
 
@@ -420,11 +524,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     const activeProvider = String(info?.activeProviderId ?? "").trim();
     const activeModel = String(info?.activeModel ?? "").trim();
     if (!activeProvider || !activeModel) {
-      const msg =
-        "未配置模型渠道。请先到「模型」添加 Provider 并选择模型，再新建会话。";
-      set({ error: msg });
-      toast.error(msg);
-      throw new Error(msg);
+      set({ error: EMPTY_PROVIDER_MSG });
+      toast.error(EMPTY_PROVIDER_MSG);
+      throw new Error(EMPTY_PROVIDER_MSG);
     }
     try {
       const hfq = getHfq();
@@ -434,11 +536,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         await get().selectSession(session.id);
       }
     } catch (e) {
-      let msg = errMessage(e);
-      if (/no model provider|no provider|not configured|providers?\s*(empty|required)/i.test(msg)) {
-        msg =
-          "未配置模型渠道。请先到「模型」添加 Provider 并选择模型，再新建会话。";
-      }
+      const msg = humanizeProviderError(errMessage(e));
       set({ error: msg });
       toast.error(msg);
       throw e instanceof Error ? e : new Error(msg);
@@ -527,12 +625,22 @@ export const useAppStore = create<AppState>((set, get) => ({
         planMode: Boolean(plan),
         streamingThinking: "",
         streamingThinkingId: null,
-        // open/snapshot info.model is the live session model (post rebindToActive).
+        // open/snapshot is authoritative for model + subagent identity.
         sessions: patchSessionFields(s.sessions, sessionId, {
           status: nextStatus,
           ...(identity.model !== undefined ? { model: identity.model } : {}),
           ...(identity.providerId !== undefined
             ? { providerId: identity.providerId }
+            : {}),
+          ...(identity.parentSessionId !== undefined
+            ? { parentSessionId: identity.parentSessionId }
+            : {}),
+          ...(identity.goal !== undefined ? { goal: identity.goal } : {}),
+          ...(identity.subagentProfile !== undefined
+            ? { subagentProfile: identity.subagentProfile }
+            : {}),
+          ...(identity.subagentDepth !== undefined
+            ? { subagentDepth: identity.subagentDepth }
             : {}),
         }),
       }));
@@ -593,13 +701,22 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!text) return;
 
     const hfq = getHfq();
-    let { activeSessionId, workspace } = get();
+    let { activeSessionId, workspace, info } = get();
 
     if (!workspace?.path) {
       toast.error("请先打开工作区");
       await get().openWorkspace();
       workspace = get().workspace;
       if (!workspace?.path) return;
+    }
+
+    // Fail-closed when no active provider/model (matches createSession + empty providers product decision).
+    const globalModel = String(info?.activeModel ?? "").trim();
+    const globalProvider = String(info?.activeProviderId ?? "").trim();
+    if (!globalModel || !globalProvider) {
+      set({ error: EMPTY_PROVIDER_MSG });
+      toast.error(EMPTY_PROVIDER_MSG);
+      return;
     }
 
     try {
@@ -612,9 +729,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (!activeSessionId) return;
 
       // Backend rebinds session → global active on each send; pin UI identity early.
-      const globalModel = String(get().info?.activeModel ?? "").trim();
-      const globalProvider = String(get().info?.activeProviderId ?? "").trim();
-
       set((s) => ({
         messages: [
           ...s.messages,
@@ -633,8 +747,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         error: null,
         sessions: patchSessionFields(s.sessions, activeSessionId, {
           status: "running",
-          ...(globalModel ? { model: globalModel } : {}),
-          ...(globalProvider ? { providerId: globalProvider } : {}),
+          model: globalModel,
+          providerId: globalProvider,
         }),
       }));
       scheduleRunningReconcile(get, set);
@@ -642,7 +756,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // IPC contract: payload.text (main.cjs session:send) — returns before turn ends
       await hfq.sendMessage({ sessionId: activeSessionId, text });
     } catch (e) {
-      const msg = errMessage(e);
+      const msg = humanizeProviderError(errMessage(e));
       markTurnIdle(set, get().activeSessionId, "idle");
       set({ error: msg });
       toast.error(msg);
@@ -730,9 +844,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Cross-session bookkeeping (list / tree)
     if (sessionId && active && sessionId !== active) {
       if (type === "session.meta") {
-        // Keep model/provider in list even when event is for another session.
+        // Keep model/provider + subagent meta in list even for non-active sessions.
         const idPatch = sessionIdentityFrom(ev);
-        if (idPatch.model !== undefined || idPatch.providerId !== undefined) {
+        if (Object.keys(idPatch).length > 0) {
           set((s) => ({
             sessions: patchSessionFields(s.sessions, sessionId, idPatch),
           }));
@@ -1069,11 +1183,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     if (type === "session.meta") {
       const idPatch = sessionIdentityFrom(ev);
-      if (
-        idPatch.model !== undefined ||
-        idPatch.providerId !== undefined ||
-        idPatch.status !== undefined
-      ) {
+      if (Object.keys(idPatch).length > 0) {
         set((s) => ({
           sessions: patchSessionFields(
             s.sessions,

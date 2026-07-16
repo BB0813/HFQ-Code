@@ -46,11 +46,42 @@ export interface SessionInfo {
   status?: string;
   workspacePath?: string | null;
   parentSessionId?: string | null;
-  subagentProfile?: string | null;
+  subagentProfile?: "explore" | "edit" | "shell" | string | null;
   subagentDepth?: number;
   goal?: string | null;
   model?: string;
   providerId?: string;
+  [key: string]: unknown;
+}
+
+/** Progress payload from `onUpdateDownload` (D3). */
+export interface UpdateDownloadStatus {
+  status?: "idle" | "downloading" | "completed" | "failed" | "cancelled" | string;
+  percent?: number;
+  bytesReceived?: number;
+  bytesTotal?: number;
+  filePath?: string;
+  sha256?: string;
+  error?: string;
+  [key: string]: unknown;
+}
+
+export interface SetActiveModelResult {
+  sessionApplied?: {
+    id?: string;
+    model?: string;
+    providerId?: string;
+  } | null;
+  sessionApplyError?: string | null;
+  [key: string]: unknown;
+}
+
+export interface InstallUpdateResult {
+  ok?: boolean;
+  filePath?: string;
+  quitSuggested?: boolean;
+  cancelled?: boolean;
+  error?: string;
   [key: string]: unknown;
 }
 
@@ -162,14 +193,19 @@ export interface GitLogEntry {
 
 export interface SpawnAttempt {
   id?: string;
+  /** Backend may use attemptId. */
+  attemptId?: string;
   sessionId?: string;
+  parentSessionId?: string;
   goal?: string;
   profile?: string;
   status?: string;
   error?: string;
   errorCode?: string;
   childSessionId?: string | null;
+  at?: string;
   createdAt?: string;
+  updatedAt?: string;
   [key: string]: unknown;
 }
 
@@ -242,7 +278,10 @@ export interface HfqApi {
   onPtyExit: (handler: (data: { id: string; exitCode?: number; signal?: string }) => void) => () => void;
 
   getConfig: () => Promise<Record<string, unknown>>;
-  setActiveModel: (payload: { providerId?: string; model?: string }) => Promise<unknown>;
+  setActiveModel: (payload: {
+    providerId?: string;
+    model?: string;
+  }) => Promise<SetActiveModelResult | Record<string, unknown>>;
   upsertProvider: (payload: Record<string, unknown>) => Promise<unknown>;
   removeProvider: (payload: { id?: string; providerId?: string }) => Promise<unknown>;
   setPrefs: (payload: Record<string, unknown>) => Promise<unknown>;
@@ -334,9 +373,13 @@ export interface HfqApi {
   exportDiagnostics: () => Promise<unknown>;
   checkForUpdates: (payload?: Record<string, unknown>) => Promise<unknown>;
   downloadUpdate: (payload?: Record<string, unknown>) => Promise<unknown>;
-  installUpdate: (payload?: Record<string, unknown>) => Promise<unknown>;
+  installUpdate: (payload?: {
+    autoDownload?: boolean;
+    confirm?: boolean;
+  }) => Promise<InstallUpdateResult | unknown>;
   cancelUpdateDownload: () => Promise<unknown>;
-  onUpdateDownload?: (handler: (data: unknown) => void) => () => void;
+  getUpdateDownloadStatus?: () => Promise<UpdateDownloadStatus | unknown>;
+  onUpdateDownload?: (handler: (data: UpdateDownloadStatus | unknown) => void) => () => void;
   openReleasePage: (payload?: Record<string, unknown>) => Promise<unknown>;
   openExternal: (payload?: { url?: string }) => Promise<unknown>;
   revealInFolder: (payload?: { path?: string }) => Promise<unknown>;

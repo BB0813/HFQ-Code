@@ -356,7 +356,7 @@ export function ModelsPage() {
     const pid = providerId.trim();
     if (!pid) return;
     if (!hasProviders) {
-      toast.error("未配置模型渠道。请先添加 Provider。");
+      toast.error("尚未配置模型渠道，请到模型页添加");
       return;
     }
     const mid = (model ?? "").trim();
@@ -513,13 +513,8 @@ export function ModelsPage() {
       }
       const err = res?.sessionApplyError ? String(res.sessionApplyError) : "";
       if (err) {
-        if (/busy|running|in progress|streaming/i.test(err)) {
-          toast.message(
-            `已设为默认 ${modelId}；会话忙碌未能热切换 — 空闲后再切，或重开会话。`,
-          );
-        } else {
-          toast.message(`已设为默认 ${modelId}；当前会话未热切换：${err}`);
-        }
+        // Global active already applied — never roll back on sessionApplyError.
+        toast.message(`全局已切换，当前会话暂未应用：${err}`);
       } else if (res?.sessionApplied?.model) {
         toast.success(`已切换 ${modelId}（当前会话已同步）`);
       } else {
@@ -527,8 +522,10 @@ export function ModelsPage() {
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      const human = /no model provider|no provider|not configured|empty/i.test(msg)
-        ? "未配置模型渠道，无法设为默认。请先添加 Provider。"
+      const human = /no model provider|providers empty|no provider|not configured|empty/i.test(
+        msg,
+      )
+        ? "尚未配置模型渠道，请到模型页添加"
         : msg;
       setError(human);
       toast.error(human);

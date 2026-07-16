@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.1.2 — 2026-07-16
+
+### Desktop UI (with backend 1.1.1 APIs)
+- **Settings** update UX: download percent, install auto-download progress, cancelled/ok/quitSuggested copy, open release page, SmartScreen note
+- **Tasks (B3)**: tree polish, parent return, failed spawn chips (`errorCode` 中文), cold-start children/attempts
+- **Changes (B2)**: keyboard next/prev file,「让智能体修」composer prefill, commit polish
+- **Models**: empty providers fail-closed copy; session identity (`providerId` / subagent fields) in store + sidebar
+- `hfq.ts` types: `UpdateDownloadStatus`, `InstallUpdateResult`, `sessionApplied.providerId`, spawn attempt fields
+
+### Packaging
+- Full product ship: backend **1.1.1** capabilities + renderer polish in one installer train
+
+---
+
 ## 1.1.1 — 2026-07-16
 
 ### Updates (D3)
