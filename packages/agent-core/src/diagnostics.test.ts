@@ -1,12 +1,16 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildDiagnosticsBundle } from "./diagnostics.js";
 import { ensureDataDirs, hfqDataDir } from "./paths.js";
 
 const cleanup: string[] = [];
+const prevDataDir = process.env.HFQ_DATA_DIR;
 
 afterEach(async () => {
+  if (prevDataDir === undefined) delete process.env.HFQ_DATA_DIR;
+  else process.env.HFQ_DATA_DIR = prevDataDir;
   while (cleanup.length) {
     const d = cleanup.pop();
     if (d) await fs.rm(d, { recursive: true, force: true }).catch(() => undefined);
@@ -15,6 +19,12 @@ afterEach(async () => {
 
 describe("buildDiagnosticsBundle", () => {
   it("exports redacted config and never credentials body", async () => {
+    // Isolate from other suite sessions (worker tests write newer transcripts
+    // under the shared APPDATA HFQ-Code dir and can steal session-sample).
+    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "hfq-diag-"));
+    cleanup.push(dataRoot);
+    process.env.HFQ_DATA_DIR = dataRoot;
+
     const dirs = await ensureDataDirs();
     const credPath = path.join(hfqDataDir(), "credentials.json");
     await fs.mkdir(path.dirname(credPath), { recursive: true });
@@ -60,6 +70,7 @@ describe("buildDiagnosticsBundle", () => {
     expect(bundle.files).toContain("credentials.OMITTED.txt");
     expect(bundle.files).toContain("env.redacted.json");
     expect(bundle.files).toContain("README.txt");
+    expect(bundle.files).toContain("session-sample.redacted.json");
 
     const allNames = await fs.readdir(bundle.dir);
     expect(allNames.some((n) => /credentials\.json/i.test(n))).toBe(false);
@@ -89,13 +100,12 @@ describe("buildDiagnosticsBundle", () => {
       expect(body).not.toContain("sk-should-redact-this-key");
     }
 
-    if (bundle.files.includes("session-sample.redacted.json")) {
-      const sample = await fs.readFile(
-        path.join(bundle.dir, "session-sample.redacted.json"),
-        "utf8",
-      );
-      expect(sample).toMatch(/REDACTED|sk-\*\*\*/);
-      expect(sample).not.toMatch(/sk-abcdefghijklmnop/);
-    }
+    const sample = await fs.readFile(
+      path.join(bundle.dir, "session-sample.redacted.json"),
+      "utf8",
+    );
+    expect(sample).toMatch(/REDACTED|sk-\*\*\*/);
+    expect(sample).not.toMatch(/sk-abcdefghijklmnop/);
+    expect(sample).toContain("diag-test-session");
   });
 });
