@@ -1,8 +1,8 @@
 # HFQ Code — Development roadmap (post-1.0.5)
 
 Status: **active plan**  
-Baseline: product **1.0.10** (`v1.0.10`) · 2026-07-17  
-Last updated: 2026-07-17 · 1.0.10 release: signing + thinking + DPAPI + D3 + React shell
+Baseline: product **1.1.0** (`v1.1.0`) · 2026-07-16  
+Last updated: 2026-07-16 · 1.1.0: providers delete/empty + models:list + session model rebind/identity pin
 
 ## Positioning (frozen)
 
@@ -13,9 +13,10 @@ Last updated: 2026-07-17 · 1.0.10 release: signing + thinking + DPAPI + D3 + Re
 
 ## Where we are
 
-| Area | State after 1.0.10 |
+| Area | State after 1.1.0 |
 |------|-------------------|
-| Agent loop + tools + worker | Shipped |
+| Agent loop + tools + worker | Shipped · **1.1.0** session rebind + identity pin |
+| Providers CRUD / empty list / models:list | **Shipped** (1.1.0) · fail-closed empty providers |
 | Access modes / permission modal | Shipped (1.0.2+) · **1.0.9** timeout + crash unlock |
 | Chat composer polish | Shipped (1.0.3 · **1.0.8** upward menus + model-only label) |
 | `/goal` long-run + Tasks + Chat banner | Shipped (1.0.4–1.0.6) |

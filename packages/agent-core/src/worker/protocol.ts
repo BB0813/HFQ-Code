@@ -103,6 +103,7 @@ export type WorkerRequestMethod =
   | "getPlanMode"
   | "setPermissionMode"
   | "getPermissionMode"
+  | "setProviderModel"
   | "listChildren"
   | "listSpawnAttempts"
   | "spawnSubagent"
@@ -133,6 +134,11 @@ export type WorkerRequest =
       params: { sessionId: string; mode: PermissionMode | string };
     }
   | { id: string; method: "getPermissionMode"; params: { sessionId: string } }
+  | {
+      id: string;
+      method: "setProviderModel";
+      params: { sessionId: string; provider: WorkerProviderSpec; model: string };
+    }
   | { id: string; method: "listChildren"; params: { sessionId: string } }
   | { id: string; method: "listSpawnAttempts"; params: { sessionId: string } }
   | { id: string; method: "spawnSubagent"; params: WorkerSpawnParams }

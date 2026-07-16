@@ -6,7 +6,7 @@ Windows desktop **coding agent** (WorkBuddy / ZCode class): full GUI, workspace-
 
 ## Status
 
-**1.0.9** — Windows coding agent (Phase-1+2 + Phase-3 M3.0/M3.1/M3.3/M3.4) with post-1.0 patch train:
+**1.1.0** — Windows coding agent (Phase-1+2 + Phase-3 + 1.0.x patch train + provider lifecycle / session model rebind):
 
 - Session loop: create / resume / stop / delete / rename + auto-title, streaming, tokens, compaction, **plan mode**, **sub-agents**
 - **Session worker** (child process) for agent loop isolation; in-process fallback
@@ -16,8 +16,10 @@ Windows desktop **coding agent** (WorkBuddy / ZCode class): full GUI, workspace-
 - Memory 2.0 · Usage dashboard · Import wizard · `/goal` long-run + Tasks banner
 - Skills store: curated catalog · local folder + **remote https zip/tar.gz** · SKILL.md preview / conflict / tags
 - MCP: stdio + HTTP · Permissions + Audit · Changes · Terminal (one-shot) · Models
-- Update check: multi-source fallback (ghproxy mirrors → ungh → direct GitHub); **manual download only**
-- Packaging: NSIS + portable · `pnpm release:check` / `pack:verify`
+- Update check: multi-source fallback (ghproxy mirrors → ungh → direct GitHub); **manual download only** (D3 in-app download)
+- Packaging: NSIS + portable · `pnpm release:check` / `pack:verify` · self-sign HFQ-ClodBreeze
+- Providers: delete mock/last channel · empty fail-closed · `models:list` · baseURL normalize
+- Session: open/send rebind to global active · identity pin against stale self-claims
 - Chat UI: topbar provider · model · model-id-only composer control · menus open upward
 
 See [docs/PHASE3-STATUS.md](./docs/PHASE3-STATUS.md) · [docs/ROADMAP.md](./docs/ROADMAP.md) · [docs/PACKAGING.md](./docs/PACKAGING.md) · [docs/AUDIT.md](./docs/AUDIT.md) · [CHANGELOG.md](./CHANGELOG.md).

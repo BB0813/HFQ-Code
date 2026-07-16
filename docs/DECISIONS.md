@@ -88,3 +88,20 @@ Legacy vanilla + Shoelace tree archived at `apps/desktop/renderer-legacy/` (not 
 
 Rationale: R8 Shoelace/vanilla polish could not reach Cursor/Claude-Desktop density; user ordered full shadcn refactor + wire ready backend APIs in one train.
 
+## Q7 — Provider channels: delete mock / empty list / model list (2026-07-16)
+
+**Frozen product rules (backend):**
+
+| Rule | Decision |
+|------|----------|
+| Delete mock | **Allowed.** `id: mock` is a normal channel, not a reserved seed after first run. |
+| Delete last channel | **Allowed.** Persist `providers: []`, `activeProviderId: ""`, `activeModel: ""`. |
+| Load-time injection | **Forbidden.** Do **not** re-inject mock / anthropic on load or save. Only first-run missing `config.json` seeds `defaultAppConfig()` (includes mock). |
+| Empty providers use | **Fail-closed.** `session:create` / send paths via `resolveActiveProvider`, `config:setActive`, `models:test`, `models:list` must not invent a silent mock. Prefer explicit errors or soft `{ ok: false }`. |
+| Workbench models source | Config `providers[].models` is the persisted workbench list. |
+| Remote enumeration | New IPC **`models:list`** → `listProviderModels`: OpenAI-compatible `GET {base}/models` with soft fallback to config; anthropic `source: "unsupported"` + config models. |
+| Upsert validation | ≥1 model; `defaultModel` ∈ models (or coerced to models[0]); `baseURL` required for `openai_compatible` / `anthropic`. |
+| Credentials on delete | `saveAppConfig` overwrites credentials from current providers only → deleted provider keys are dropped. |
+
+Frontend may still show “cannot delete mock” until UI agent wires the new contract; backend already allows it.
+

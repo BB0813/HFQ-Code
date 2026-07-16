@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.1.0 — 2026-07-16
+
+### Providers / Models
+- Delete **mock** and **last** channel allowed; empty `providers: []` is valid and **fail-closed** at use (no silent mock re-inject on load/save)
+- First-run only seeds `defaultAppConfig()` (includes mock template)
+- **`models:list`** / `listProviderModels`: OpenAI-compatible remote list with soft config fallback; Anthropic unsupported + config models
+- Upsert: ≥1 model, `defaultModel` ∈ models, `baseURL` required for openai_compatible / anthropic
+- Credentials save drops keys for deleted provider ids
+- OpenAI-compatible **baseURL normalize** (OpenCode `/zen` → `/zen/v1`) + humanized HTTP errors
+
+### Session model binding
+- `session:open` rebinds to global active provider/model by default (`rebindToActive`)
+- `session:send` best-effort re-pin before each turn
+- Hot-swap `setProviderModel` + durable `session.meta`; create always persists model without locking auto-title
+- Per-request **identity pin**: soft-redact stale model self-claims in history for the API call only; pin current model at end of messages (UI transcript unchanged)
+
+### Docs
+- DECISIONS Q7 · FRONTEND-IPC Models section · RELEASE-1.1.0
+
+---
+
 ## 1.0.10 — 2026-07-17
 
 ### Code signing · distribution (D2)

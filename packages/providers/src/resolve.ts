@@ -1,6 +1,7 @@
 import type { ModelProvider } from "./types.js";
 import { createAnthropicProvider } from "./anthropic.js";
 import { createMockProvider } from "./mock.js";
+import { normalizeOpenAICompatibleBaseURL } from "./openai-base-url.js";
 import { createOpenAICompatibleProvider } from "./openai-compatible.js";
 
 export interface ProviderResolveInput {
@@ -24,7 +25,7 @@ export function createProviderFromConfig(input: ProviderResolveInput): ModelProv
     }
     return createOpenAICompatibleProvider({
       id: input.id,
-      baseURL: input.baseURL,
+      baseURL: normalizeOpenAICompatibleBaseURL(input.baseURL),
       apiKey: input.apiKey,
     });
   }
@@ -35,7 +36,9 @@ export function createProviderFromConfig(input: ProviderResolveInput): ModelProv
     }
     return createAnthropicProvider({
       id: input.id,
-      baseURL: input.baseURL,
+      baseURL: input.baseURL?.trim()
+        ? input.baseURL.trim().replace(/\/+$/, "")
+        : undefined,
       apiKey: input.apiKey,
     });
   }

@@ -521,10 +521,32 @@ export class SessionManager {
 
   /**
    * Resume a session from JSONL into memory (or return live one).
+   * When provider/model are passed for an already-live session, rebind if different
+   * so toolbar global active and live chat stay aligned after Models switch.
    */
   async open(params: OpenSessionParams): Promise<SessionSnapshot> {
     const live = this.sessions.get(params.sessionId);
-    if (live) return live.getSnapshot();
+    if (live) {
+      if (params.provider && params.model?.trim()) {
+        const wantModel = String(params.model).trim();
+        const liveModel = live.getModel();
+        const liveProviderId = live.getProviderId();
+        const wantProviderId = params.provider.id;
+        if (liveModel !== wantModel || liveProviderId !== wantProviderId) {
+          try {
+            await live.setProviderModel(params.provider, wantModel);
+            this.sessionProviders.set(params.sessionId, {
+              provider: params.provider,
+              model: wantModel,
+            });
+          } catch (err) {
+            // Busy session: keep live binding; UI still sees mismatch until idle rebind.
+            void err;
+          }
+        }
+      }
+      return live.getSnapshot();
+    }
 
     const dirs = await ensureDataDirs();
     const tr = await JsonlTranscript.openExisting(dirs.sessions, params.sessionId);
@@ -538,8 +560,13 @@ export class SessionManager {
       throw new Error("session has no workspace path");
     }
 
+    // Prefer explicit open params (global active) so resume after model switch
+    // does not keep calling the old API with a stale model id.
     const provider = params.provider ?? createMockProvider();
-    const model = params.model ?? prelim.info.model ?? "mock-hfq";
+    const model =
+      (params.model && String(params.model).trim()) ||
+      prelim.info.model ||
+      "mock-hfq";
     const sharedAgentsDir =
       this.opts.sharedAgentsDir ?? path.join(os.homedir(), ".agents", "skills");
 
@@ -652,8 +679,20 @@ export class SessionManager {
   }
 
   /**
-   * Rename a session. Live sessions use AgentSession.setTitle; offline appends session.meta to JSONL.
+   * Hot-swap provider/model on a live session (Models setActive / open with new default).
    */
+  async setProviderModel(
+    sessionId: string,
+    provider: ModelProvider,
+    model: string,
+  ): Promise<SessionInfo> {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new Error(`unknown session: ${sessionId}`);
+    const info = await session.setProviderModel(provider, model);
+    this.sessionProviders.set(sessionId, { provider, model: info.model || model });
+    return info;
+  }
+
   async rename(sessionId: string, title: string): Promise<SessionInfo> {
     const next = title.replace(/\s+/g, " ").trim().slice(0, 80);
     if (!next) throw new Error("title required");

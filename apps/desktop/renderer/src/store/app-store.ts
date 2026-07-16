@@ -105,6 +105,157 @@ function errMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+/** Live agent turn — keeps stop button / streaming chrome. */
+function isLiveSessionStatus(status: unknown): boolean {
+  const s = String(status ?? "").toLowerCase();
+  return (
+    s === "running" ||
+    s === "streaming" ||
+    s === "busy" ||
+    s === "waiting_permission" ||
+    s === "active"
+  );
+}
+
+function patchSessionStatus(
+  sessions: SessionInfo[],
+  sessionId: string | null | undefined,
+  status: string,
+): SessionInfo[] {
+  return patchSessionFields(sessions, sessionId, { status });
+}
+
+/** Merge identity/status fields into sessions[] (model must stay in sync with open/rebind). */
+function patchSessionFields(
+  sessions: SessionInfo[],
+  sessionId: string | null | undefined,
+  patch: Partial<SessionInfo> & Record<string, unknown>,
+): SessionInfo[] {
+  if (!sessionId) return sessions;
+  let hit = false;
+  const next = sessions.map((s) => {
+    if (s.id !== sessionId) return s;
+    hit = true;
+    const merged: SessionInfo = {
+      ...s,
+      ...patch,
+      updatedAt:
+        typeof patch.updatedAt === "string"
+          ? patch.updatedAt
+          : new Date().toISOString(),
+    };
+    // Empty string model/provider from backend means "cleared" — keep it, don't keep stale.
+    if ("model" in patch) {
+      const m = patch.model;
+      merged.model =
+        m == null || String(m).trim() === "" ? undefined : String(m).trim();
+    }
+    if ("providerId" in patch) {
+      const p = patch.providerId;
+      merged.providerId =
+        p == null || String(p).trim() === "" ? undefined : String(p).trim();
+    }
+    if ("status" in patch && patch.status != null) {
+      merged.status = String(patch.status);
+    }
+    return merged;
+  });
+  return hit ? next : sessions;
+}
+
+/** Extract model/provider from open/snapshot info or session.meta events. */
+function sessionIdentityFrom(
+  source: Record<string, unknown> | SessionInfo | null | undefined,
+): { model?: string; providerId?: string; status?: string } {
+  if (!source) return {};
+  const rec = source as Record<string, unknown>;
+  const nested =
+    rec.info && typeof rec.info === "object"
+      ? (rec.info as Record<string, unknown>)
+      : rec.session && typeof rec.session === "object"
+        ? (rec.session as Record<string, unknown>)
+        : null;
+  const modelRaw = rec.model ?? nested?.model;
+  const providerRaw =
+    rec.providerId ??
+    rec.provider ??
+    nested?.providerId ??
+    nested?.provider;
+  const statusRaw = rec.status ?? nested?.status;
+  const out: { model?: string; providerId?: string; status?: string } = {};
+  if (modelRaw != null) out.model = String(modelRaw).trim();
+  if (providerRaw != null) out.providerId = String(providerRaw).trim();
+  if (statusRaw != null) out.status = String(statusRaw);
+  return out;
+}
+
+/** Poll snapshot if UI still thinks a turn is live (heals missed session.completed). */
+let runningReconcileTimer: number | null = null;
+
+function clearRunningReconcile() {
+  if (runningReconcileTimer != null) {
+    window.clearTimeout(runningReconcileTimer);
+    runningReconcileTimer = null;
+  }
+}
+
+function scheduleRunningReconcile(get: () => AppState, set: (p: Partial<AppState> | ((s: AppState) => Partial<AppState>)) => void) {
+  clearRunningReconcile();
+  runningReconcileTimer = window.setTimeout(() => {
+    runningReconcileTimer = null;
+    void (async () => {
+      const { running, activeSessionId } = get();
+      if (!running || !activeSessionId || !hasHfq()) return;
+      try {
+        const snap = normalizeSnapshot(await getHfq().getSessionSnapshot(activeSessionId));
+        const status = snap?.info?.status ?? snap?.session?.status;
+        if (status != null && !isLiveSessionStatus(status)) {
+          set((s) => ({
+            running: false,
+            streamingText: "",
+            streamingThinking: "",
+            streamingThinkingId: null,
+            sessions: patchSessionStatus(s.sessions, activeSessionId, String(status) || "idle"),
+          }));
+          return;
+        }
+        // Still live (or unknown) — check again later while flag stays true
+        if (get().running) scheduleRunningReconcile(get, set);
+      } catch {
+        if (get().running) scheduleRunningReconcile(get, set);
+      }
+    })();
+  }, 2500);
+}
+
+function markTurnLive(
+  set: (p: Partial<AppState> | ((s: AppState) => Partial<AppState>)) => void,
+  get: () => AppState,
+  sessionId?: string | null,
+) {
+  const id = sessionId || get().activeSessionId;
+  set((s) => ({
+    running: true,
+    sessions: patchSessionStatus(s.sessions, id, "running"),
+  }));
+  scheduleRunningReconcile(get, set);
+}
+
+function markTurnIdle(
+  set: (p: Partial<AppState> | ((s: AppState) => Partial<AppState>)) => void,
+  sessionId?: string | null,
+  status = "idle",
+) {
+  clearRunningReconcile();
+  set((s) => ({
+    running: false,
+    streamingText: "",
+    streamingThinking: "",
+    streamingThinkingId: null,
+    sessions: patchSessionStatus(s.sessions, sessionId || s.activeSessionId, status),
+  }));
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   ready: false,
   error: null,
@@ -212,10 +363,25 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!hasHfq()) return;
     const hfq = getHfq();
     const raw = await hfq.listSessions({});
-    const sessions = asList<SessionInfo>(raw).sort((a, b) => {
+    const listed = asList<SessionInfo>(raw).sort((a, b) => {
       const ta = Date.parse(a.updatedAt ?? a.createdAt ?? "") || 0;
       const tb = Date.parse(b.updatedAt ?? b.createdAt ?? "") || 0;
       return tb - ta;
+    });
+    // Preserve model/provider known from open/session.meta when list omits them.
+    const prevById = new Map(get().sessions.map((s) => [s.id, s]));
+    const sessions = listed.map((s) => {
+      const prev = prevById.get(s.id);
+      if (!prev) return s;
+      const listModel = s.model != null ? String(s.model).trim() : "";
+      const listProvider =
+        s.providerId != null ? String(s.providerId).trim() : "";
+      return {
+        ...prev,
+        ...s,
+        model: listModel || prev.model,
+        providerId: listProvider || prev.providerId,
+      };
     });
     set({ sessions });
   },
@@ -245,11 +411,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   createSession: async () => {
-    const { workspace } = get();
+    const { workspace, info } = get();
     if (!workspace?.path) {
       toast.error("请先打开工作区");
       await get().openWorkspace();
       if (!get().workspace?.path) return;
+    }
+    const activeProvider = String(info?.activeProviderId ?? "").trim();
+    const activeModel = String(info?.activeModel ?? "").trim();
+    if (!activeProvider || !activeModel) {
+      const msg =
+        "未配置模型渠道。请先到「模型」添加 Provider 并选择模型，再新建会话。";
+      set({ error: msg });
+      toast.error(msg);
+      throw new Error(msg);
     }
     try {
       const hfq = getHfq();
@@ -259,14 +434,20 @@ export const useAppStore = create<AppState>((set, get) => ({
         await get().selectSession(session.id);
       }
     } catch (e) {
-      const msg = errMessage(e);
+      let msg = errMessage(e);
+      if (/no model provider|no provider|not configured|providers?\s*(empty|required)/i.test(msg)) {
+        msg =
+          "未配置模型渠道。请先到「模型」添加 Provider 并选择模型，再新建会话。";
+      }
       set({ error: msg });
       toast.error(msg);
+      throw e instanceof Error ? e : new Error(msg);
     }
   },
 
   selectSession: async (sessionId) => {
     const hfq = getHfq();
+    clearRunningReconcile();
     set({
       activeSessionId: sessionId,
       streamingText: "",
@@ -298,10 +479,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const messages = normalizeMessages(snap.messages);
       const changes = normalizeChanges(snap.changes);
       const info = snap.info ?? snap.session;
-      const running =
-        info?.status === "running" ||
-        info?.status === "streaming" ||
-        String(info?.status ?? "") === "busy";
+      const running = isLiveSessionStatus(info?.status);
 
       // Sync workspace if session carries one.
       if (info?.workspacePath) {
@@ -333,7 +511,15 @@ export const useAppStore = create<AppState>((set, get) => ({
             ? "plan"
             : "confirm_before_change";
 
-      set({
+      const identity = sessionIdentityFrom(
+        (info as SessionInfo | undefined) ??
+          (snapRec as Record<string, unknown>),
+      );
+      const nextStatus =
+        identity.status ||
+        String(info?.status ?? (running ? "running" : "idle"));
+
+      set((s) => ({
         messages,
         changes,
         running: Boolean(running),
@@ -341,7 +527,17 @@ export const useAppStore = create<AppState>((set, get) => ({
         planMode: Boolean(plan),
         streamingThinking: "",
         streamingThinkingId: null,
-      });
+        // open/snapshot info.model is the live session model (post rebindToActive).
+        sessions: patchSessionFields(s.sessions, sessionId, {
+          status: nextStatus,
+          ...(identity.model !== undefined ? { model: identity.model } : {}),
+          ...(identity.providerId !== undefined
+            ? { providerId: identity.providerId }
+            : {}),
+        }),
+      }));
+      if (running) scheduleRunningReconcile(get, set);
+      else clearRunningReconcile();
 
       void (async () => {
         try {
@@ -415,6 +611,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       if (!activeSessionId) return;
 
+      // Backend rebinds session → global active on each send; pin UI identity early.
+      const globalModel = String(get().info?.activeModel ?? "").trim();
+      const globalProvider = String(get().info?.activeProviderId ?? "").trim();
+
       set((s) => ({
         messages: [
           ...s.messages,
@@ -431,13 +631,20 @@ export const useAppStore = create<AppState>((set, get) => ({
         streamingThinking: "",
         streamingThinkingId: null,
         error: null,
+        sessions: patchSessionFields(s.sessions, activeSessionId, {
+          status: "running",
+          ...(globalModel ? { model: globalModel } : {}),
+          ...(globalProvider ? { providerId: globalProvider } : {}),
+        }),
       }));
+      scheduleRunningReconcile(get, set);
 
-      // IPC contract: payload.text (main.cjs session:send)
+      // IPC contract: payload.text (main.cjs session:send) — returns before turn ends
       await hfq.sendMessage({ sessionId: activeSessionId, text });
     } catch (e) {
       const msg = errMessage(e);
-      set({ running: false, error: msg });
+      markTurnIdle(set, get().activeSessionId, "idle");
+      set({ error: msg });
       toast.error(msg);
     }
   },
@@ -450,7 +657,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (e) {
       toast.error(errMessage(e));
     } finally {
-      set({ running: false });
+      // Always unlock UI — backend abort is cooperative and may lag
+      markTurnIdle(set, activeSessionId, "idle");
+      void get().refreshSessions();
     }
   },
 
@@ -520,6 +729,15 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     // Cross-session bookkeeping (list / tree)
     if (sessionId && active && sessionId !== active) {
+      if (type === "session.meta") {
+        // Keep model/provider in list even when event is for another session.
+        const idPatch = sessionIdentityFrom(ev);
+        if (idPatch.model !== undefined || idPatch.providerId !== undefined) {
+          set((s) => ({
+            sessions: patchSessionFields(s.sessions, sessionId, idPatch),
+          }));
+        }
+      }
       if (
         type === "session.created" ||
         type === "session.updated" ||
@@ -538,7 +756,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Streaming assistant text (agent-core: message.delta + text)
     if (type === "message.delta" || type === "assistant.delta" || type === "stream.delta") {
       const delta = String(ev.text ?? ev.delta ?? ev.content ?? "");
-      if (delta) set((s) => ({ streamingText: s.streamingText + delta, running: true }));
+      if (delta) {
+        set((s) => ({
+          streamingText: s.streamingText + delta,
+          running: true,
+          sessions: patchSessionStatus(s.sessions, sessionId || active, "running"),
+        }));
+        scheduleRunningReconcile(get, set);
+      }
       return;
     }
 
@@ -554,8 +779,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           running: true,
           streamingThinkingId: messageId || s.streamingThinkingId,
           streamingThinking: same ? s.streamingThinking + delta : delta,
+          sessions: patchSessionStatus(s.sessions, sessionId || active, "running"),
         };
       });
+      scheduleRunningReconcile(get, set);
       return;
     }
 
@@ -663,20 +890,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     if (type === "session.started" || type === "session.running" || type === "agent.running") {
-      set({ running: true });
+      markTurnLive(set, get, sessionId || active);
       return;
     }
 
     if (type === "session.completed" || type === "session.aborted") {
-      set({
-        running: false,
-        streamingText: "",
-        streamingThinking: "",
-        streamingThinkingId: null,
-      });
+      markTurnIdle(set, sessionId || active, type === "session.aborted" ? "idle" : "idle");
       if (active) {
-        // Soft refresh snapshot so tool cards / changes land.
-        void get().selectSession(active);
+        // Soft refresh snapshot so tool cards / changes land — keep running false.
+        void get()
+          .selectSession(active)
+          .finally(() => {
+            if (get().activeSessionId === active) markTurnIdle(set, active, "idle");
+          });
       }
       void get().refreshSessions();
       return;
@@ -684,13 +910,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     if (type === "session.failed") {
       const error = String(ev.error ?? "Session failed");
-      set({
-        running: false,
-        streamingText: "",
-        streamingThinking: "",
-        streamingThinkingId: null,
-        error,
-      });
+      markTurnIdle(set, sessionId || active, "failed");
+      set({ error });
       toast.error(error);
       void get().refreshSessions();
       return;
@@ -703,13 +924,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       type === "turn.completed" ||
       type === "run.completed"
     ) {
-      set({
-        running: false,
-        streamingText: "",
-        streamingThinking: "",
-        streamingThinkingId: null,
-      });
-      if (active) void get().selectSession(active);
+      markTurnIdle(set, sessionId || active, "idle");
+      if (active) {
+        void get()
+          .selectSession(active)
+          .finally(() => {
+            if (get().activeSessionId === active) markTurnIdle(set, active, "idle");
+          });
+      }
       void get().refreshSessions();
       return;
     }
@@ -720,7 +942,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       type === "permission.request" ||
       type === "permission.required"
     ) {
-      set({
+      set((s) => ({
         permission: {
           requestId: String(ev.requestId ?? ev.id ?? ""),
           sessionId: sessionId ?? undefined,
@@ -730,7 +952,13 @@ export const useAppStore = create<AppState>((set, get) => ({
           args: ev.args ?? ev.input,
         },
         running: true,
-      });
+        sessions: patchSessionStatus(
+          s.sessions,
+          sessionId || active,
+          "waiting_permission",
+        ),
+      }));
+      scheduleRunningReconcile(get, set);
       return;
     }
 
@@ -768,6 +996,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const callId = String(ev.callId ?? `tool-${Date.now()}`);
       set((s) => ({
         running: true,
+        sessions: patchSessionStatus(s.sessions, sessionId || active, "running"),
         messages: [
           ...s.messages,
           {
@@ -783,6 +1012,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           },
         ],
       }));
+      scheduleRunningReconcile(get, set);
       return;
     }
 
@@ -837,7 +1067,27 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
 
-    if (type === "session.meta" || type === "subagent.updated" || type === "task.updated") {
+    if (type === "session.meta") {
+      const idPatch = sessionIdentityFrom(ev);
+      if (
+        idPatch.model !== undefined ||
+        idPatch.providerId !== undefined ||
+        idPatch.status !== undefined
+      ) {
+        set((s) => ({
+          sessions: patchSessionFields(
+            s.sessions,
+            sessionId || active,
+            idPatch,
+          ),
+        }));
+      }
+      // Soft refresh list for title/status fields listSessions may carry.
+      void get().refreshSessions();
+      return;
+    }
+
+    if (type === "subagent.updated" || type === "task.updated") {
       void get().refreshSessions();
       return;
     }

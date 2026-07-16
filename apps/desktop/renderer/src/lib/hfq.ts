@@ -5,6 +5,18 @@
 
 export type HfqInvokeResult<T = unknown> = T & { ok?: boolean; error?: string };
 
+/** Soft-fail result from models:list / listProviderModels. */
+export interface ListProviderModelsResult {
+  ok?: boolean;
+  providerId?: string;
+  source?: "remote" | "config" | "mock" | "unsupported" | string;
+  models?: string[];
+  error?: string;
+  warning?: string;
+  rawCount?: number;
+  [key: string]: unknown;
+}
+
 export interface AppInfo {
   version?: string;
   name?: string;
@@ -232,8 +244,16 @@ export interface HfqApi {
   getConfig: () => Promise<Record<string, unknown>>;
   setActiveModel: (payload: { providerId?: string; model?: string }) => Promise<unknown>;
   upsertProvider: (payload: Record<string, unknown>) => Promise<unknown>;
+  removeProvider: (payload: { id?: string; providerId?: string }) => Promise<unknown>;
   setPrefs: (payload: Record<string, unknown>) => Promise<unknown>;
   testModel: (payload?: Record<string, unknown>) => Promise<unknown>;
+  /**
+   * Remote / config model enumeration (soft-fail).
+   * Workbench chips still come from config.providers[].models; this is for refresh/pick.
+   */
+  listProviderModels: (payload: {
+    providerId: string;
+  }) => Promise<ListProviderModelsResult>;
 
   createSession: (payload?: Record<string, unknown>) => Promise<SessionInfo>;
   getSession: (sessionId: string) => Promise<SessionInfo | null>;

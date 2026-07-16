@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createProviderFromConfig } from "./resolve.js";
 
 describe("createProviderFromConfig", () => {
@@ -38,5 +38,34 @@ describe("createProviderFromConfig", () => {
       apiKey: "sk-ant-x",
     });
     expect(p.id).toBe("anthropic");
+  });
+
+  it("normalizes OpenCode Zen baseURL missing /v1", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      expect(String(url)).toBe("https://opencode.ai/zen/v1/chat/completions");
+      return new Response(
+        JSON.stringify({
+          choices: [{ message: { content: "ok" } }],
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const p = createProviderFromConfig({
+        id: "opencode",
+        kind: "openai_compatible",
+        baseURL: "https://opencode.ai/zen",
+        apiKey: "sk-test",
+      });
+      await p.chat({
+        model: "mimo-v2.5-free",
+        messages: [{ role: "user", content: "hi" }],
+      });
+      expect(fetchMock).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

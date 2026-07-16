@@ -133,13 +133,23 @@ export function TasksPanel({ compact = false }: { compact?: boolean }) {
               <Button
                 size="sm"
                 className="ml-auto h-7 gap-1 px-2 text-xs"
-                disabled={!goal.trim() || spawning}
+                disabled={spawning || !activeSessionId}
+                title={
+                  !goal.trim()
+                    ? "先填写子任务目标"
+                    : `以 ${profile} 配置派生子会话`
+                }
                 onClick={async () => {
+                  const g = goal.trim();
+                  if (!g) {
+                    toast.message("请先填写子任务目标");
+                    return;
+                  }
                   setSpawning(true);
                   try {
                     const r = await getHfq().spawnSubagent({
                       sessionId: activeSessionId,
-                      goal: goal.trim(),
+                      goal: g,
                       profile,
                     });
                     if (r && r.ok === false) {

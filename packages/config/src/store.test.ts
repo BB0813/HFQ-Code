@@ -11,6 +11,7 @@ import {
   saveAppConfig,
   toPersistedMcpServers,
   touchRecentWorkspace,
+  removeProvider,
   upsertProvider,
   withMcpServers,
   withPrefs,
@@ -258,6 +259,99 @@ describe("config store", () => {
     cfg = touchRecentWorkspace(cfg, "C:\\proj\\a");
     expect(cfg.recentWorkspaces[0]?.toLowerCase()).toContain("proj\\a");
     expect(cfg.recentWorkspaces.length).toBe(2);
+  });
+
+  it("removeProvider drops channel and reassigns active", () => {
+    let cfg = defaultAppConfig();
+    cfg = upsertProvider(cfg, {
+      id: "custom-zen",
+      name: "Zen",
+      kind: "openai_compatible",
+      enabled: true,
+      baseURL: "https://example.com/v1",
+      models: ["m1"],
+      defaultModel: "m1",
+    });
+    cfg.activeProviderId = "custom-zen";
+    cfg.activeModel = "m1";
+    cfg = removeProvider(cfg, "custom-zen");
+    expect(cfg.providers.some((p) => p.id === "custom-zen")).toBe(false);
+    expect(cfg.activeProviderId).not.toBe("custom-zen");
+    expect(cfg.activeProviderId.length).toBeGreaterThan(0);
+  });
+
+  it("removeProvider can delete mock and last channel", () => {
+    let cfg = defaultAppConfig();
+    // strip down to mock only
+    for (const id of cfg.providers.map((p) => p.id).filter((id) => id !== "mock")) {
+      cfg = removeProvider(cfg, id);
+    }
+    expect(cfg.providers.map((p) => p.id)).toEqual(["mock"]);
+    cfg = removeProvider(cfg, "mock");
+    expect(cfg.providers).toEqual([]);
+    expect(cfg.activeProviderId).toBe("");
+    expect(cfg.activeModel).toBe("");
+  });
+
+  it("removeProvider does not resurrect deleted anthropic or mock on save/load", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "hfq-cfg-"));
+    temps.push(dir);
+    const file = path.join(dir, "config.json");
+    let cfg = defaultAppConfig();
+    cfg = removeProvider(cfg, "anthropic");
+    cfg = removeProvider(cfg, "mock");
+    await saveAppConfig(file, cfg);
+    const loaded = await loadAppConfig(file);
+    expect(loaded.providers.some((p) => p.id === "anthropic")).toBe(false);
+    expect(loaded.providers.some((p) => p.id === "mock")).toBe(false);
+  });
+
+  it("removeProvider drops credentials for deleted provider id", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "hfq-cfg-"));
+    temps.push(dir);
+    const file = path.join(dir, "config.json");
+    let cfg = defaultAppConfig();
+    cfg = upsertProvider(cfg, {
+      id: "temp-chan",
+      name: "Temp",
+      kind: "openai_compatible",
+      enabled: true,
+      baseURL: "https://example.com/v1",
+      apiKey: "sk-temp-secret-key-9999",
+      models: ["m-temp"],
+      defaultModel: "m-temp",
+    });
+    await saveAppConfig(file, cfg);
+    const credBefore = await fs.readFile(path.join(dir, "credentials.json"), "utf8");
+    expect(credBefore).toContain("sk-temp-secret-key-9999");
+    cfg = removeProvider(await loadAppConfig(file), "temp-chan");
+    await saveAppConfig(file, cfg);
+    const credAfter = await fs.readFile(path.join(dir, "credentials.json"), "utf8");
+    expect(credAfter).not.toContain("sk-temp-secret-key-9999");
+    expect(credAfter).not.toMatch(/temp-chan/);
+  });
+
+  it("upsertProvider rejects empty models and missing baseURL", () => {
+    const cfg = defaultAppConfig();
+    expect(() =>
+      upsertProvider(cfg, {
+        id: "bad",
+        name: "Bad",
+        kind: "openai_compatible",
+        enabled: true,
+        baseURL: "https://example.com/v1",
+        models: [],
+      }),
+    ).toThrow(/models/i);
+    expect(() =>
+      upsertProvider(cfg, {
+        id: "bad2",
+        name: "Bad2",
+        kind: "openai_compatible",
+        enabled: true,
+        models: ["m1"],
+      }),
+    ).toThrow(/baseURL/i);
   });
 
   it("round-trips mcpServers registry without runtime fields", async () => {

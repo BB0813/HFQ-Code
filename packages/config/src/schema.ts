@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+/**
+ * Provider channel schema.
+ * Note: empty `models` is still parseable for legacy disk files; `normalizeProviderConfig`
+ * / upsert path enforces ≥1 model for writes.
+ */
 export const ProviderConfigSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -91,8 +96,13 @@ export type UiPrefs = z.infer<typeof UiPrefsSchema>;
 
 export const AppConfigSchema = z.object({
   version: z.literal(1).default(1),
-  activeProviderId: z.string().default("mock"),
-  activeModel: z.string().default("mock-hfq"),
+  /**
+   * Active provider id. Empty string when no providers remain (user deleted all channels).
+   * First-run defaults come from `defaultAppConfig()`, not this field default alone.
+   */
+  activeProviderId: z.string().default(""),
+  /** Active model id; empty when no providers / no selection. */
+  activeModel: z.string().default(""),
   providers: z.array(ProviderConfigSchema).default([]),
   /** Most-recent first absolute workspace paths. */
   recentWorkspaces: z.array(z.string()).default([]),
@@ -168,5 +178,52 @@ export function defaultAppConfig(): AppConfig {
         defaultModel: "claude-sonnet-4-20250514",
       },
     ],
+  };
+}
+
+/**
+ * Normalize a provider before persist (upsert).
+ * - models: trim, drop empties, require ≥1
+ * - defaultModel: default models[0]; must be in models
+ * - openai_compatible / anthropic: require non-empty baseURL
+ */
+export function normalizeProviderConfig(provider: ProviderConfig): ProviderConfig {
+  const id = String(provider.id ?? "").trim();
+  if (!id) throw new Error("provider id required");
+  const name = String(provider.name ?? id).trim() || id;
+  const kind = provider.kind;
+  const models = (provider.models ?? [])
+    .map((m) => String(m ?? "").trim())
+    .filter(Boolean);
+  // de-dupe preserving order
+  const seen = new Set<string>();
+  const uniqueModels = models.filter((m) => {
+    if (seen.has(m)) return false;
+    seen.add(m);
+    return true;
+  });
+  if (uniqueModels.length === 0) {
+    throw new Error(`provider ${id}: models must contain at least one model id`);
+  }
+  let defaultModel = String(provider.defaultModel ?? "").trim();
+  if (!defaultModel || !uniqueModels.includes(defaultModel)) {
+    defaultModel = uniqueModels[0]!;
+  }
+  let baseURL = provider.baseURL?.trim() || undefined;
+  if (baseURL) baseURL = baseURL.replace(/\/+$/, "");
+  if (kind === "openai_compatible" || kind === "anthropic") {
+    if (!baseURL) {
+      throw new Error(`provider ${id}: baseURL is required for ${kind}`);
+    }
+  }
+  return {
+    id,
+    name,
+    kind,
+    enabled: provider.enabled !== false,
+    baseURL: kind === "mock" ? undefined : baseURL,
+    apiKey: provider.apiKey,
+    models: uniqueModels,
+    defaultModel,
   };
 }

@@ -73,7 +73,8 @@ export function ChatView() {
 
   const session = sessions.find((s) => s.id === activeSessionId);
   const empty = messages.length === 0 && !streamingText && !streamingThinking;
-  const busy = running || sending;
+  /** Only blocks send — composer tools stay usable while agent runs. */
+  const sendLocked = running || sending;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -271,7 +272,7 @@ export function ChatView() {
 
   const submit = async () => {
     const text = draft.trim();
-    if ((!text && attachments.length === 0) || busy) return;
+    if ((!text && attachments.length === 0) || sendLocked) return;
     const context =
       attachments.length > 0
         ? `\n\n参考文件（工作区相对路径）：\n${attachments.map((p) => `- ${p}`).join("\n")}`
@@ -358,16 +359,49 @@ export function ChatView() {
                   : "先绑定工作区，再描述你想改的代码或要跑的任务"}
               </p>
               <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-                {info?.activeModel && (
-                  <Badge variant="secondary" className="font-mono font-normal">
-                    {String(info.activeModel)}
-                  </Badge>
-                )}
-                {info?.activeProviderId && (
-                  <Badge variant="outline" className="font-normal">
-                    {String(info.activeProviderId)}
-                  </Badge>
-                )}
+                {(() => {
+                  const sessionModel = session?.model
+                    ? String(session.model).trim()
+                    : "";
+                  const globalModel = info?.activeModel
+                    ? String(info.activeModel).trim()
+                    : "";
+                  const model = sessionModel || globalModel;
+                  const provider =
+                    (session?.providerId && String(session.providerId).trim()) ||
+                    (info?.activeProviderId &&
+                      String(info.activeProviderId).trim()) ||
+                    "";
+                  return (
+                    <>
+                      {model ? (
+                        <Badge
+                          variant="secondary"
+                          className="font-mono font-normal"
+                          title={
+                            sessionModel && globalModel && sessionModel !== globalModel
+                              ? `本会话: ${sessionModel}\n全局: ${globalModel}`
+                              : model
+                          }
+                        >
+                          {model}
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className="font-normal text-warning"
+                        >
+                          未配置模型
+                        </Badge>
+                      )}
+                      {provider ? (
+                        <Badge variant="outline" className="font-normal">
+                          {provider}
+                        </Badge>
+                      ) : null}
+                    </>
+                  );
+                })()}
                 {activeSessionId && (
                   <Badge variant="muted" className="font-mono font-normal">
                     {activeSessionId.slice(0, 8)}
@@ -565,8 +599,13 @@ export function ChatView() {
                     : "先打开工作区，再描述任务…"
                 }
                 className="min-h-[64px] max-h-48 w-full resize-none border-0 bg-transparent px-3.5 pb-1.5 pt-3 text-sm shadow-none focus-visible:ring-0"
-                disabled={busy}
+                disabled={sending}
                 rows={2}
+                title={
+                  running
+                    ? "Agent 运行中 — 可先编辑草稿；结束后再发送，或 Esc 停止"
+                    : undefined
+                }
               />
 
               {attachments.length > 0 && (
@@ -602,7 +641,7 @@ export function ChatView() {
                   size="sm"
                   variant="ghost"
                   className="h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
-                  disabled={busy}
+                  disabled={sending}
                   title="命令与技能 (/ · $)"
                   aria-label="打开命令与技能"
                   onClick={openCommandPalette}
@@ -615,7 +654,7 @@ export function ChatView() {
                   size="sm"
                   variant="ghost"
                   className="h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
-                  disabled={busy || !workspace?.path}
+                  disabled={sending || !workspace?.path}
                   title={
                     workspace?.path
                       ? "引用工作区文件（随消息发送路径上下文）"
@@ -663,7 +702,7 @@ export function ChatView() {
                       "h-8 w-8 shrink-0 rounded-lg duration-150",
                       !draft.trim() && attachments.length === 0 && "opacity-40",
                     )}
-                    disabled={(!draft.trim() && attachments.length === 0) || sending}
+                    disabled={(!draft.trim() && attachments.length === 0) || sendLocked}
                     onClick={() => void submit()}
                     title="发送 (Enter)"
                     aria-label="发送消息"

@@ -20,6 +20,35 @@ import { JsonlTranscript } from "@hfq/transcript";
 import { createScopedMemory, formatMemoryForPrompt } from "@hfq/memory";
 import { compactChatMessages } from "./compact.js";
 import { buildSystemPrompt, loadProjectRules } from "./context.js";
+
+/**
+ * Soft-redact prior assistant self-claims that name a different model id.
+ * Request-only; transcript UI keeps the original text.
+ */
+export function redactStaleModelSelfClaims(text: string, currentModel: string): string {
+  const current = currentModel.trim();
+  if (!current || !text) return text;
+  let out = text;
+  // **model-id** or `model-id` after 模型是 / model is / powered by
+  out = out.replace(
+    /(模型是|背后模型是|模型为|model is|powered by|using model)\s*(\*\*|`)?([a-zA-Z0-9][\w.+\/-]{1,64})(\*\*|`)?/gi,
+    (full, lead: string, open: string | undefined, id: string, close: string | undefined) => {
+      if (id === current) return full;
+      const o = open || "";
+      const c = close || open || "";
+      return `${lead} ${o}${current}${c}`;
+    },
+  );
+  // Bare common wrong brands when current is clearly not them
+  const brands = ["grok-4.5", "grok-4", "gpt-4.1", "gpt-4o", "claude-sonnet-4", "claude-3"];
+  for (const b of brands) {
+    if (b === current) continue;
+    if (out.includes(b)) {
+      out = out.split(b).join(current);
+    }
+  }
+  return out;
+}
 import {
   buildSessionSnapshot,
   type SessionSnapshot,
@@ -112,6 +141,9 @@ export class AgentSession {
   private tools: ToolHub = createToolHub();
   private policy: PolicyConfig = defaultPolicyConfig();
   private systemPrompt = "";
+  /** Live provider/model — may be swapped when user changes Models settings. */
+  private provider: ModelProvider;
+  private model: string;
   private readonly maxRounds: number;
   private uiMessages: UiMessage[] = [];
   private uiChanges: UiChange[] = [];
@@ -135,6 +167,8 @@ export class AgentSession {
 
   constructor(private readonly opts: AgentSessionOptions) {
     const now = new Date().toISOString();
+    this.provider = opts.provider;
+    this.model = opts.model;
     this.info = {
       id: opts.sessionId ?? randomUUID(),
       workspacePath: opts.workspacePath,
@@ -287,16 +321,135 @@ export class AgentSession {
     return { ...this.info };
   }
 
-  async init(): Promise<SessionSnapshot | null> {
-    const dirs = await ensureDataDirs();
+  /**
+   * Hot-swap provider/model for subsequent turns (Models UI / setActive / open rebind).
+   * Rebuilds the system prompt so identity lines match the new model id.
+   * Inserts an in-chat system note so prior "I am model X" turns do not stick.
+   * Throws while a turn is running (caller should wait for idle).
+   */
+  async setProviderModel(provider: ModelProvider, model: string): Promise<SessionInfo> {
+    if (this.info.status === "running" || this.info.status === "waiting_permission") {
+      throw new Error("cannot change model while session is busy");
+    }
+    const nextModel = String(model || "").trim();
+    if (!nextModel) throw new Error("model required");
+    if (!provider) throw new Error("provider required");
+    const prevModel = this.model;
+    const prevProviderId = this.provider?.id;
+    const sameBinding =
+      prevModel === nextModel && prevProviderId === provider.id;
+    // Always swap the live provider instance (new object each resolve is normal).
+    this.provider = provider;
+    this.model = nextModel;
+    this.info.model = nextModel;
+    this.info.updatedAt = new Date().toISOString();
+    if (sameBinding) {
+      // No meta spam / switch notes on every session:send re-pin.
+      return { ...this.info };
+    }
+    // Refresh identity lines without dropping workspace rules / skills / memory.
+    await this.rebuildSystemPrompt();
+    // Break conversation continuity on the old model name (models copy prior self-intros).
+    this.appendModelSwitchNote(prevModel, nextModel, provider.id);
+    await this.emit({
+      type: "session.meta",
+      sessionId: this.info.id,
+      title: this.info.title,
+      model: nextModel,
+      at: this.info.updatedAt,
+    });
+    return { ...this.info };
+  }
 
+  /** In-context note after system prompt so later turns see the switch. */
+  private appendModelSwitchNote(
+    prevModel: string,
+    nextModel: string,
+    providerId?: string,
+  ): void {
+    const note =
+      prevModel && prevModel !== nextModel
+        ? `[HFQ] Model switched from "${prevModel}" to "${nextModel}"${providerId ? ` (provider: ${providerId})` : ""}. Earlier assistant messages that named another model are obsolete. If asked who you are, use "${nextModel}" only.`
+        : `[HFQ] Active model is now "${nextModel}"${providerId ? ` (provider: ${providerId})` : ""}. Use this id for identity answers.`;
+    // Keep messages[0] as the full system prompt; insert note as a second system message.
+    if (this.messages.length > 0 && this.messages[0]?.role === "system") {
+      // Drop prior HFQ model-switch notes to avoid stacking.
+      this.messages = [
+        this.messages[0],
+        { role: "system", content: note },
+        ...this.messages
+          .slice(1)
+          .filter(
+            (m) =>
+              !(
+                m.role === "system" &&
+                typeof m.content === "string" &&
+                m.content.startsWith("[HFQ] ")
+              ),
+          ),
+      ];
+    } else {
+      this.messages = [
+        { role: "system", content: this.systemPrompt },
+        { role: "system", content: note },
+        ...this.messages,
+      ];
+    }
+  }
+
+  /**
+   * Build the message list sent to the provider for one chat call.
+   * Does **not** mutate durable this.messages / transcript.
+   * Pins identity at the end (recency) so older "I am grok-…" turns lose the fight.
+   */
+  private messagesForProvider(): ChatMessage[] {
+    const model = String(this.model || "").trim();
+    const providerId = this.provider?.id;
+    // Always re-sync leading system prompt (compaction / resume can leave a stale copy).
+    const base: ChatMessage[] = [...this.messages];
+    if (base.length > 0 && base[0]?.role === "system") {
+      base[0] = { role: "system", content: this.systemPrompt };
+    } else {
+      base.unshift({ role: "system", content: this.systemPrompt });
+    }
+    if (!model) return base;
+
+    // Soft-redact stale model self-claims in prior assistant turns for this request only.
+    for (let i = 0; i < base.length; i++) {
+      const m = base[i];
+      if (m?.role !== "assistant" || typeof m.content !== "string" || !m.content) continue;
+      const redacted = redactStaleModelSelfClaims(m.content, model);
+      if (redacted !== m.content) {
+        base[i] = { ...m, content: redacted };
+      }
+    }
+
+    const pin = [
+      `[HFQ identity pin — runtime, not the user]`,
+      `You are HFQ Code. The active model id for THIS reply is exactly "${model}"${providerId ? ` (provider: ${providerId})` : ""}.`,
+      `If any earlier assistant message (or your own thinking) named a different model, ignore it — that was a previous configuration.`,
+      `When the user asks who you are / which model: answer HFQ Code + "${model}" only. Never say grok / gpt / claude unless that string equals "${model}".`,
+    ].join(" ");
+    base.push({ role: "system", content: pin });
+    return base;
+  }
+
+  getProviderId(): string | undefined {
+    return this.provider?.id;
+  }
+
+  getModel(): string {
+    return this.model;
+  }
+
+  private async rebuildSystemPrompt(): Promise<void> {
+    const dirs = await ensureDataDirs();
     const skills = await loadSkills({
       workspacePath: this.opts.workspacePath,
       userSkillsDir: dirs.skills,
       sharedAgentsDir: this.opts.sharedAgentsDir,
       bundledDir: this.opts.bundledSkillsDir,
     });
-
     const projectRules = await loadProjectRules(this.opts.workspacePath);
     let memoryBlock = "";
     if (this.opts.memoryEnabled !== false) {
@@ -333,9 +486,20 @@ export class AgentSession {
       projectRules,
       skills,
       memoryBlock,
-      model: this.opts.model,
-      providerId: this.opts.provider?.id,
+      model: this.model,
+      providerId: this.provider?.id,
     });
+    // Keep chat history system message in sync for subsequent model calls.
+    if (this.messages.length > 0 && this.messages[0]?.role === "system") {
+      this.messages[0] = { role: "system", content: this.systemPrompt };
+    } else if (this.messages.length === 0) {
+      this.messages = [{ role: "system", content: this.systemPrompt }];
+    }
+  }
+
+  async init(): Promise<SessionSnapshot | null> {
+    const dirs = await ensureDataDirs();
+    await this.rebuildSystemPrompt();
 
     if (this.opts.resume) {
       const existing = await JsonlTranscript.openExisting(dirs.sessions, this.info.id);
@@ -346,10 +510,13 @@ export class AgentSession {
         id: this.info.id,
         workspacePath: this.opts.workspacePath,
         title: this.opts.title,
-        model: this.opts.model,
+        model: this.model,
       });
+      // Capture transcript model BEFORE live open params overwrite info.model.
+      const transcriptModel = String(snap.info.model ?? "").trim();
       Object.assign(this.info, snap.info);
-      this.info.model = this.opts.model || snap.info.model;
+      // Prefer live model (hot-swap / open params) over stale transcript meta.
+      this.info.model = this.model || snap.info.model;
       this.uiMessages = snap.messages;
       this.uiChanges = snap.changes;
       this.uiTerminal = snap.terminal;
@@ -365,6 +532,18 @@ export class AgentSession {
         { role: "system", content: this.systemPrompt },
         ...snap.chatMessages.filter((m) => m.role !== "system"),
       ];
+      // If open rebound to a different model than last transcript meta, break identity stickiness.
+      if (this.model && transcriptModel && transcriptModel !== this.model) {
+        this.appendModelSwitchNote(transcriptModel, this.model, this.provider?.id);
+        // Persist rebind so listAll / next cold open see the new model (not only in-memory).
+        await this.emit({
+          type: "session.meta",
+          sessionId: this.info.id,
+          title: this.info.title,
+          model: this.model,
+          at: new Date().toISOString(),
+        });
+      }
       // Re-apply session allows from prior permission.resolved(allow_session) events.
       // toolName is on the matching permission.requested.
       const requestTool = new Map<string, string>();
@@ -397,22 +576,23 @@ export class AgentSession {
       workspacePath: this.info.workspacePath,
       at: new Date().toISOString(),
     });
+    // Always persist model on create so listAll / resume / UI know the binding.
+    // Only include title when already locked (user-provided); otherwise first
+    // user message still auto-titles without fighting this meta event.
     const hasSubMeta = Boolean(
       this.opts.parentSessionId || this.opts.subagentProfile || this.opts.goal,
     );
-    if ((this.titleLocked && this.info.title) || hasSubMeta) {
-      await this.emit({
-        type: "session.meta",
-        sessionId: this.info.id,
-        title: this.info.title,
-        model: this.info.model,
-        parentSessionId: this.opts.parentSessionId,
-        subagentProfile: this.opts.subagentProfile,
-        subagentDepth: this.opts.subagentDepth,
-        goal: this.opts.goal,
-        at: new Date().toISOString(),
-      });
-    }
+    await this.emit({
+      type: "session.meta",
+      sessionId: this.info.id,
+      ...(this.titleLocked || hasSubMeta ? { title: this.info.title } : {}),
+      model: this.info.model,
+      parentSessionId: this.opts.parentSessionId,
+      subagentProfile: this.opts.subagentProfile,
+      subagentDepth: this.opts.subagentDepth,
+      goal: this.opts.goal,
+      at: new Date().toISOString(),
+    });
     return null;
   }
 
@@ -788,9 +968,9 @@ export class AgentSession {
       const streamMessageId = randomUUID();
       let streamedAny = false;
       let thinkingStreamed = false;
-      const result = await this.opts.provider.chat({
-        model: this.opts.model,
-        messages: this.messages,
+      const result = await this.provider.chat({
+        model: this.model,
+        messages: this.messagesForProvider(),
         tools: this.tools.list().map((t) => ({
           name: t.name,
           description: t.description,

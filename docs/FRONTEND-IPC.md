@@ -16,7 +16,7 @@ All mutating git/shell/PTY APIs require a bound workspace unless noted. Path too
 | **Files** | **`listWorkspaceDir`** · `readWorkspaceText` · `writeWorkspaceText` · `openInEditor` / `openWorkspaceFile` · `revealInFolder` |
 | **Terminal** | `ptyCreate` · `ptyWrite` · `ptyResize` · `ptyKill` · `ptyList` · `ptyShells` · `onPtyData` · `onPtyExit` · prefs `terminalShell` |
 | **Changes** | Session `state.changes` + `revertChange` / **`writeChangeContent`（人工编辑）** · **repo:** `gitStatus` · `gitDiff` · `gitShow` · `gitStage` · `gitUnstage` · `gitCommit` · `gitLog` |
-| **Models** | `getConfig` · `setActiveModel` · `testModel` · **`upsertProvider`**（添加/编辑表单） |
+| **Models** | `getConfig` · `setActiveModel` · `testModel` · **`listProviderModels`** · **`upsertProvider`** · **`removeProvider`** |
 | **Tasks** | Snapshot tasks · `listChildSessions` · `listSpawnAttempts` · `spawnSubagent` · event `subagent.updated` |
 | **Usage** | `usageSummary` · `usageExport` · `revealInFolder` on export dir |
 | **Settings** | `getAppPaths` (`credentialsEncoding`) · `setPrefs` · `exportDiagnostics` |
@@ -226,6 +226,45 @@ off();
 
 ---
 
+## Models (providers · 2026-07-16)
+
+```js
+// Workbench list = config.providers[i].models (persisted).
+// Optional remote refresh (OpenAI-compatible GET {base}/models):
+const listed = await hfq.listProviderModels({ providerId: "opencode" });
+// → {
+//   ok: boolean,
+//   providerId: string,
+//   source: "remote" | "config" | "mock" | "unsupported",
+//   models: string[],
+//   error?: string,
+//   warning?: string,
+//   rawCount?: number,
+// }
+// Soft-fail: prefer checking ok / source; remote failure falls back to config.models when non-empty.
+
+// Connectivity probe (soft):
+const probe = await hfq.testModel({ providerId, model });
+// → { ok, providerId, model, latencyMs, reply?, usage?, error? }
+// Empty providers → { ok: false, error: "No model provider configured…" } (no mock fallback).
+
+// Delete channel — mock and last channel allowed:
+await hfq.removeProvider({ id: "mock" });
+// → public config; may be providers: [], activeProviderId: "", activeModel: ""
+
+// Create/send session with empty providers throws:
+// "No model provider configured. Add a channel in Models before chatting or testing."
+```
+
+| Rule | Behavior |
+|------|----------|
+| `removeProvider` | Any id including `mock`; last channel → empty list |
+| Load / save | No auto re-inject of mock/anthropic |
+| `setActiveModel` | Rejects empty providers; unknown providerId throws |
+| Credentials | Deleted provider apiKey dropped on next `saveAppConfig` |
+
+---
+
 ## Field-shape traps (R9 audit 2026-07-15)
 
 | API | Backend returns | UI must read |
@@ -234,6 +273,7 @@ off();
 | `importApply` | `{ copied, skipped, errors }` | send `items: [{ id, conflict? }]` + optional `candidates` |
 | `listMcp` | `{ servers, tools }` server has `status` / `toolCount` | `status === "connected"` (no `connected` bool) |
 | `testModel` | `{ ok, error?, latencyMs? }` **no throw** on soft fail | check `ok !== false` |
+| `listProviderModels` | `{ ok, providerId, source, models, error?, warning? }` **no throw** on soft fail | use `models`; show `warning` when source is config after remote fail |
 | `getSessionAllows` | `{ sessionId, sessionAllows: string[] }` | `sessionAllows` |
 | `installSkillFromDir` | `{ ok: false, cancelled: true }` on dialog cancel | branch `cancelled` / `ok` |
 | `listSkills` | **array** of skill records | `asList` ok |
@@ -256,7 +296,7 @@ off();
 
 | Surface | API | UI |
 |---------|-----|----|
-| Models | `upsertProvider` (+ `mergeProviderUpdate` 脱敏密钥) | ModelsPage 添加/编辑 Provider 表单 |
+| Models | `upsertProvider` (+ `mergeProviderUpdate` 脱敏密钥) · **`removeProvider`** · **`listProviderModels`** | ModelsPage 添加/编辑/删除渠道（**mock 与最后一个渠道可删** → 空列表 fail-closed；删活跃渠道自动回落或清空 active） |
 | Changes | `writeChangeContent` / `writeWorkspaceText` · `readWorkspaceText` | ChangesPanel 人工编辑 textarea + 保存 |
 | Chat 引用 | `pickWorkspaceFiles` → `workspace:pickFiles` | 系统文件对话框（工作区相对路径）；手动路径回退 |
 | MCP / Memory / Skills / Permissions / Tasks / Settings | 见上轮接线 | 各页 Dialog / 按钮 |

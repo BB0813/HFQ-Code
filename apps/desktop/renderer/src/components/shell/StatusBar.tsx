@@ -10,9 +10,20 @@ export function StatusBar() {
   const info = useAppStore((s) => s.info);
   const workspace = useAppStore((s) => s.workspace);
   const running = useAppStore((s) => s.running);
+  const sessions = useAppStore((s) => s.sessions);
+  const activeSessionId = useAppStore((s) => s.activeSessionId);
   const setDrawerTab = useUiStore((s) => s.setDrawerTab);
   const setCommandOpen = useUiStore((s) => s.setCommandOpen);
   const [git, setGit] = useState<GitStatus | null>(null);
+
+  const session = sessions.find((s) => s.id === activeSessionId);
+  const sessionModel = session?.model ? String(session.model).trim() : "";
+  const globalModel = info?.activeModel ? String(info.activeModel).trim() : "";
+  // Prefer bound session model (open rebind / hot-swap); fall back to global; never invent mock-hfq.
+  const displayModel = sessionModel || globalModel;
+  const modelMismatch = Boolean(
+    sessionModel && globalModel && sessionModel !== globalModel,
+  );
 
   useEffect(() => {
     if (!hasHfq() || !workspace?.path) {
@@ -80,19 +91,29 @@ export function StatusBar() {
         <span className={running ? "status-dot-running status-pulse" : "status-dot-idle"} />
         {running ? "running" : "idle"}
       </span>
-      {info?.activeModel && (
-        <>
-          <span className="h-3.5 w-px bg-border/90" aria-hidden />
-          <button
-            type="button"
-            className="max-w-[180px] cursor-pointer truncate font-mono transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            title="模型设置"
-            onClick={() => navigate("/models")}
-          >
-            {String(info.activeModel)}
-          </button>
-        </>
-      )}
+      <>
+        <span className="h-3.5 w-px bg-border/90" aria-hidden />
+        <button
+          type="button"
+          className={
+            displayModel
+              ? modelMismatch
+                ? "max-w-[180px] cursor-pointer truncate font-mono text-warning transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                : "max-w-[180px] cursor-pointer truncate font-mono transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              : "max-w-[180px] cursor-pointer truncate text-warning transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          }
+          title={
+            modelMismatch
+              ? `本会话: ${sessionModel}\n全局默认: ${globalModel}\n点击打开模型页`
+              : displayModel
+                ? `${displayModel} · 模型设置`
+                : "未配置模型 · 点击打开模型页"
+          }
+          onClick={() => navigate("/models")}
+        >
+          {displayModel || "未配置模型"}
+        </button>
+      </>
       <button
         type="button"
         className="ml-auto max-w-[50%] cursor-pointer truncate opacity-80 transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"

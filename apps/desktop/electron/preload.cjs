@@ -39,8 +39,11 @@ contextBridge.exposeInMainWorld("hfq", {
   getConfig: () => ipcRenderer.invoke("config:get"),
   setActiveModel: (payload) => ipcRenderer.invoke("config:setActive", payload),
   upsertProvider: (payload) => ipcRenderer.invoke("config:upsertProvider", payload),
+  removeProvider: (payload) => ipcRenderer.invoke("config:removeProvider", payload ?? {}),
   setPrefs: (payload) => ipcRenderer.invoke("config:setPrefs", payload ?? {}),
   testModel: (payload) => ipcRenderer.invoke("models:test", payload ?? {}),
+  /** Remote/config model list: { ok, providerId, source, models, error?, warning? } */
+  listProviderModels: (payload) => ipcRenderer.invoke("models:list", payload ?? {}),
 
   createSession: (payload) => ipcRenderer.invoke("session:create", payload ?? {}),
   getSession: (sessionId) => ipcRenderer.invoke("session:get", sessionId),

@@ -4,6 +4,7 @@ import {
   AppConfigSchema,
   McpServerConfigSchema,
   defaultAppConfig,
+  normalizeProviderConfig,
   type AppConfig,
   type McpServerConfig,
   type ProviderConfig,
@@ -40,11 +41,50 @@ function migratePermissionModePrefs(cfg: AppConfig, raw: unknown): AppConfig {
   return cfg;
 }
 
+/**
+ * If active* points at a missing provider, clear or re-point to a remaining channel.
+ * Does **not** invent mock/anthropic templates.
+ */
+function reconcileActiveSelection(cfg: AppConfig): AppConfig {
+  const providers = cfg.providers ?? [];
+  if (providers.length === 0) {
+    if (cfg.activeProviderId === "" && cfg.activeModel === "") return cfg;
+    return { ...cfg, activeProviderId: "", activeModel: "" };
+  }
+  const active = providers.find((p) => p.id === cfg.activeProviderId);
+  if (active) {
+    const models = Array.isArray(active.models) ? active.models : [];
+    const modelOk =
+      cfg.activeModel &&
+      (models.includes(cfg.activeModel) || cfg.activeModel === active.defaultModel);
+    if (modelOk) return cfg;
+    return {
+      ...cfg,
+      activeModel:
+        active.defaultModel ||
+        (models[0] ?? "") ||
+        cfg.activeModel ||
+        "",
+    };
+  }
+  const fallback =
+    providers.find((p) => p.enabled !== false) ?? providers[0]!;
+  return {
+    ...cfg,
+    activeProviderId: fallback.id,
+    activeModel:
+      fallback.defaultModel ||
+      (Array.isArray(fallback.models) ? fallback.models[0] : undefined) ||
+      "",
+  };
+}
+
 export async function loadAppConfig(configPath: string): Promise<AppConfig> {
   try {
     const raw = await fs.readFile(configPath, "utf8");
     const parsed = JSON.parse(raw) as unknown;
-    let cfg = ensureMockProvider(AppConfigSchema.parse(parsed));
+    // Do NOT force-inject mock on load — user may have deleted all channels.
+    let cfg = reconcileActiveSelection(AppConfigSchema.parse(parsed));
     cfg = migratePermissionModePrefs(cfg, parsed);
     const credPath = credentialsPathFor(configPath);
     let creds = await loadCredentialsFile(credPath);
@@ -68,6 +108,7 @@ export async function loadAppConfig(configPath: string): Promise<AppConfig> {
     return mergeCredentials(cfg, creds);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      // First run only: seed defaultAppConfig (includes mock template).
       const cfg = defaultAppConfig();
       await saveAppConfig(configPath, cfg);
       return cfg;
@@ -77,7 +118,9 @@ export async function loadAppConfig(configPath: string): Promise<AppConfig> {
 }
 
 export async function saveAppConfig(configPath: string, config: AppConfig): Promise<void> {
-  const cfg = ensureMockProvider(AppConfigSchema.parse(config));
+  // No ensureMockProvider — empty providers is a valid persisted state.
+  const cfg = reconcileActiveSelection(AppConfigSchema.parse(config));
+  // extractCredentials only keeps keys for current providers → deleted ids dropped.
   const creds = extractCredentials(cfg);
   const publicCfg = stripSecretsForPublicConfig(cfg);
   await fs.mkdir(path.dirname(configPath), { recursive: true });
@@ -92,33 +135,53 @@ export function getCredentialsPath(configPath: string): string {
 
 export { emptyCredentials, extractCredentials, mergeCredentials, stripSecretsForPublicConfig };
 
-function ensureMockProvider(cfg: AppConfig): AppConfig {
-  const defaults = defaultAppConfig().providers;
-  let providers = [...cfg.providers];
-  let changed = false;
-  if (!providers.some((p) => p.id === "mock")) {
-    const mock = defaults.find((p) => p.id === "mock");
-    if (mock) {
-      providers = [mock, ...providers];
-      changed = true;
-    }
+export function upsertProvider(cfg: AppConfig, provider: ProviderConfig): AppConfig {
+  const normalized = normalizeProviderConfig(provider);
+  const others = cfg.providers.filter((p) => p.id !== normalized.id);
+  const next: AppConfig = {
+    ...cfg,
+    providers: [...others, normalized].sort((a, b) => a.id.localeCompare(b.id)),
+  };
+  // If nothing was active, select the newly upserted channel.
+  if (!next.activeProviderId) {
+    next.activeProviderId = normalized.id;
+    next.activeModel = normalized.defaultModel || normalized.models[0] || "";
   }
-  // Soft-migrate: add Anthropic template if missing (empty key).
-  if (!providers.some((p) => p.id === "anthropic")) {
-    const ant = defaults.find((p) => p.id === "anthropic");
-    if (ant) {
-      providers = [...providers, ant];
-      changed = true;
-    }
-  }
-  return changed ? { ...cfg, providers } : cfg;
+  return reconcileActiveSelection(next);
 }
 
-export function upsertProvider(cfg: AppConfig, provider: ProviderConfig): AppConfig {
-  const others = cfg.providers.filter((p) => p.id !== provider.id);
+/**
+ * Remove a provider channel by id.
+ * - mock **can** be deleted
+ * - last channel **can** be deleted → `providers: []`, active cleared
+ * - deleting active reassigns to first remaining enabled (or clears if empty)
+ */
+export function removeProvider(cfg: AppConfig, providerId: string): AppConfig {
+  const id = String(providerId ?? "").trim();
+  if (!id) throw new Error("provider id required");
+  if (!cfg.providers.some((p) => p.id === id)) {
+    throw new Error(`provider not found: ${id}`);
+  }
+  const remaining = cfg.providers.filter((p) => p.id !== id);
+  let activeProviderId = cfg.activeProviderId;
+  let activeModel = cfg.activeModel;
+  if (remaining.length === 0) {
+    activeProviderId = "";
+    activeModel = "";
+  } else if (activeProviderId === id || !remaining.some((p) => p.id === activeProviderId)) {
+    const fallback =
+      remaining.find((p) => p.enabled !== false) ?? remaining[0]!;
+    activeProviderId = fallback.id;
+    activeModel =
+      fallback.defaultModel ||
+      (Array.isArray(fallback.models) ? fallback.models[0] : undefined) ||
+      "";
+  }
   return {
     ...cfg,
-    providers: [...others, provider].sort((a, b) => a.id.localeCompare(b.id)),
+    providers: remaining.sort((a, b) => a.id.localeCompare(b.id)),
+    activeProviderId,
+    activeModel,
   };
 }
 
@@ -285,7 +348,7 @@ export function mergeProviderUpdate(
         ? base.apiKey
         : patch.apiKey;
 
-  return {
+  const merged: ProviderConfig = {
     ...base,
     ...patch,
     apiKey: nextApiKey,
@@ -294,4 +357,5 @@ export function mergeProviderUpdate(
     kind: patch.kind ?? base.kind,
     name: patch.name ?? base.name,
   };
+  return normalizeProviderConfig(merged);
 }

@@ -6,7 +6,7 @@ import {
   Command,
   Shield,
 } from "lucide-react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { shortPath } from "@/lib/utils";
@@ -23,6 +23,7 @@ import {
 
 export function AppHeader() {
   const location = useLocation();
+  const navigate = useNavigate();
   const path = location.pathname.replace(/^\//, "") || "chat";
   const workbench = isWorkbenchRoute(path);
 
@@ -44,6 +45,15 @@ export function AppHeader() {
 
   const session = sessions.find((s) => s.id === activeSessionId);
   const sessionTitle = session?.title || session?.goal || "新会话";
+  // Prefer live session model (post open rebind / setActive hot-swap) over global.
+  // Never invent mock-hfq when both are empty (empty providers fail-closed).
+  const rawSessionModel = session?.model ? String(session.model).trim() : "";
+  const rawGlobalModel = info?.activeModel ? String(info.activeModel).trim() : "";
+  const displayModel = rawSessionModel || rawGlobalModel;
+  const globalModel = rawGlobalModel;
+  const modelMismatch = Boolean(
+    rawSessionModel && globalModel && rawSessionModel !== globalModel,
+  );
   const title = workbench && path === "chat" ? sessionTitle : pageTitle(path);
   const wsLabel = workspace?.path
     ? shortPath(String(workspace.path), 48)
@@ -126,15 +136,45 @@ export function AppHeader() {
             </select>
           </label>
         )}
-        {info?.activeModel && workbench && (
-          <Badge
-            variant="secondary"
-            className="mr-1 hidden max-w-[180px] truncate font-mono font-normal md:inline-flex"
-            title={String(info.activeModel)}
-          >
-            {String(info.activeModel)}
-          </Badge>
-        )}
+        {workbench &&
+          (displayModel ? (
+            <button
+              type="button"
+              className="mr-1 hidden max-w-[200px] md:inline-flex"
+              title={
+                modelMismatch
+                  ? `本会话: ${rawSessionModel}\n全局默认: ${globalModel}\n点击打开「模型」；点选模型会热切换当前会话`
+                  : `${displayModel} · 点击打开「模型」`
+              }
+              onClick={() => navigate("/models")}
+            >
+              <Badge
+                variant={modelMismatch ? "outline" : "secondary"}
+                className={
+                  modelMismatch
+                    ? "max-w-[200px] cursor-pointer truncate border-warning/50 font-mono font-normal text-warning"
+                    : "max-w-[200px] cursor-pointer truncate font-mono font-normal"
+                }
+              >
+                {displayModel}
+                {modelMismatch ? " · 会话" : ""}
+              </Badge>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="mr-1 hidden max-w-[200px] md:inline-flex"
+              title="providers 为空或未选择模型 · 点击打开「模型」页"
+              onClick={() => navigate("/models")}
+            >
+              <Badge
+                variant="outline"
+                className="max-w-[200px] cursor-pointer truncate font-normal text-warning"
+              >
+                未配置模型
+              </Badge>
+            </button>
+          ))}
         {!workspace?.path && (
           <Button size="sm" variant="outline" onClick={() => void openWorkspace()}>
             <FolderOpen className="h-4 w-4" />

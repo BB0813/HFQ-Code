@@ -225,6 +225,16 @@ async function handle(req: WorkerRequest): Promise<unknown> {
       };
     }
 
+    case "setProviderModel": {
+      const mgr = await ensureManager();
+      const provider = resolveProvider(req.params.provider);
+      return mgr.setProviderModel(
+        req.params.sessionId,
+        provider,
+        String(req.params.model || ""),
+      );
+    }
+
     case "getPermissionMode": {
       const mgr = await ensureManager();
       return {

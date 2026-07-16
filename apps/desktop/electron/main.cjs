@@ -493,6 +493,19 @@ function workerFacade(host) {
     getPermissionMode(sessionId) {
       return host.getPermissionMode(sessionId).then((r) => r.permissionMode);
     },
+    setProviderModel(sessionId, provider, model) {
+      // Worker needs a serializable providerSpec; accept either live-ish or spec.
+      const spec =
+        provider && provider.kind
+          ? {
+              id: provider.id,
+              kind: provider.kind,
+              baseURL: provider.baseURL,
+              apiKey: provider.apiKey,
+            }
+          : providerSpecFromLive(provider);
+      return host.setProviderModel(sessionId, spec, model);
+    },
     listChildren(sessionId) {
       return host.listChildren(sessionId);
     },
@@ -535,19 +548,27 @@ function providerSpecFromLive(provider) {
   return undefined;
 }
 
+/**
+ * Resolve the configured active provider.
+ * Fail-closed: empty providers / missing active channel never invent mock.
+ */
 async function resolveActiveProvider() {
   const { providersMod } = await loadModules();
   const cfg = await readConfig();
+  const providers = Array.isArray(cfg.providers) ? cfg.providers : [];
+  if (!providers.length) {
+    throw new Error(
+      "No model provider configured. Add a channel in Models before chatting or testing.",
+    );
+  }
   const providerCfg =
-    cfg.providers.find((p) => p.id === cfg.activeProviderId) ??
-    cfg.providers.find((p) => p.id === "mock");
+    providers.find((p) => p.id === cfg.activeProviderId) ??
+    providers.find((p) => p.enabled !== false) ??
+    providers[0];
   if (!providerCfg) {
-    return {
-      provider: providersMod.createMockProvider(),
-      providerSpec: { id: "mock", kind: "mock" },
-      model: "mock-hfq",
-      providerId: "mock",
-    };
+    throw new Error(
+      "No model provider configured. Add a channel in Models before chatting or testing.",
+    );
   }
   const providerSpec = {
     id: providerCfg.id,
@@ -557,10 +578,15 @@ async function resolveActiveProvider() {
   };
   const provider = providersMod.createProviderFromConfig(providerSpec);
   const model =
-    cfg.activeModel ||
+    (cfg.activeModel && String(cfg.activeModel)) ||
     providerCfg.defaultModel ||
-    providerCfg.models[0] ||
-    "mock-hfq";
+    (Array.isArray(providerCfg.models) ? providerCfg.models[0] : "") ||
+    "";
+  if (!model) {
+    throw new Error(
+      `Provider "${providerCfg.id}" has no models configured. Add at least one model id.`,
+    );
+  }
   return { provider, providerSpec, model, providerId: providerCfg.id };
 }
 
@@ -1095,12 +1121,13 @@ function createWindow() {
 
 function registerIpc() {
   ipcMain.handle("app:getInfo", async () => {
-    let activeProviderId = "mock";
-    let activeModel = "mock-hfq";
+    // Empty string when no providers — never invent mock for UI status chips.
+    let activeProviderId = "";
+    let activeModel = "";
     try {
       const cfg = await readConfig();
-      activeProviderId = cfg.activeProviderId;
-      activeModel = cfg.activeModel;
+      activeProviderId = cfg.activeProviderId || "";
+      activeModel = cfg.activeModel || "";
     } catch {
       /* ignore */
     }
@@ -1734,20 +1761,128 @@ function registerIpc() {
   });
 
   ipcMain.handle("config:setActive", async (_evt, payload = {}) => {
-    const cfg = await readConfig();
-    if (payload.providerId) cfg.activeProviderId = String(payload.providerId);
-    if (payload.model) cfg.activeModel = String(payload.model);
-    await writeConfig(cfg);
     const { configMod } = await loadModules();
-    return configMod.publicConfigView(cfg);
+    const cfg = await readConfig();
+    const providers = Array.isArray(cfg.providers) ? cfg.providers : [];
+    if (!providers.length) {
+      throw new Error(
+        "No model provider configured. Add a channel in Models before selecting a model.",
+      );
+    }
+
+    const nextProviderId = payload.providerId
+      ? String(payload.providerId).trim()
+      : cfg.activeProviderId;
+    const nextModel = payload.model != null ? String(payload.model).trim() : cfg.activeModel;
+
+    if (payload.providerId) {
+      const found = providers.find((p) => p.id === nextProviderId);
+      if (!found) {
+        throw new Error(`provider not found: ${nextProviderId}`);
+      }
+      cfg.activeProviderId = found.id;
+      if (payload.model == null || payload.model === "") {
+        cfg.activeModel =
+          found.defaultModel ||
+          (Array.isArray(found.models) ? found.models[0] : "") ||
+          "";
+      }
+    }
+    if (payload.model != null && String(payload.model).trim()) {
+      const active =
+        providers.find((p) => p.id === cfg.activeProviderId) ||
+        providers.find((p) => p.id === nextProviderId);
+      if (!active) {
+        throw new Error(`provider not found: ${cfg.activeProviderId || nextProviderId}`);
+      }
+      const models = Array.isArray(active.models) ? active.models : [];
+      if (models.length && !models.includes(nextModel) && nextModel !== active.defaultModel) {
+        // Allow selecting a remote-listed model not yet saved into config.models
+        // (Models UI may call setActive after models:list without upserting).
+        cfg.activeModel = nextModel;
+        if (!models.includes(nextModel)) {
+          active.models = [...models, nextModel];
+        }
+      } else {
+        cfg.activeModel = nextModel;
+      }
+      cfg.activeProviderId = active.id;
+    }
+
+    if (!cfg.activeProviderId || !cfg.activeModel) {
+      throw new Error("active provider and model are required");
+    }
+
+    await writeConfig(cfg);
+    const pub = configMod.publicConfigView(cfg);
+
+    // Hot-apply to the live active session so top-bar switch matches next turn.
+    let sessionApplied = null;
+    let sessionApplyError = null;
+    const sessionId = activeSessionId;
+    const applyToSession = payload.applyToSession !== false;
+    if (sessionId && applyToSession) {
+      try {
+        const resolved = await resolveActiveProvider();
+        const backend = await ensureSessionBackend();
+        if (backend.kind === "worker") {
+          sessionApplied = await backend.host.setProviderModel(
+            sessionId,
+            resolved.providerSpec,
+            resolved.model,
+          );
+        } else if (typeof backend.mgr.setProviderModel === "function") {
+          sessionApplied = await backend.mgr.setProviderModel(
+            sessionId,
+            resolved.provider,
+            resolved.model,
+          );
+        }
+      } catch (err) {
+        sessionApplyError = err instanceof Error ? err.message : String(err);
+        console.warn("[HFQ] setActive session hot-swap skipped:", sessionApplyError);
+      }
+    }
+
+    return {
+      ...pub,
+      sessionApplied: sessionApplied
+        ? { id: sessionApplied.id, model: sessionApplied.model }
+        : null,
+      sessionApplyError,
+    };
   });
 
   ipcMain.handle("config:upsertProvider", async (_evt, payload = {}) => {
-    const { configMod } = await loadModules();
+    const { configMod, providersMod } = await loadModules();
     const cfg = await readConfig();
     const existing = cfg.providers.find((p) => p.id === payload.id);
     const merged = configMod.mergeProviderUpdate(existing, payload);
+    // Auto-fix known third-party baseURL pitfalls (e.g. OpenCode /zen → /zen/v1).
+    if (
+      merged.kind === "openai_compatible" &&
+      merged.baseURL &&
+      typeof providersMod.normalizeOpenAICompatibleBaseURL === "function"
+    ) {
+      merged.baseURL = providersMod.normalizeOpenAICompatibleBaseURL(merged.baseURL);
+    } else if (merged.baseURL && typeof merged.baseURL === "string") {
+      merged.baseURL = merged.baseURL.trim().replace(/\/+$/, "");
+    }
     const next = configMod.upsertProvider(cfg, merged);
+    await writeConfig(next);
+    return configMod.publicConfigView(next);
+  });
+
+  /**
+   * Remove a provider channel (Models UI).
+   * mock and last channel are deletable; empty providers is valid (fail-closed at use).
+   */
+  ipcMain.handle("config:removeProvider", async (_evt, payload = {}) => {
+    const { configMod } = await loadModules();
+    const cfg = await readConfig();
+    const id = String(payload.id || payload.providerId || "").trim();
+    if (!id) throw new Error("provider id required");
+    const next = configMod.removeProvider(cfg, id);
     await writeConfig(next);
     return configMod.publicConfigView(next);
   });
@@ -1755,12 +1890,47 @@ function registerIpc() {
   ipcMain.handle("models:test", async (_evt, payload = {}) => {
     const { providersMod } = await loadModules();
     const cfg = await readConfig();
-    const providerId = String(payload.providerId || cfg.activeProviderId || "mock");
-    const model = String(payload.model || cfg.activeModel || "mock-hfq");
+    const providers = Array.isArray(cfg.providers) ? cfg.providers : [];
+    if (!providers.length) {
+      return {
+        ok: false,
+        providerId: "",
+        model: "",
+        latencyMs: 0,
+        error: "No model provider configured. Add a channel in Models first.",
+      };
+    }
+    const providerId = String(payload.providerId || cfg.activeProviderId || "").trim();
     const providerCfg =
-      cfg.providers.find((p) => p.id === providerId) ||
-      cfg.providers.find((p) => p.id === "mock");
-    if (!providerCfg) throw new Error("no provider configured");
+      providers.find((p) => p.id === providerId) ||
+      providers.find((p) => p.id === cfg.activeProviderId) ||
+      providers.find((p) => p.enabled !== false) ||
+      providers[0];
+    if (!providerCfg) {
+      return {
+        ok: false,
+        providerId: providerId || "",
+        model: String(payload.model || cfg.activeModel || ""),
+        latencyMs: 0,
+        error: "provider not found",
+      };
+    }
+    const model = String(
+      payload.model ||
+        cfg.activeModel ||
+        providerCfg.defaultModel ||
+        (Array.isArray(providerCfg.models) ? providerCfg.models[0] : "") ||
+        "",
+    ).trim();
+    if (!model) {
+      return {
+        ok: false,
+        providerId: providerCfg.id,
+        model: "",
+        latencyMs: 0,
+        error: `Provider "${providerCfg.id}" has no models configured`,
+      };
+    }
 
     const started = Date.now();
     try {
@@ -1771,7 +1941,7 @@ function registerIpc() {
         apiKey: providerCfg.apiKey,
       });
       const result = await provider.chat({
-        model: model || providerCfg.defaultModel || "mock-hfq",
+        model,
         messages: [
           {
             role: "system",
@@ -1798,6 +1968,61 @@ function registerIpc() {
         error: err instanceof Error ? err.message : String(err),
       };
     }
+  });
+
+  /**
+   * List models for a provider.
+   * Workbench source of truth remains config.models; remote list is soft-fallback.
+   * Soft result shape: { ok, providerId, source, models, error?, warning?, rawCount? }
+   */
+  ipcMain.handle("models:list", async (_evt, payload = {}) => {
+    const { providersMod } = await loadModules();
+    const cfg = await readConfig();
+    const providers = Array.isArray(cfg.providers) ? cfg.providers : [];
+    if (!providers.length) {
+      return {
+        ok: false,
+        providerId: "",
+        source: "config",
+        models: [],
+        error: "No model provider configured",
+      };
+    }
+    const providerId = String(
+      payload.providerId || payload.id || cfg.activeProviderId || "",
+    ).trim();
+    const providerCfg =
+      providers.find((p) => p.id === providerId) ||
+      providers.find((p) => p.id === cfg.activeProviderId) ||
+      providers.find((p) => p.enabled !== false) ||
+      providers[0];
+    if (!providerCfg) {
+      return {
+        ok: false,
+        providerId: providerId || "",
+        source: "config",
+        models: [],
+        error: "provider not found",
+      };
+    }
+    if (typeof providersMod.listProviderModels !== "function") {
+      const models = Array.isArray(providerCfg.models) ? [...providerCfg.models] : [];
+      return {
+        ok: models.length > 0,
+        providerId: providerCfg.id,
+        source: "config",
+        models,
+        warning: "listProviderModels unavailable; using config.models",
+      };
+    }
+    return providersMod.listProviderModels({
+      id: providerCfg.id,
+      kind: providerCfg.kind,
+      baseURL: providerCfg.baseURL,
+      apiKey: providerCfg.apiKey,
+      models: providerCfg.models,
+      defaultModel: providerCfg.defaultModel,
+    });
   });
 
   ipcMain.handle("session:create", async (_evt, payload = {}) => {
@@ -1889,7 +2114,28 @@ function registerIpc() {
     const backend = await ensureSessionBackend();
     const sessionId = payload.sessionId;
     if (!sessionId) throw new Error("sessionId required");
-    const resolved = await resolveActiveProvider();
+    // Default: rebind live/resume session to current global active provider/model.
+    // Pass payload.rebindToActive=false to keep frozen session model (rare).
+    const rebindToActive = payload.rebindToActive !== false;
+    let resolved = null;
+    let openModel = payload.model ? String(payload.model) : undefined;
+    let openProvider = undefined;
+    let openProviderSpec = undefined;
+    let providerId = undefined;
+    if (rebindToActive || !openModel) {
+      try {
+        resolved = await resolveActiveProvider();
+        openModel = openModel || resolved.model;
+        openProvider = resolved.provider;
+        openProviderSpec = resolved.providerSpec;
+        providerId = resolved.providerId;
+      } catch (err) {
+        // Empty providers: still allow open for transcript viewing, but send will fail-closed.
+        if (!openModel) {
+          throw err;
+        }
+      }
+    }
     const MODES = new Set(["confirm_before_change", "auto_edit", "plan", "full_access"]);
     let permissionMode = MODES.has(payload.permissionMode) ? payload.permissionMode : null;
     let planMode = payload.planMode == null ? undefined : Boolean(payload.planMode);
@@ -1907,14 +2153,20 @@ function registerIpc() {
     const openParams = {
       sessionId: String(sessionId),
       workspacePath: payload.workspacePath || workspacePath || undefined,
-      model: payload.model || resolved.model,
+      model: openModel,
       planMode,
       permissionMode: permissionMode || undefined,
     };
     const snap =
       backend.kind === "worker"
-        ? await backend.host.open({ ...openParams, provider: resolved.providerSpec })
-        : await backend.mgr.open({ ...openParams, provider: resolved.provider });
+        ? await backend.host.open({
+            ...openParams,
+            provider: openProviderSpec || (resolved && resolved.providerSpec),
+          })
+        : await backend.mgr.open({
+            ...openParams,
+            provider: openProvider || (resolved && resolved.provider),
+          });
     activeSessionId = snap.info.id;
     if (snap.info.workspacePath) {
       workspacePath = snap.info.workspacePath;
@@ -1933,15 +2185,18 @@ function registerIpc() {
     } catch {
       /* ignore */
     }
+    const liveModel = snap.info?.model || openModel || "";
+    const liveProviderId = providerId || resolved?.providerId || "";
     return {
       ...snap,
       info: {
         ...snap.info,
-        providerId: resolved.providerId,
+        model: liveModel,
+        providerId: liveProviderId,
         planMode: livePlan,
         permissionMode: liveMode,
       },
-      providerId: resolved.providerId,
+      providerId: liveProviderId,
       planMode: livePlan,
       permissionMode: liveMode,
       sessionBackend: backend.kind,
@@ -1956,12 +2211,42 @@ function registerIpc() {
   });
 
   ipcMain.handle("session:send", async (_evt, payload) => {
-    const mgr = await ensureSessionManager();
+    const backend = await ensureSessionBackend();
     const sessionId = payload?.sessionId || activeSessionId;
     const text = String(payload?.text ?? "").trim();
     if (!sessionId) throw new Error("No active session");
     if (!text) throw new Error("Empty message");
-    void mgr.send(sessionId, text).catch((err) => {
+
+    // Best-effort: re-pin live session to global active before each turn so
+    // toolbar model and API/identity stay aligned even if setActive hot-swap was skipped.
+    try {
+      const resolved = await resolveActiveProvider();
+      if (backend.kind === "worker") {
+        await backend.host.setProviderModel(
+          sessionId,
+          resolved.providerSpec,
+          resolved.model,
+        );
+      } else if (typeof backend.mgr.setProviderModel === "function") {
+        await backend.mgr.setProviderModel(
+          sessionId,
+          resolved.provider,
+          resolved.model,
+        );
+      }
+    } catch (err) {
+      // busy / empty providers / unknown session — send still proceeds with current binding
+      console.warn(
+        "[HFQ] session:send rebind skipped:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+
+    const sendPromise =
+      backend.kind === "worker"
+        ? backend.host.send(sessionId, text)
+        : backend.mgr.send(sessionId, text);
+    void sendPromise.catch((err) => {
       broadcast("session:event", {
         type: "session.failed",
         sessionId,

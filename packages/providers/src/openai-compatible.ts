@@ -6,6 +6,10 @@ import type {
   ModelProvider,
   ToolCall,
 } from "./types.js";
+import {
+  formatProviderHttpError,
+  normalizeOpenAICompatibleBaseURL,
+} from "./openai-base-url.js";
 
 export interface OpenAICompatibleConfig {
   id: string;
@@ -125,7 +129,14 @@ async function chatNonStream(
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`provider ${cfg.id} ${res.status}: ${errText.slice(0, 800)}`);
+    throw new Error(
+      formatProviderHttpError({
+        providerId: cfg.id,
+        status: res.status,
+        body: errText,
+        requestUrl: url,
+      }),
+    );
   }
 
   const data = (await res.json()) as {
@@ -180,7 +191,14 @@ async function chatStream(
       return chatNonStream(cfg, req, url);
     }
     const errText = await res.text();
-    throw new Error(`provider ${cfg.id} ${res.status}: ${errText.slice(0, 800)}`);
+    throw new Error(
+      formatProviderHttpError({
+        providerId: cfg.id,
+        status: res.status,
+        body: errText,
+        requestUrl: url,
+      }),
+    );
   }
 
   if (!res.body) {
@@ -311,21 +329,23 @@ async function chatStream(
 }
 
 export function createOpenAICompatibleProvider(cfg: OpenAICompatibleConfig): ModelProvider {
+  const baseURL = normalizeOpenAICompatibleBaseURL(cfg.baseURL);
+  const normalized: OpenAICompatibleConfig = { ...cfg, baseURL };
   return {
     id: cfg.id,
     async chat(req: ChatRequest): Promise<ChatResult> {
-      const url = `${cfg.baseURL.replace(/\/$/, "")}/chat/completions`;
+      const url = `${normalized.baseURL.replace(/\/$/, "")}/chat/completions`;
       if (req.onDelta) {
         try {
-          return await chatStream(cfg, req, url);
+          return await chatStream(normalized, req, url);
         } catch (err) {
           // Network/stream parse failures: try non-stream once.
           const msg = err instanceof Error ? err.message : String(err);
-          if (/provider .+ \d+:/.test(msg) && !/400|404|415/.test(msg)) throw err;
-          return chatNonStream(cfg, req, url);
+          if (/provider .+ \d+/.test(msg) && !/\b(400|404|415)\b/.test(msg)) throw err;
+          return chatNonStream(normalized, req, url);
         }
       }
-      return chatNonStream(cfg, req, url);
+      return chatNonStream(normalized, req, url);
     },
   };
 }

@@ -40,7 +40,12 @@ export function buildSystemPrompt(opts: {
   const identityLines = [
     "You are HFQ Code, a desktop coding agent running inside a local workspace.",
     model
-      ? `The language model behind you is "${model}"${providerId ? ` (provider: ${providerId})` : ""}. When asked which model you are, answer with that id — do not claim to be GPT-4/GPT-5, Claude, or any other model unless it matches this id.`
+      ? [
+          `The language model behind this session is exactly "${model}"${providerId ? ` (provider: ${providerId})` : ""}.`,
+          `When the user asks who you are or which model you are, answer as HFQ Code powered by "${model}" only.`,
+          `Do not claim GPT-4/GPT-5, Claude, Grok, Gemini, DeepSeek, or any other model id unless it equals "${model}" exactly.`,
+          `CRITICAL: Older assistant messages in this chat may mention a different model id (e.g. after the user switched models). Those self-descriptions are obsolete. Always use the Active model id below; never stay consistent with a superseded model name.`,
+        ].join(" ")
       : "If the user asks which model you are and you were not given a model id, say you are HFQ Code and that the model id is configured in Models settings — do not invent a brand name.",
   ];
   return [
@@ -57,7 +62,7 @@ export function buildSystemPrompt(opts: {
     "Do not invent tool results. After tools run, continue until the user request is done or blocked on permission.",
     "Reply in the same language the user uses (Chinese or English).",
     `Workspace: ${opts.workspacePath}`,
-    model ? `Model: ${model}${providerId ? ` · Provider: ${providerId}` : ""}` : "",
+    model ? `Active model id: ${model}${providerId ? ` · Provider: ${providerId}` : ""}` : "",
     opts.projectRules ? `## Project rules\n${opts.projectRules}` : "",
     skillIndex ? `## Available skills\n${skillIndex}` : "",
     opts.memoryBlock?.trim() ? opts.memoryBlock.trim() : "",

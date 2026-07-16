@@ -139,18 +139,21 @@ export function ChipButton({
   onClick,
   children,
   className,
+  title,
 }: {
   active?: boolean;
   disabled?: boolean;
   onClick?: () => void;
   children: ReactNode;
   className?: string;
+  title?: string;
 }) {
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
+      title={title}
       className={cn(
         "interactive rounded-md border px-3 py-1.5 text-sm transition-colors duration-150",
         "disabled:pointer-events-none disabled:opacity-40",

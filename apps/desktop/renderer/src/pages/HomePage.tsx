@@ -99,8 +99,18 @@ export function HomePage() {
           <CardContent className="space-y-0 pb-4 text-sm">
             {[
               ["版本", info?.version ? String(info.version) : "—"],
-              ["模型", info?.activeModel ? String(info.activeModel) : "—"],
-              ["提供商", info?.activeProviderId ? String(info.activeProviderId) : "—"],
+              [
+                "模型",
+                info?.activeModel && String(info.activeModel).trim()
+                  ? String(info.activeModel)
+                  : "未配置模型",
+              ],
+              [
+                "提供商",
+                info?.activeProviderId && String(info.activeProviderId).trim()
+                  ? String(info.activeProviderId)
+                  : "—",
+              ],
               [
                 "工作区",
                 workspace?.path ? shortPath(String(workspace.path), 36) : "未绑定",

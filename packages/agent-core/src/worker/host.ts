@@ -364,6 +364,14 @@ export class SessionWorkerHost {
     return this.call("getPermissionMode", { sessionId });
   }
 
+  async setProviderModel(
+    sessionId: string,
+    provider: WorkerProviderSpec,
+    model: string,
+  ): Promise<SessionInfo> {
+    return this.call("setProviderModel", { sessionId, provider, model });
+  }
+
   async listChildren(sessionId: string): Promise<SessionInfo[]> {
     return this.call("listChildren", { sessionId });
   }
