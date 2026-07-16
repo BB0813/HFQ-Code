@@ -1,8 +1,8 @@
 # HFQ Code — Development roadmap (post-1.0.5)
 
 Status: **active plan**  
-Baseline: product **1.0.9** (`v1.0.9`) · 2026-07-15  
-Last updated: 2026-07-15
+Baseline: product **1.0.10** (`v1.0.10`) · 2026-07-17  
+Last updated: 2026-07-17 · 1.0.10 release: signing + thinking + DPAPI + D3 + React shell
 
 ## Positioning (frozen)
 
@@ -13,7 +13,7 @@ Last updated: 2026-07-15
 
 ## Where we are
 
-| Area | State after 1.0.9 |
+| Area | State after 1.0.10 |
 |------|-------------------|
 | Agent loop + tools + worker | Shipped |
 | Access modes / permission modal | Shipped (1.0.2+) · **1.0.9** timeout + crash unlock |
@@ -21,20 +21,39 @@ Last updated: 2026-07-15
 | `/goal` long-run + Tasks + Chat banner | Shipped (1.0.4–1.0.6) |
 | Update check multi-source fallback | **Shipped** (1.0.5–1.0.7): mirrors → ungh → direct |
 | Skills store (preview / conflict / tags / **remote zip**) | **Shipped** (1.0.6 + **1.0.9**) |
-| True interactive Terminal (PTY) | **Not shipped** (one-shot shell) |
-| DPAPI credentials / code signing / electron-updater | **Not shipped** |
-| Renderer split / full UI redesign | **R1 started** (`skills-ui.js`) — [UI-REDESIGN.md](./UI-REDESIGN.md) |
+| True interactive Terminal (PTY) | **T1 backend shipped** (`@hfq/pty` + IPC); xterm UI pending frontend |
+| Changes / Git workspace IPC | **B2-0 shipped** (`git:*` + git-ops); commit/stage UI pending frontend |
+| Sub-agent observability | **B3-0 shipped** (`subagent.updated` + listSpawnAttempts + child meta); Tasks tree UI polish pending frontend |
+| DPAPI credentials | **D1 shipped** (Windows envelope; Settings shows encoding) — [DPAPI-1.2.md](./DPAPI-1.2.md) |
+| Code signing (Authenticode) | **Shipped** — HFQ-ClodBreeze self-signed + trust pack + CI secrets — [PACKAGING.md](./PACKAGING.md) |
+| In-app update download (D3) | **Shipped** (download + confirm open installer; no silent install) — [UPDATE-D3.md](./UPDATE-D3.md) |
+| Diagnostics redaction (export) | **D4 shipped** (v2 bundle; credentials never exported) |
+| Usage CSV export | **Shipped** (`usage:export` + CSV bundle + Usage page export button) — [USAGE-CSV-1.3.md](./USAGE-CSV-1.3.md) |
+| Thinking / reasoning stream | **Backend shipped** (`thinking.delta` / `thinking.completed` + provider parse) — [THINKING-STREAM.md](./THINKING-STREAM.md); collapsed CoT UI → frontend |
+| Renderer split / full UI redesign | **R0–R5 landed** (modules + chat UX + store + home/tasks/changes + islands); handlers still mostly in `app.js` — [UI-REDESIGN.md](./UI-REDESIGN.md) |
 
 ---
 
 ## Guiding themes (next 2–3 months)
 
-1. **Coding depth** — Terminal, Git, Diff, sub-agent observability  
-2. **Skills marketplace (gradual)** — from local install → safe remote packages  
-3. **UI redesign (incremental)** — split `app.js`, then Chat / Skills / Home  
+1. **UI / UX architecture** — **R0–R5 landed** (modules, chat UX, store, home/tasks/changes, islands); next product train is 1.1 PTY  
+2. **Coding depth** — Terminal (PTY), Git, Diff, sub-agent observability (can share a release train with UI slices)  
+3. **Skills marketplace** — local + remote packages shipped (1.0.9); store visual polish **R3 done**  
 4. **Hardening & distribution** — credentials, signing, optional updater  
 
 Do **not** expand into multi-tenant cloud agent or IM gateway.
+
+### Layout redesign gate (human pick)
+
+Static mocks for review: **[LAYOUT-PROPOSALS.md](./LAYOUT-PROPOSALS.md)** · `docs/design-proposals/`.  
+**Do not** big-bang production UI until A/B/C (or hybrid) is chosen. Framework (React/Preact) is **conditional on pick** (A/B lean yes, C optional).
+
+### 1.1 PTY spike
+
+See **[PTY-1.1.md](./PTY-1.1.md)**. Terminal page HTML extracted to `pages/terminal-page.js` (one-shot shell unchanged).
+
+
+**Priority note (2026-07-15):** Product chose to **pull UI/UX architecture migration earlier**. R1 is no longer “background chore while 1.1 starts”; it is a **blocking enabler** for safe Chat/Terminal/Tasks UI work.
 
 ---
 
@@ -99,43 +118,57 @@ Small, shippable patches. Keep `pnpm release:check` green; tag `v*` + Actions + 
 
 | ID | Work | Notes |
 |----|------|--------|
-| B1-1 | Integrate `node-pty` / ConPTY on Windows | Replace pure one-shot for interactive sessions |
-| B1-2 | Session-linked PTY + reattach / stop | Align with permission for dangerous commands |
-| B1-3 | Keep one-shot `shell` tool for agent; PTY is human Terminal page | Don’t merge blindly |
+| B1-1 | Integrate `node-pty` / ConPTY on Windows | ✅ T1 backend (`@hfq/pty` + IPC); xterm UI → frontend |
+| B1-2 | Session-linked PTY + reattach / stop | killAll on workspace switch / quit; reattach UI later |
+| B1-3 | Keep one-shot `shell` tool for agent; PTY is human Terminal page | ✅ Don’t merge blindly |
+| B1-shell | `pty:shells` + prefs `terminalShell` | ✅ default shell for create |
+| B1-pack | pack-verify `@hfq/pty` + optional node-pty | ✅ asserts + WARN fallback |
 
 ### B2 · Changes + Git UX
 
 | ID | Work |
 |----|------|
-| B2-1 | Multi-file review layout polish (keyboard next/prev file) |
-| B2-2 | From diff → “ask agent to fix” prefilled composer |
-| B2-3 | Commit flow: stage summary + message draft |
+| B2-0 | Workspace git IPC (`git:status|diff|show|stage|unstage|commit|log`) + `packages/tools` git-ops | ✅ backend; UI contract in [CHANGES-GIT-1.1.md](./CHANGES-GIT-1.1.md) · [FRONTEND-IPC.md](./FRONTEND-IPC.md) |
+| B2-1 | Multi-file review layout polish (keyboard next/prev file) | frontend |
+| B2-2 | From diff → “ask agent to fix” prefilled composer | frontend |
+| B2-3 | Commit flow: stage summary + message draft | frontend on B2-0 |
 
 ### B3 · Sub-agents observability
 
-| ID | Work |
-|----|------|
-| B3-1 | Tasks tree: parent goal → tool tasks → child sessions |
-| B3-2 | Open child transcript without losing parent context |
-| B3-3 | Failed spawn reasons in UI |
+| ID | Work | Notes |
+|----|------|--------|
+| B3-0 | Backend: `SessionInfo` parent/profile/goal · `subagent.updated` · `listSpawnAttempts` · spawn `errorCode` | ✅ see [SUBAGENT-OBS-1.1.md](./SUBAGENT-OBS-1.1.md) |
+| B3-1 | Tasks tree: parent goal → tool tasks → child sessions | frontend on B3-0 |
+| B3-2 | Open child transcript without losing parent context | frontend (local parent stack) |
+| B3-3 | Failed spawn reasons in UI | frontend: `subagent.updated` / `listSpawnAttempts` |
 
 **1.1 exit:** developer can interactively run commands, review multi-file diffs, and follow sub-agent trees without guessing.
 
 ---
 
-## Track C — UI redesign (parallel, non-blocking)
+## Track C — UI / UX architecture (elevated · start now)
 
-Canonical checklist: [UI-REDESIGN.md](./UI-REDESIGN.md).
+Canonical checklist: [UI-REDESIGN.md](./UI-REDESIGN.md).  
+**Elevated (2026-07-15):** architecture migration is **front-loaded**, not deferred behind full 1.1 feature work.
 
-| Milestone | Align with | Focus |
-|-----------|------------|--------|
-| **R1** Shell split | During 1.0.6–1.0.7 | Extract `pages/skills.js`, `pages/settings.js`, shared `seg-tabs` without behavior change |
-| **R2** Chat redesign | After R1 or with 1.1 | Virtualized messages, tool cards, goal banner (A1-4 can land early as thin UI) |
-| **R3** Store visual system | With A2 remote packages | Category rails, detail drawer (overlaps A1-1) |
-| **R4** Home / Tasks / Changes | 1.1 | Resume dashboard + trees |
-| **R5** React/islands | Only if R1 insufficient | Optional |
+| Milestone | When | Focus | Status |
+|-----------|------|--------|--------|
+| **R1** Shell split | **Structure done · polish optional** | Extract `nav`, `pages/*`, `chat/*`, shared layout; **no behavior change** | ✅ modules on main (`shared-ui`, `nav-ui`, `settings-ui`, `skills-page`, `chat-shell`; handlers remain in `app.js`) |
+| **R2** Chat redesign | On chat-shell module | Windowed log + tool cards + sticky composer | ✅ core landed (full virtual list optional) |
+| **R3** Store visual polish | skills-page + CSS | Category rails, density, empty states | ✅ |
+| **R4** Home / Tasks / Changes | home/tasks/changes page modules | Resume dashboard, tasks tree, multi-file review layout | ✅ |
+| **R5** Progressive islands | `islands/bootstrap.js` | Vanilla islands; **no React rewrite** | ✅ decision + bootstrap |
 
-**Rule:** every R-slice must keep IPC stable and pass `pnpm release:check`. Prefer extract-module PRs over big-bang redesign.
+### R1 exit criteria (must hit before large Chat/Terminal UI features)
+
+**Status (2026-07-15):** Structure exit criteria **met** (nav / settings / skills / chat shell / shared layout; `pnpm release:check` green). Remaining: optional handler extracts + focus docs.
+
+1. `app.js` is an orchestrator only (wire IPC + state), not a 5k-line page dump  
+2. At least: **nav**, **skills**, **settings**, **chat shell** (composer + messages host) live as separate modules  
+3. Shared primitives: panel head, empty state, seg-tabs, status line helpers  
+4. `pnpm release:check` green; no IPC contract change  
+
+**Rule:** every R-slice keeps IPC stable and passes `pnpm release:check`. Prefer extract-module PRs over big-bang redesign.
 
 ---
 
@@ -143,12 +176,12 @@ Canonical checklist: [UI-REDESIGN.md](./UI-REDESIGN.md).
 
 | ID | Work | Dependency |
 |----|------|------------|
-| D1 | DPAPI (or OS keychain) for `credentials.json` | Windows-first design |
-| D2 | Authenticode code signing | Cert purchase / org decision |
-| D3 | Optional electron-updater | **Requires D2** + product decision |
-| D4 | Diagnostics redaction pass | Audit export |
+| D1 | DPAPI (or OS keychain) for `credentials.json` | ✅ Windows DPAPI CurrentUser + soft migrate — [DPAPI-1.2.md](./DPAPI-1.2.md) |
+| D2 | Authenticode code signing | ✅ self-signed **HFQ-ClodBreeze** + trust pack + CI secrets — [PACKAGING.md](./PACKAGING.md) |
+| D3 | In-app update download + open installer | ✅ not silent — [UPDATE-D3.md](./UPDATE-D3.md) |
+| D4 | Diagnostics redaction pass | ✅ hardened export + patterns — [DIAGNOSTICS-1.2.md](./DIAGNOSTICS-1.2.md) |
 
-Until D2, keep manual NSIS/portable + in-app check (ghproxy).
+Release channel: GitHub Releases + multi-source check + optional in-app download. Installers are self-signed; SmartScreen may still warn until reputation builds.
 
 ---
 
@@ -157,28 +190,32 @@ Until D2, keep manual NSIS/portable + in-app check (ghproxy).
 - Memory embeddings / hybrid retrieval  
 - Python sidecar behind stable IPC (DECISIONS Q1)  
 - Advanced MCP (OAuth, streamable HTTP)  
-- Usage CSV export / cost by model-day  
-- ClawHub **publish** from HFQ (out of scope until install path is solid)
+- Usage CSV export / cost by model-day — **CSV export + desktop Usage UI shipped** ([USAGE-CSV-1.3.md](./USAGE-CSV-1.3.md)); cost-by-model UI later  
+- ClawHub **publish** from HFQ (out of scope until install path is solid)  
+- Anthropic **extended thinking budget** request flag (parse path already accepts `thinking` blocks)  
+- Cost-by-model-day charts (data already in usage JSONL / CSV)
 
 ---
 
 ## Suggested sequencing
 
 ```text
-1.0.5 (done)
+1.0.5–1.0.9 (done)  patch train: store, update, composer UI, remote zip, permissions
    │
-   ├─► 1.0.6  store preview/conflict + goal banner + R1 extract skills/settings
+   ├─► NOW     Track C · R1 UI architecture split  ◄── pulled forward
+   │           (nav / settings / skills / chat shell modules)
    │
-   ├─► 1.0.7  remote package install (safe zip) + R3 partial
+   ├─► next    R2 Chat UX (on top of split modules)
+   │           + 1.1 PTY design spike (can start docs/spike in parallel)
    │
-   ├─► 1.0.8  permission/worker polish
+   ├─► 1.1     PTY Terminal + Changes/Git depth + Tasks observability
+   │           (UI work lands as modules, not more app.js megacommits)
    │
-   ├─► 1.1    PTY Terminal + Changes/Git + Tasks tree + R2/R4 UI
-   │
-   └─► 1.2    DPAPI + signing (+ optional updater)
+   └─► 1.2     DPAPI + D2 self-sign + D3 in-app download
 ```
 
-Parallelism allowed: **R1 module split** can start immediately alongside 1.0.6 features if PRs stay small.
+**Parallelism:** PTY **spike** (design + spike branch) may run while R1 extracts land on main.  
+**Sequencing rule:** avoid large **Chat / Terminal / Tasks page rewrites** until R1 exit criteria are met.
 
 ---
 
@@ -186,12 +223,11 @@ Parallelism allowed: **R1 module split** can start immediately alongside 1.0.6 f
 
 | Priority | Item | Why |
 |----------|------|-----|
-| **P0** | 1.0.7 remote packages (A2) | Real “ClawHub slowly” |
-| **P0** | R1 continue (nav/settings modules) | Enables later UI work |
-| **P1** | 1.1 PTY | Largest coding-agent gap vs peers |
-| **P2** | 1.0.8 permission polish | Reliability |
+| **P0** | **1.1 PTY** (design spike → implement) | Largest coding-agent gap vs peers |
+| **P1** | 1.1 Changes/Git depth + Tasks observability | Coding loop + observability |
+| **P2** | Optional UI polish (virtual list, focus docs) | Non-blocking |
 | **P2** | 1.2 signing/DPAPI | Distribution trust |
-| **P3** | R5 React / embeddings / sidecar | Only after P0–P1 |
+| **P3** | Embeddings / sidecar (not React rewrite) | Only after P0–P1 |
 
 ---
 
@@ -201,6 +237,7 @@ Parallelism allowed: **R1 module split** can start immediately alongside 1.0.6 f
 - Silent auto-update without signing decision  
 - IM / multi-account social agent  
 - Replacing TypeScript agent core with Python wholesale  
+- Big-bang React rewrite of the whole renderer before R1–R2  
 
 ---
 
@@ -215,11 +252,15 @@ Parallelism allowed: **R1 module split** can start immediately alongside 1.0.6 f
 
 ---
 
-## Next concrete sprint (after 1.0.9)
+## Next concrete sprint (after 1.0.9 · UI-first)
 
-1. Continue R1: more renderer extracts beyond `skills-ui.js`  
-2. **1.1** node-pty / ConPTY design spike when ready  
-3. Changes / Git UX polish (Track B2) when capacity allows  
+1. **R1 extracts (highest priority)**  
+   - `settings` page + update panel helpers  
+   - `nav` / shell chrome  
+   - `skills` page body (beyond pure `HFQSkillsUI`)  
+   - `chat` shell: composer + message list host (behavior-preserving)  
+2. **R2** Chat UX on the new modules (virtual list spike, tool cards)  
+3. **1.1** PTY design spike (docs + isolated spike OK in parallel with R1)  
 4. Keep `pnpm release:check` green on main  
 
-Default next ship target: **1.1** (PTY spike) unless product priority changes.
+Default next ship target: **UI architecture slice (1.0.10 or 1.1.0-ui)** then **1.1 PTY**, unless product reorders again.

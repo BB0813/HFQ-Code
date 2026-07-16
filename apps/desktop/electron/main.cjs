@@ -1,7 +1,8 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, net } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell, net, Menu } = require("electron");
 const path = require("node:path");
 const os = require("node:os");
 const fs = require("node:fs/promises");
+const { UpdateDownloader } = require("./update-download.cjs");
 
 /** Public GitHub repo used for release checks (manual download channel). */
 const UPDATE_REPO = { owner: "BB0813", name: "HFQ-Code" };
@@ -145,10 +146,52 @@ let activeSessionId = null;
 /** @type {Error | null} */
 let bootError = null;
 
+/** @type {import('@hfq/pty').PtyHost | null} */
+let ptyHost = null;
+
 /** @type {import('@hfq/mcp').McpHost | null} */
 let mcpHost = null;
 /** Prevent concurrent host bootstrap races. */
 let mcpHostPromise = null;
+
+/** @type {InstanceType<typeof UpdateDownloader> | null} */
+let updateDownloader = null;
+
+function getUpdatesDir() {
+  return path.join(app.getPath("userData"), "updates");
+}
+
+function getUpdateDownloader() {
+  if (updateDownloader) return updateDownloader;
+  updateDownloader = new UpdateDownloader({
+    updatesDir: getUpdatesDir(),
+    broadcast,
+    assertUrl: (url) => {
+      // Lightweight allowlist (mirrors UPDATE_OPEN_HOST_ALLOW + githubusercontent subdomains)
+      let u;
+      try {
+        u = new URL(String(url || "").trim());
+      } catch {
+        throw new Error("invalid download URL");
+      }
+      if (u.protocol !== "https:") throw new Error("only https download URLs allowed");
+      const host = u.hostname.toLowerCase();
+      const ok =
+        UPDATE_OPEN_HOST_ALLOW.has(host) ||
+        host.endsWith(".githubusercontent.com");
+      if (!ok) throw new Error(`download host not allowed: ${host}`);
+      return u;
+    },
+    sanitizeName: (name) => {
+      let base = String(name || "HFQ-Code-update.exe").trim();
+      base = base.replace(/[/\\?%*:|"<>]/g, "_").replace(/\.\.+/g, ".");
+      if (!base.toLowerCase().endsWith(".exe")) base = `${base || "HFQ-Code-update"}.exe`;
+      if (base.length > 180) base = `${base.slice(0, 160)}.exe`;
+      return base;
+    },
+  });
+  return updateDownloader;
+}
 
 function broadcast(channel, payload) {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -157,7 +200,7 @@ function broadcast(channel, payload) {
 }
 
 async function loadModules() {
-  const [agentCore, configMod, providersMod, skillsMod, mcpMod, policyMod, toolsMod] =
+  const [agentCore, configMod, providersMod, skillsMod, mcpMod, policyMod, toolsMod, ptyMod] =
     await Promise.all([
       import("@hfq/agent-core"),
       import("@hfq/config"),
@@ -166,8 +209,32 @@ async function loadModules() {
       import("@hfq/mcp"),
       import("@hfq/policy"),
       import("@hfq/tools"),
+      import("@hfq/pty"),
     ]);
-  return { agentCore, configMod, providersMod, skillsMod, mcpMod, policyMod, toolsMod };
+  return { agentCore, configMod, providersMod, skillsMod, mcpMod, policyMod, toolsMod, ptyMod };
+}
+
+async function getPtyHost() {
+  if (ptyHost) return ptyHost;
+  const { ptyMod } = await loadModules();
+  ptyHost = new ptyMod.PtyHost({
+    onData: (id, data) => {
+      broadcast("pty:data", { id, data });
+    },
+    onExit: (id, exitCode, signal) => {
+      broadcast("pty:exit", { id, exitCode, signal: signal ?? null });
+    },
+  });
+  return ptyHost;
+}
+
+function killAllPtys() {
+  if (!ptyHost) return;
+  try {
+    ptyHost.killAll();
+  } catch (err) {
+    console.warn("[HFQ] pty killAll", err);
+  }
 }
 
 function stripMcpRuntime(servers) {
@@ -428,6 +495,9 @@ function workerFacade(host) {
     },
     listChildren(sessionId) {
       return host.listChildren(sessionId);
+    },
+    listSpawnAttempts(sessionId) {
+      return host.listSpawnAttempts(sessionId);
     },
     spawnSubagent(params) {
       const { provider, ...rest } = params;
@@ -738,6 +808,7 @@ function buildUpdateSuccessResult(json, ctx) {
       releaseNotes: null,
       publishedAt: null,
       assets: [],
+      recommendedAsset: null,
       checkedAt,
       message: "暂无已发布的 Release",
       source: endpoint.source,
@@ -770,6 +841,8 @@ function buildUpdateSuccessResult(json, ctx) {
           };
         })
     : [];
+  // Prefer NSIS x64 for in-app download (D3); portable still listed in assets.
+  const recommendedAsset = pickRecommendedUpdateAsset(assets);
   return {
     ok: true,
     skipped: false,
@@ -780,6 +853,7 @@ function buildUpdateSuccessResult(json, ctx) {
     releaseNotes: typeof json.body === "string" ? json.body.slice(0, 4000) : null,
     publishedAt: json.published_at ? String(json.published_at) : null,
     assets,
+    recommendedAsset,
     checkedAt,
     tagName: tag,
     prerelease: Boolean(json.prerelease),
@@ -790,6 +864,31 @@ function buildUpdateSuccessResult(json, ctx) {
     fallbackUsed: Boolean(ctx.fallbackUsed),
     primaryError: ctx.primaryError || null,
   };
+}
+
+/**
+ * Pick preferred Windows installer from release assets (NSIS over portable).
+ * @param {Array<{ name?: string, url?: string, mirrorUrl?: string, size?: number }>} assets
+ */
+function pickRecommendedUpdateAsset(assets) {
+  const list = Array.isArray(assets) ? assets : [];
+  let best = null;
+  let bestScore = -1;
+  for (const a of list) {
+    if (!a?.url && !a?.mirrorUrl) continue;
+    const n = String(a.name || "").toLowerCase();
+    if (!n.endsWith(".exe")) continue;
+    if (n.endsWith(".blockmap")) continue;
+    let score = 50;
+    if (n.includes("portable")) score = 40;
+    if (n.includes("setup") || n.includes("nsis") || n.includes("-x64")) score = 100;
+    if (n.includes("hfq") && n.includes("code") && !n.includes("portable")) score = Math.max(score, 90);
+    if (score > bestScore) {
+      bestScore = score;
+      best = a;
+    }
+  }
+  return best;
 }
 
 async function checkForUpdates(opts = {}) {
@@ -942,6 +1041,9 @@ async function maybeCheckUpdatesOnStartup() {
 }
 
 function createWindow() {
+  // Product shell has its own chrome — hide Electron default File/Edit/View menu bar.
+  Menu.setApplicationMenu(null);
+
   const icon = resolveAppIcon();
   mainWindow = new BrowserWindow({
     width: 1360,
@@ -949,7 +1051,8 @@ function createWindow() {
     minWidth: 1000,
     minHeight: 680,
     title: "HFQ Code",
-    backgroundColor: "#07090d",
+    backgroundColor: "#09090b",
+    autoHideMenuBar: true,
     ...(icon ? { icon } : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -962,7 +1065,28 @@ function createWindow() {
     },
   });
 
-  mainWindow.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
+  // R9: React+Vite bundle under renderer/dist (file://). Dev: ELECTRON_RENDERER_URL=http://localhost:5173
+  const rendererUrl = process.env.ELECTRON_RENDERER_URL;
+  if (rendererUrl) {
+    mainWindow.loadURL(rendererUrl);
+    if (process.env.ELECTRON_OPEN_DEVTOOLS === "1") {
+      mainWindow.webContents.openDevTools({ mode: "detach" });
+    }
+  } else {
+    const hashRaw = (process.env.ELECTRON_RENDERER_HASH || "").replace(/^#\/?/, "");
+    // Dev/screenshot: write one-shot boot route for HashRouter (file:// search is unreliable).
+    if (hashRaw) {
+      try {
+        const bootPath = path.join(app.getPath("userData"), "boot-route.txt");
+        fs.writeFileSync(bootPath, hashRaw, "utf8");
+      } catch {
+        /* ignore */
+      }
+    }
+    mainWindow.loadFile(path.join(__dirname, "..", "renderer", "dist", "index.html"), {
+      ...(hashRaw ? { hash: `/${hashRaw}` } : {}),
+    });
+  }
 
   mainWindow.on("closed", () => {
     mainWindow = null;
@@ -980,15 +1104,35 @@ function registerIpc() {
     } catch {
       /* ignore */
     }
+    let packageVersion = app.getVersion();
+    try {
+      // When launched via `electron electron/main.cjs`, app.getVersion() can
+      // report the Electron runtime version — prefer package.json product version.
+      const pkg = require(path.join(__dirname, "..", "package.json"));
+      if (pkg?.version) packageVersion = String(pkg.version);
+    } catch {
+      /* ignore */
+    }
+    let bootRoute = null;
+    try {
+      const bootPath = path.join(app.getPath("userData"), "boot-route.txt");
+      if (fs.existsSync(bootPath)) {
+        bootRoute = fs.readFileSync(bootPath, "utf8").trim() || null;
+        fs.unlinkSync(bootPath);
+      }
+    } catch {
+      /* ignore */
+    }
     return {
       name: "HFQ Code",
-      version: app.getVersion(),
+      version: packageVersion,
       platform: process.platform,
       workspacePath,
       activeSessionId,
       activeProviderId,
       activeModel,
       bootError: bootError?.message ?? null,
+      bootRoute,
       updateRepo: `${UPDATE_REPO.owner}/${UPDATE_REPO.name}`,
       updateReleasesUrl: UPDATE_RELEASES_URL,
     };
@@ -996,6 +1140,141 @@ function registerIpc() {
 
   ipcMain.handle("update:check", async (_evt, payload = {}) => {
     return checkForUpdates({ force: payload?.force !== false });
+  });
+
+  /**
+   * D3: download installer to %APPDATA%/HFQ-Code/updates (user-initiated, not silent).
+   * payload: { url?, fileName?, expectedSize?, preferMirror?, preferPortable?, assetName? }
+   * If url omitted, re-checks releases and picks recommendedAsset.
+   */
+  ipcMain.handle("update:download", async (_evt, payload = {}) => {
+    let url = String(payload?.url || "").trim();
+    let fileName = payload?.fileName ? String(payload.fileName) : "";
+    let expectedSize = Number(payload?.expectedSize) || 0;
+
+    if (!url) {
+      const check = await checkForUpdates({ force: true });
+      if (!check?.ok) {
+        throw new Error(check?.error || "update check failed");
+      }
+      if (!check.updateAvailable) {
+        throw new Error("当前已是最新版本，无需下载");
+      }
+      let asset = check.recommendedAsset || null;
+      if (payload?.assetName && Array.isArray(check.assets)) {
+        const want = String(payload.assetName);
+        asset = check.assets.find((a) => a.name === want) || asset;
+      }
+      if (payload?.preferPortable && Array.isArray(check.assets)) {
+        const port = check.assets.find((a) => /portable/i.test(String(a.name || "")));
+        if (port) asset = port;
+      }
+      if (!asset) throw new Error("Release 中没有可下载的 .exe 安装包");
+      const preferMirror = payload?.preferMirror !== false;
+      url =
+        preferMirror && asset.mirrorUrl
+          ? String(asset.mirrorUrl)
+          : String(asset.url || asset.mirrorUrl || "");
+      fileName = fileName || String(asset.name || "");
+      expectedSize = expectedSize || Number(asset.size) || 0;
+    }
+
+    const downloader = getUpdateDownloader();
+    return downloader.start({
+      url,
+      fileName: fileName || undefined,
+      expectedSize: expectedSize || undefined,
+    });
+  });
+
+  ipcMain.handle("update:downloadCancel", async () => {
+    return getUpdateDownloader().cancel();
+  });
+
+  ipcMain.handle("update:downloadStatus", async () => {
+    return getUpdateDownloader().getState();
+  });
+
+  /**
+   * Open downloaded installer after explicit user confirm (no silent install).
+   * payload: { filePath?, confirm?: boolean } — confirm=false skips dialog (UI already confirmed).
+   */
+  ipcMain.handle("update:install", async (_evt, payload = {}) => {
+    const downloader = getUpdateDownloader();
+    const st = downloader.getState();
+    let filePath = String(payload?.filePath || st.filePath || "").trim();
+    if (!filePath) throw new Error("no installer file — download first");
+    filePath = path.resolve(filePath);
+    const updatesRoot = path.resolve(getUpdatesDir());
+    const rel = path.relative(updatesRoot, filePath);
+    if (rel.startsWith("..") || path.isAbsolute(rel)) {
+      throw new Error("installer path outside updates directory");
+    }
+    if (!filePath.toLowerCase().endsWith(".exe")) {
+      throw new Error("installer must be a .exe");
+    }
+    try {
+      await fs.access(filePath);
+    } catch {
+      throw new Error("installer file missing — re-download");
+    }
+
+    const skipDialog = payload?.confirm === false;
+    if (!skipDialog) {
+      const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+      const box = await dialog.showMessageBox(win || undefined, {
+        type: "info",
+        buttons: ["运行安装程序", "取消"],
+        defaultId: 0,
+        cancelId: 1,
+        title: "安装更新",
+        message: "即将打开 HFQ Code 安装程序",
+        detail:
+          "安装程序未做代码签名，Windows 可能提示「未知发布者」——属预期行为。\n" +
+          "请按安装向导完成升级；完成后可关闭本窗口。\n\n" +
+          filePath,
+      });
+      if (box.response !== 0) {
+        return { ok: false, cancelled: true, filePath };
+      }
+    }
+
+    const err = await shell.openPath(filePath);
+    if (err) throw new Error(err);
+    return {
+      ok: true,
+      filePath,
+      /** UI may offer quit; we do not force-quit. */
+      quitSuggested: true,
+    };
+  });
+
+  ipcMain.handle("update:clearDownloads", async () => {
+    const dir = getUpdatesDir();
+    try {
+      const entries = await fs.readdir(dir).catch(() => []);
+      for (const name of entries) {
+        await fs.rm(path.join(dir, name), { force: true, recursive: true }).catch(() => {});
+      }
+    } catch {
+      /* ignore */
+    }
+    if (updateDownloader && updateDownloader.getState().status !== "downloading") {
+      updateDownloader.state = {
+        status: "idle",
+        url: null,
+        fileName: null,
+        filePath: null,
+        bytesReceived: 0,
+        bytesTotal: null,
+        percent: null,
+        error: null,
+        startedAt: null,
+        finishedAt: null,
+        sha256: null,
+      };
+    }
+    return { ok: true, dir };
   });
 
   /** User-initiated https link open (skill homepage, docs). */
@@ -1010,6 +1289,37 @@ function registerIpc() {
     if (url.protocol !== "https:") throw new Error("only https URLs allowed");
     await shell.openExternal(url.toString());
     return { ok: true, url: url.toString() };
+  });
+
+  /**
+   * Reveal a file/folder in the OS file manager.
+   * - path absolute under data dirs or workspace (sandbox)
+   * - or relative to bound workspace
+   */
+  ipcMain.handle("shell:revealInFolder", async (_evt, payload = {}) => {
+    const { agentCore, toolsMod } = await loadModules();
+    const raw = String(payload?.path || "").trim();
+    if (!raw) throw new Error("path required");
+    const dirs = await agentCore.ensureDataDirs();
+    const dataRoot = path.resolve(dirs.root);
+    let target = path.isAbsolute(raw) ? path.resolve(raw) : null;
+    if (!target && workspacePath) {
+      target = toolsMod.resolveWorkspacePath(workspacePath, raw);
+    }
+    if (!target) throw new Error("path required (absolute or workspace-relative)");
+    const norm = path.resolve(target);
+    const underData =
+      norm === dataRoot || norm.startsWith(dataRoot + path.sep);
+    let underWs = false;
+    if (workspacePath) {
+      const ws = path.resolve(workspacePath);
+      underWs = norm === ws || norm.startsWith(ws + path.sep);
+    }
+    if (!underData && !underWs) {
+      throw new Error("path outside workspace and app data");
+    }
+    shell.showItemInFolder(norm);
+    return { ok: true, path: norm };
   });
 
   ipcMain.handle("update:openRelease", async (_evt, payload = {}) => {
@@ -1061,6 +1371,7 @@ function registerIpc() {
   ipcMain.handle("nav:listPages", async () => [
     { id: "home", label: "首页" },
     { id: "chat", label: "会话" },
+    { id: "files", label: "文件" },
     { id: "changes", label: "变更" },
     { id: "terminal", label: "终端" },
     { id: "tasks", label: "任务" },
@@ -1076,6 +1387,8 @@ function registerIpc() {
   ]);
 
   async function bindWorkspace(nextPath) {
+    // Workspace switch: tear down interactive shells bound to previous root.
+    killAllPtys();
     workspacePath = path.resolve(nextPath);
     activeSessionId = null;
     try {
@@ -1208,6 +1521,65 @@ function registerIpc() {
     }
   });
 
+  /**
+   * List a single directory under the bound workspace (Files page / explorer).
+   * Shallow only — UI expands folders on demand. Paths are workspace-relative POSIX.
+   */
+  ipcMain.handle("workspace:listDir", async (_evt, payload = {}) => {
+    const { toolsMod } = await loadModules();
+    const ws = String(payload.workspacePath || workspacePath || "").trim();
+    if (!ws) throw new Error("Open a workspace first");
+    const raw = String(payload.path ?? ".").trim() || ".";
+    const rel = raw === "/" || raw === "\\" ? "." : raw.replace(/\\/g, "/").replace(/^\.?\//, "") || ".";
+    const full = toolsMod.resolveWorkspacePath(ws, rel === "." ? "." : rel);
+    let st;
+    try {
+      st = await fs.stat(full);
+    } catch (err) {
+      if ((err && err.code) === "ENOENT") {
+        return { ok: false, path: rel, error: "not found", entries: [] };
+      }
+      throw err;
+    }
+    if (!st.isDirectory()) {
+      return { ok: false, path: rel, error: "not a directory", entries: [] };
+    }
+    const dirents = await fs.readdir(full, { withFileTypes: true });
+    const entries = [];
+    for (const d of dirents) {
+      const name = d.name;
+      if (!name || name === "." || name === "..") continue;
+      // Soft-hide heavy / secret dirs at root listing only
+      const childRel = rel === "." ? name : `${rel.replace(/\/$/, "")}/${name}`;
+      let type = "other";
+      if (d.isDirectory()) type = "dir";
+      else if (d.isFile()) type = "file";
+      else if (d.isSymbolicLink()) type = "symlink";
+      let size = 0;
+      let mtimeMs = 0;
+      try {
+        const cst = await fs.stat(path.join(full, name));
+        size = cst.isFile() ? cst.size : 0;
+        mtimeMs = cst.mtimeMs || 0;
+      } catch {
+        /* ignore broken links */
+      }
+      entries.push({
+        name,
+        path: childRel.split(path.sep).join("/"),
+        type,
+        size,
+        mtimeMs,
+      });
+    }
+    entries.sort((a, b) => {
+      if (a.type === "dir" && b.type !== "dir") return -1;
+      if (a.type !== "dir" && b.type === "dir") return 1;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    });
+    return { ok: true, path: rel === "." ? "." : rel, entries };
+  });
+
   ipcMain.handle("workspace:writeText", async (_evt, payload = {}) => {
     const { toolsMod } = await loadModules();
     const ws = String(payload.workspacePath || workspacePath || "").trim();
@@ -1221,6 +1593,50 @@ function registerIpc() {
     await fs.mkdir(path.dirname(full), { recursive: true });
     await fs.writeFile(full, content, "utf8");
     return { ok: true, path: rel, bytes: Buffer.byteLength(content, "utf8") };
+  });
+
+  /**
+   * System file picker constrained to the bound workspace (composer attach / open).
+   * Returns workspace-relative POSIX paths only — rejects escapes.
+   */
+  ipcMain.handle("workspace:pickFiles", async (_evt, payload = {}) => {
+    const { toolsMod } = await loadModules();
+    const ws = String(payload.workspacePath || workspacePath || "").trim();
+    if (!ws) throw new Error("Open a workspace first");
+    const multi = payload.multi !== false;
+    const result = await dialog.showOpenDialog(mainWindow || undefined, {
+      title: multi ? "选择工作区文件" : "选择工作区文件",
+      defaultPath: ws,
+      properties: multi
+        ? ["openFile", "multiSelections"]
+        : ["openFile"],
+    });
+    if (result.canceled || !result.filePaths?.length) {
+      return { ok: false, cancelled: true, paths: [] };
+    }
+    const paths = [];
+    const rejected = [];
+    for (const abs of result.filePaths) {
+      try {
+        const full = path.resolve(abs);
+        const rel = path.relative(ws, full);
+        if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) {
+          rejected.push(abs);
+          continue;
+        }
+        // Also validate via tools sandbox
+        toolsMod.resolveWorkspacePath(ws, rel);
+        paths.push(rel.split(path.sep).join("/"));
+      } catch {
+        rejected.push(abs);
+      }
+    }
+    return {
+      ok: paths.length > 0,
+      cancelled: false,
+      paths,
+      rejected: rejected.length ? rejected : undefined,
+    };
   });
 
   /** Run a one-shot shell command in the workspace (Terminal page), not full agent loop. */
@@ -1242,6 +1658,73 @@ function registerIpc() {
       stderr: String(out.stderr || ""),
       at: new Date().toISOString(),
     };
+  });
+
+  /** Interactive PTY (1.1). Renderer/xterm is a separate frontend track. */
+  ipcMain.handle("pty:create", async (_evt, payload = {}) => {
+    const ws = String(payload.workspacePath || workspacePath || "").trim();
+    if (!ws) throw new Error("Open a workspace first");
+    const host = await getPtyHost();
+    let shellPref = payload.shell ?? null;
+    if (shellPref == null || String(shellPref).trim() === "") {
+      try {
+        const cfg = await readConfig();
+        const t = cfg?.prefs?.terminalShell;
+        if (t === "powershell" || t === "pwsh" || t === "cmd") shellPref = t;
+      } catch {
+        /* ignore */
+      }
+    }
+    return host.create({
+      workspaceRoot: ws,
+      cwd: payload.cwd ?? null,
+      shell: shellPref,
+      cols: payload.cols,
+      rows: payload.rows,
+      label: payload.label ?? payload.sessionId ?? null,
+    });
+  });
+
+  ipcMain.handle("pty:write", async (_evt, payload = {}) => {
+    const id = String(payload.id || "").trim();
+    if (!id) throw new Error("id required");
+    const host = await getPtyHost();
+    return host.write(id, String(payload.data ?? ""));
+  });
+
+  ipcMain.handle("pty:resize", async (_evt, payload = {}) => {
+    const id = String(payload.id || "").trim();
+    if (!id) throw new Error("id required");
+    const host = await getPtyHost();
+    return host.resize(id, payload.cols, payload.rows);
+  });
+
+  ipcMain.handle("pty:kill", async (_evt, payload = {}) => {
+    const id = String(payload.id || "").trim();
+    if (!id) throw new Error("id required");
+    const host = await getPtyHost();
+    return host.kill(id);
+  });
+
+  ipcMain.handle("pty:list", async () => {
+    if (!ptyHost) return [];
+    return ptyHost.list();
+  });
+
+  /** Available interactive shells for Terminal settings / picker. */
+  ipcMain.handle("pty:shells", async () => {
+    const { ptyMod } = await loadModules();
+    const shells =
+      typeof ptyMod.listAvailableShells === "function" ? ptyMod.listAvailableShells() : [];
+    let preferred = "";
+    try {
+      const cfg = await readConfig();
+      const t = cfg?.prefs?.terminalShell;
+      if (t === "powershell" || t === "pwsh" || t === "cmd") preferred = t;
+    } catch {
+      /* ignore */
+    }
+    return { shells, preferred };
   });
 
   ipcMain.handle("config:get", async () => {
@@ -1542,6 +2025,84 @@ function registerIpc() {
     return { ok: true, path: String(payload.path), bytes: Buffer.byteLength(content, "utf8") };
   });
 
+  /** Workspace git for Changes UI (human). Path-sandboxed; no force-push/amend. */
+  function requireWorkspaceGit(payload = {}) {
+    const ws = String(payload.workspacePath || workspacePath || "").trim();
+    if (!ws) throw new Error("Open a workspace first");
+    return ws;
+  }
+
+  ipcMain.handle("git:status", async (_evt, payload = {}) => {
+    const { toolsMod } = await loadModules();
+    const ws = requireWorkspaceGit(payload);
+    return toolsMod.gitStatus(ws, {
+      path: payload.path,
+      includeLog: payload.includeLog,
+      maxEntries: payload.maxEntries,
+      timeoutMs: payload.timeoutMs,
+    });
+  });
+
+  ipcMain.handle("git:diff", async (_evt, payload = {}) => {
+    const { toolsMod } = await loadModules();
+    const ws = requireWorkspaceGit(payload);
+    return toolsMod.gitDiff(ws, {
+      path: payload.path,
+      staged: payload.staged,
+      maxBytes: payload.maxBytes,
+      timeoutMs: payload.timeoutMs,
+    });
+  });
+
+  ipcMain.handle("git:show", async (_evt, payload = {}) => {
+    const { toolsMod } = await loadModules();
+    const ws = requireWorkspaceGit(payload);
+    return toolsMod.gitShow(ws, {
+      object: payload.object,
+      path: payload.path,
+      maxBytes: payload.maxBytes,
+      timeoutMs: payload.timeoutMs,
+    });
+  });
+
+  ipcMain.handle("git:stage", async (_evt, payload = {}) => {
+    const { toolsMod } = await loadModules();
+    const ws = requireWorkspaceGit(payload);
+    return toolsMod.gitStage(ws, {
+      paths: payload.paths,
+      timeoutMs: payload.timeoutMs,
+    });
+  });
+
+  ipcMain.handle("git:unstage", async (_evt, payload = {}) => {
+    const { toolsMod } = await loadModules();
+    const ws = requireWorkspaceGit(payload);
+    return toolsMod.gitUnstage(ws, {
+      paths: payload.paths,
+      timeoutMs: payload.timeoutMs,
+    });
+  });
+
+  ipcMain.handle("git:commit", async (_evt, payload = {}) => {
+    const { toolsMod } = await loadModules();
+    const ws = requireWorkspaceGit(payload);
+    return toolsMod.gitCommit(ws, {
+      message: payload.message,
+      paths: payload.paths,
+      timeoutMs: payload.timeoutMs,
+    });
+  });
+
+  ipcMain.handle("git:log", async (_evt, payload = {}) => {
+    const { toolsMod } = await loadModules();
+    const ws = requireWorkspaceGit(payload);
+    return toolsMod.gitLog(ws, {
+      path: payload.path,
+      max: payload.max ?? payload.limit,
+      timeoutMs: payload.timeoutMs,
+    });
+  });
+
   ipcMain.handle("app:paths", async () => {
     const { agentCore, configMod } = await loadModules();
     const dirs = await agentCore.ensureDataDirs();
@@ -1550,10 +2111,21 @@ function registerIpc() {
       typeof configMod.getCredentialsPath === "function"
         ? configMod.getCredentialsPath(configPath)
         : path.join(dirs.root, "credentials.json");
+    let credentialsEncoding = "unknown";
+    try {
+      if (typeof configMod.credentialsDiskEncoding === "function") {
+        credentialsEncoding = await configMod.credentialsDiskEncoding(credentialsPath);
+      }
+    } catch {
+      credentialsEncoding = "unknown";
+    }
     return {
       ...dirs,
       configPath,
       credentialsPath,
+      credentialsEncoding,
+      credentialsDpapi:
+        typeof configMod.shouldUseDpapi === "function" ? configMod.shouldUseDpapi() : false,
       memoryPath: path.join(dirs.memory || path.join(dirs.root, "memory"), "user", "notes.json"),
       memoryRoot: dirs.memory,
       platform: process.platform,
@@ -1599,6 +2171,12 @@ function registerIpc() {
     if (payload.usageOutputPerMillion != null) {
       const n = Number(payload.usageOutputPerMillion);
       if (Number.isFinite(n)) patch.usageOutputPerMillion = Math.max(0, n);
+    }
+    if (payload.terminalShell !== undefined) {
+      const s = String(payload.terminalShell || "").trim().toLowerCase();
+      if (s === "" || s === "powershell" || s === "pwsh" || s === "cmd") {
+        patch.terminalShell = s;
+      }
     }
     const next = configMod.withPrefs(cfg, patch);
     await writeConfig(next);
@@ -1655,6 +2233,13 @@ function registerIpc() {
     const sessionId = payload?.sessionId || activeSessionId;
     if (!sessionId) return [];
     return mgr.listChildren(sessionId);
+  });
+
+  ipcMain.handle("session:listSpawnAttempts", async (_evt, payload = {}) => {
+    const mgr = await ensureSessionManager();
+    const sessionId = payload?.sessionId || activeSessionId;
+    if (!sessionId) return [];
+    return mgr.listSpawnAttempts(sessionId);
   });
 
   ipcMain.handle("session:spawnSubagent", async (_evt, payload = {}) => {
@@ -1752,6 +2337,24 @@ function registerIpc() {
     return agentCore.aggregateUsage({ pricing });
   });
 
+  /** Export usage CSV + JSON under data/exports/usage-<stamp>/ (Track E). */
+  ipcMain.handle("usage:export", async () => {
+    const { agentCore } = await loadModules();
+    const cfg = await readConfig();
+    const inP = Number(cfg.prefs?.usageInputPerMillion) || 0;
+    const outP = Number(cfg.prefs?.usageOutputPerMillion) || 0;
+    const pricing =
+      inP > 0 || outP > 0
+        ? { inputPerMillion: inP, outputPerMillion: outP }
+        : undefined;
+    const summary = await agentCore.aggregateUsage({ pricing });
+    const dirs = await agentCore.ensureDataDirs();
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const outDir = path.join(dirs.root, "exports", `usage-${stamp}`);
+    return agentCore.exportUsageCsvBundle(summary, outDir);
+  });
+
+
   ipcMain.handle("import:scan", async (_evt, payload = {}) => {
     const { agentCore } = await loadModules();
     return agentCore.scanImportSources({
@@ -1786,11 +2389,17 @@ function registerIpc() {
     const { agentCore, configMod } = await loadModules();
     const cfg = await readConfig();
     const publicCfg = configMod.publicConfigView(cfg);
+    const dirs = await agentCore.ensureDataDirs();
+    const credentialsPath =
+      typeof configMod.getCredentialsPath === "function"
+        ? configMod.getCredentialsPath(path.join(dirs.root, "config.json"))
+        : path.join(dirs.root, "credentials.json");
     const bundle = await agentCore.buildDiagnosticsBundle({
       config: publicCfg,
       appVersion: app.getVersion() || "1.0.0",
       workspacePath,
       sessionBackend: sessionBackend || null,
+      credentialsPath,
     });
     return bundle;
   });
@@ -2150,6 +2759,7 @@ if (!gotLock) {
   });
 
   app.on("before-quit", () => {
+    killAllPtys();
     if (sessionWorker) {
       void sessionWorker.shutdown().catch(() => undefined);
       sessionWorker = null;

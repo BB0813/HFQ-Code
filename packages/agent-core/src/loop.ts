@@ -93,6 +93,8 @@ export interface AgentSessionOptions {
   subagentDepth?: number;
   /** Tool profile for sub-agents. */
   subagentProfile?: SubagentProfile;
+  /** Short goal text for sub-agent children (Tasks tree). */
+  goal?: string;
   /** Hard cap on tool executions this turn/session life. */
   maxToolCalls?: number;
   /** Optional handler for spawn_subagent tool (wired by SessionManager). */
@@ -141,6 +143,10 @@ export class AgentSession {
       createdAt: now,
       updatedAt: now,
       status: "idle",
+      parentSessionId: opts.parentSessionId,
+      subagentProfile: opts.subagentProfile,
+      subagentDepth: opts.subagentDepth,
+      goal: opts.goal,
     };
     const initialMode = normalizePermissionMode(
       opts.permissionMode ?? (opts.planMode ? "plan" : "confirm_before_change"),
@@ -254,7 +260,8 @@ export class AgentSession {
   }
 
   private pushEventLog(event: SessionEvent): void {
-    if (event.type === "message.delta") return;
+    // Live-only streams — completed thinking row is enough for resume.
+    if (event.type === "message.delta" || event.type === "thinking.delta") return;
     this.eventLog.push(event);
     if (this.eventLog.length > AgentSession.EVENT_LOG_MAX) {
       this.eventLog.splice(0, this.eventLog.length - AgentSession.EVENT_LOG_MAX);
@@ -390,12 +397,19 @@ export class AgentSession {
       workspacePath: this.info.workspacePath,
       at: new Date().toISOString(),
     });
-    if (this.titleLocked && this.info.title) {
+    const hasSubMeta = Boolean(
+      this.opts.parentSessionId || this.opts.subagentProfile || this.opts.goal,
+    );
+    if ((this.titleLocked && this.info.title) || hasSubMeta) {
       await this.emit({
         type: "session.meta",
         sessionId: this.info.id,
         title: this.info.title,
         model: this.info.model,
+        parentSessionId: this.opts.parentSessionId,
+        subagentProfile: this.opts.subagentProfile,
+        subagentDepth: this.opts.subagentDepth,
+        goal: this.opts.goal,
         at: new Date().toISOString(),
       });
     }
@@ -405,7 +419,21 @@ export class AgentSession {
   private trackUi(event: SessionEvent): void {
     switch (event.type) {
       case "message.completed":
-        this.uiMessages.push({ role: event.role, text: event.text });
+        this.uiMessages.push({
+          role: event.role,
+          text: event.text,
+          messageId: event.messageId,
+        });
+        break;
+      case "thinking.completed":
+        if (event.text?.trim()) {
+          this.uiMessages.push({
+            role: "thinking",
+            text: event.text,
+            messageId: event.messageId,
+            thinking: true,
+          });
+        }
         break;
       case "tool.started":
         this.uiMessages.push({
@@ -413,16 +441,36 @@ export class AgentSession {
           name: event.name,
           text: `开始执行 ${event.name}`,
           detail: event.input,
+          callId: event.callId,
+          phase: "running",
+          input: event.input,
         });
         break;
-      case "tool.completed":
-        this.uiMessages.push({
-          role: "tool",
+      case "tool.completed": {
+        const idx = event.callId
+          ? this.uiMessages.findIndex(
+              (m) =>
+                m &&
+                m.role === "tool" &&
+                m.callId === event.callId &&
+                m.phase === "running",
+            )
+          : -1;
+        const row = {
+          role: "tool" as const,
           name: event.name,
           text: event.ok ? `完成 ${event.name}` : `失败 ${event.name}`,
           detail: event.output,
-        });
+          callId: event.callId,
+          phase: "done" as const,
+          ok: event.ok,
+          input: idx >= 0 ? this.uiMessages[idx]?.input : undefined,
+          output: event.output,
+        };
+        if (idx >= 0) this.uiMessages[idx] = { ...this.uiMessages[idx], ...row };
+        else this.uiMessages.push(row);
         break;
+      }
       case "permission.resolved": {
         const map: Record<string, string> = {
           allow: "允许一次",
@@ -486,6 +534,13 @@ export class AgentSession {
           this.titleLocked = true;
         }
         if (event.model?.trim()) this.info.model = event.model.trim();
+        if (event.parentSessionId) this.info.parentSessionId = event.parentSessionId;
+        if (event.subagentProfile) this.info.subagentProfile = event.subagentProfile;
+        if (event.subagentDepth != null) this.info.subagentDepth = event.subagentDepth;
+        if (event.goal?.trim()) this.info.goal = event.goal.trim();
+        break;
+      case "subagent.updated":
+        // Parent-only observability; no local uiTasks mutation required.
         break;
       case "usage.updated":
         this.usage.inputTokens += Number(event.inputTokens) || 0;
@@ -732,6 +787,7 @@ export class AgentSession {
       }
       const streamMessageId = randomUUID();
       let streamedAny = false;
+      let thinkingStreamed = false;
       const result = await this.opts.provider.chat({
         model: this.opts.model,
         messages: this.messages,
@@ -753,6 +809,17 @@ export class AgentSession {
             at: new Date().toISOString(),
           });
         },
+        onThinkingDelta: async (text) => {
+          if (!text) return;
+          thinkingStreamed = true;
+          await this.opts.onEvent?.({
+            type: "thinking.delta",
+            sessionId: this.info.id,
+            messageId: streamMessageId,
+            text,
+            at: new Date().toISOString(),
+          });
+        },
       });
       this.assertNotAborted();
 
@@ -762,6 +829,18 @@ export class AgentSession {
           sessionId: this.info.id,
           inputTokens: result.usage.inputTokens,
           outputTokens: result.usage.outputTokens,
+          at: new Date().toISOString(),
+        });
+      }
+
+      // Durable CoT for resume / collapsed UI; not re-injected into model history.
+      const reasoningText = typeof result.reasoning === "string" ? result.reasoning.trim() : "";
+      if (reasoningText) {
+        await this.emit({
+          type: "thinking.completed",
+          sessionId: this.info.id,
+          messageId: streamMessageId,
+          text: reasoningText,
           at: new Date().toISOString(),
         });
       }
@@ -780,7 +859,7 @@ export class AgentSession {
         await this.emit({
           type: "message.completed",
           sessionId: this.info.id,
-          messageId: streamedAny ? streamMessageId : randomUUID(),
+          messageId: streamedAny || thinkingStreamed || reasoningText ? streamMessageId : randomUUID(),
           role: "assistant",
           text: result.message,
           at: new Date().toISOString(),

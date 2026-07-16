@@ -34,8 +34,24 @@ export interface CreateSessionParams {
   parentSessionId?: string;
   subagentDepth?: number;
   subagentProfile?: SubagentProfile;
+  /** Short goal text for sub-agent children. */
+  goal?: string;
   maxRounds?: number;
   maxToolCalls?: number;
+}
+
+/** Parent-tree spawn attempt for Tasks observability (B3). */
+export interface SubagentSpawnAttempt {
+  attemptId: string;
+  parentSessionId: string;
+  childSessionId?: string;
+  profile: SubagentProfile;
+  goal: string;
+  status: "started" | "completed" | "failed";
+  error?: string;
+  errorCode?: string;
+  at: string;
+  updatedAt: string;
 }
 
 export interface OpenSessionParams {
@@ -71,6 +87,8 @@ export class SessionManager {
   private readonly sendQueues = new Map<string, Promise<void>>();
   /** parentId → child session ids */
   private readonly children = new Map<string, Set<string>>();
+  /** parentId → spawn attempts (including failed before/without child) */
+  private readonly spawnAttempts = new Map<string, SubagentSpawnAttempt[]>();
   /** last provider/model used for spawn inheritance */
   private readonly sessionProviders = new Map<
     string,
@@ -90,6 +108,42 @@ export class SessionManager {
       .map((id) => this.sessions.get(id)?.info)
       .filter((x): x is SessionInfo => Boolean(x))
       .map((s) => ({ ...s }));
+  }
+
+  /** Recent spawn attempts for a parent (success + failed), newest first. */
+  listSpawnAttempts(parentSessionId: string): SubagentSpawnAttempt[] {
+    const list = this.spawnAttempts.get(parentSessionId) ?? [];
+    return list.map((a) => ({ ...a })).reverse();
+  }
+
+  private pushSpawnAttempt(attempt: SubagentSpawnAttempt): void {
+    const list = this.spawnAttempts.get(attempt.parentSessionId) ?? [];
+    list.push(attempt);
+    if (list.length > 50) list.splice(0, list.length - 50);
+    this.spawnAttempts.set(attempt.parentSessionId, list);
+  }
+
+  private updateSpawnAttempt(
+    parentSessionId: string,
+    attemptId: string,
+    patch: Partial<SubagentSpawnAttempt>,
+  ): SubagentSpawnAttempt | undefined {
+    const list = this.spawnAttempts.get(parentSessionId);
+    if (!list) return undefined;
+    const idx = list.findIndex((a) => a.attemptId === attemptId);
+    if (idx < 0) return undefined;
+    const next = { ...list[idx], ...patch, updatedAt: new Date().toISOString() };
+    list[idx] = next;
+    return next;
+  }
+
+  private async emitParentSubagent(
+    parent: AgentSession,
+    event: Extract<SessionEvent, { type: "subagent.updated" }>,
+  ): Promise<void> {
+    // Best-effort: surface on parent event stream for UI without requiring a full transcript write API.
+    await this.opts.onEvent?.(event);
+    void parent;
   }
 
   get(sessionId: string): SessionInfo | undefined {
@@ -163,6 +217,7 @@ export class SessionManager {
       parentSessionId: params.parentSessionId,
       subagentDepth: params.subagentDepth,
       subagentProfile: params.subagentProfile,
+      goal: params.goal,
       maxRounds: params.maxRounds,
       maxToolCalls: params.maxToolCalls,
       onSpawnSubagent: async ({ goal, profile, parentSessionId }) => {
@@ -199,6 +254,7 @@ export class SessionManager {
 
   /**
    * Spawn a child session, run a single goal turn, return summary for parent tool.
+   * Emits `subagent.updated` on the manager event bus for Tasks UI.
    */
   async spawnSubagent(params: {
     parentSessionId: string;
@@ -207,18 +263,99 @@ export class SessionManager {
     provider?: ModelProvider;
     model?: string;
     workspacePath?: string;
-  }): Promise<{ childSessionId: string; summary: string; ok: boolean; error?: string }> {
+  }): Promise<{
+    childSessionId: string;
+    summary: string;
+    ok: boolean;
+    error?: string;
+    errorCode?: string;
+  }> {
     const parent = this.sessions.get(params.parentSessionId);
     if (!parent) throw new Error(`unknown parent session: ${params.parentSessionId}`);
-    const depth = parent.getSubagentDepth() + 1;
-    if (depth > 2) {
+    const goal = String(params.goal ?? "").trim();
+    if (!goal) {
       return {
         childSessionId: "",
-        summary: "sub-agent depth exceeded",
+        summary: "sub-agent goal required",
         ok: false,
-        error: "depth",
+        error: "goal required",
+        errorCode: "goal_required",
       };
     }
+    const attemptId = `sa_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const at = new Date().toISOString();
+    const depth = parent.getSubagentDepth() + 1;
+
+    const failEarly = async (
+      error: string,
+      errorCode: string,
+    ): Promise<{
+      childSessionId: string;
+      summary: string;
+      ok: boolean;
+      error?: string;
+      errorCode?: string;
+    }> => {
+      this.pushSpawnAttempt({
+        attemptId,
+        parentSessionId: params.parentSessionId,
+        profile: params.profile,
+        goal,
+        status: "failed",
+        error,
+        errorCode,
+        at,
+        updatedAt: at,
+      });
+      await this.emitParentSubagent(parent, {
+        type: "subagent.updated",
+        sessionId: params.parentSessionId,
+        parentSessionId: params.parentSessionId,
+        profile: params.profile,
+        goal,
+        status: "failed",
+        error,
+        errorCode,
+        at,
+      });
+      return {
+        childSessionId: "",
+        summary: formatSubagentSummary({
+          goal,
+          profile: params.profile,
+          childSessionId: "",
+          ok: false,
+          error,
+        }),
+        ok: false,
+        error,
+        errorCode,
+      };
+    };
+
+    if (depth > 2) {
+      return failEarly("sub-agent depth exceeded (max 2)", "depth");
+    }
+
+    this.pushSpawnAttempt({
+      attemptId,
+      parentSessionId: params.parentSessionId,
+      profile: params.profile,
+      goal,
+      status: "started",
+      at,
+      updatedAt: at,
+    });
+    await this.emitParentSubagent(parent, {
+      type: "subagent.updated",
+      sessionId: params.parentSessionId,
+      parentSessionId: params.parentSessionId,
+      profile: params.profile,
+      goal,
+      status: "started",
+      at,
+    });
+
     const inherited = this.sessionProviders.get(params.parentSessionId);
     const provider = params.provider ?? inherited?.provider ?? createMockProvider();
     const model = params.model ?? inherited?.model ?? parent.info.model ?? "mock-hfq";
@@ -226,25 +363,74 @@ export class SessionManager {
       params.workspacePath || parent.info.workspacePath,
     );
     const budget = defaultBudget(params.profile, depth);
-    const title = `子代理 · ${params.profile}: ${params.goal.slice(0, 40)}`;
+    const title = `子代理 · ${params.profile}: ${goal.slice(0, 40)}`;
 
-    const childInfo = await this.create({
-      workspacePath,
-      provider,
-      model,
-      title,
+    let childInfo: SessionInfo;
+    try {
+      childInfo = await this.create({
+        workspacePath,
+        provider,
+        model,
+        title,
+        parentSessionId: params.parentSessionId,
+        subagentDepth: depth,
+        subagentProfile: params.profile,
+        goal,
+        maxRounds: budget.maxRounds,
+        maxToolCalls: budget.maxToolCalls,
+        planMode: params.profile === "explore" ? false : undefined,
+      });
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      this.updateSpawnAttempt(params.parentSessionId, attemptId, {
+        status: "failed",
+        error,
+        errorCode: "create_failed",
+      });
+      await this.emitParentSubagent(parent, {
+        type: "subagent.updated",
+        sessionId: params.parentSessionId,
+        parentSessionId: params.parentSessionId,
+        profile: params.profile,
+        goal,
+        status: "failed",
+        error,
+        errorCode: "create_failed",
+        at: new Date().toISOString(),
+      });
+      return {
+        childSessionId: "",
+        summary: formatSubagentSummary({
+          goal,
+          profile: params.profile,
+          childSessionId: "",
+          ok: false,
+          error,
+        }),
+        ok: false,
+        error,
+        errorCode: "create_failed",
+      };
+    }
+
+    this.updateSpawnAttempt(params.parentSessionId, attemptId, {
+      childSessionId: childInfo.id,
+    });
+    await this.emitParentSubagent(parent, {
+      type: "subagent.updated",
+      sessionId: params.parentSessionId,
       parentSessionId: params.parentSessionId,
-      subagentDepth: depth,
-      subagentProfile: params.profile,
-      maxRounds: budget.maxRounds,
-      maxToolCalls: budget.maxToolCalls,
-      planMode: params.profile === "explore" ? false : undefined,
+      childSessionId: childInfo.id,
+      profile: params.profile,
+      goal,
+      status: "started",
+      at: new Date().toISOString(),
     });
 
     try {
       await this.send(
         childInfo.id,
-        `You are a sub-agent (${params.profile}). Complete this goal and finish with a concise summary.\n\nGoal:\n${params.goal}`,
+        `You are a sub-agent (${params.profile}). Complete this goal and finish with a concise summary.\n\nGoal:\n${goal}`,
       );
       const snap = this.getSnapshot(childInfo.id);
       const lastAssistant = [...(snap?.messages || [])]
@@ -252,24 +438,62 @@ export class SessionManager {
         .find((m) => m.role === "assistant");
       const changePaths = (snap?.changes || []).map((c) => c.path);
       const summary = formatSubagentSummary({
-        goal: params.goal,
+        goal,
         profile: params.profile,
         childSessionId: childInfo.id,
         assistantText: lastAssistant?.text,
         changePaths,
         ok: true,
       });
+      this.updateSpawnAttempt(params.parentSessionId, attemptId, {
+        status: "completed",
+        childSessionId: childInfo.id,
+      });
+      await this.emitParentSubagent(parent, {
+        type: "subagent.updated",
+        sessionId: params.parentSessionId,
+        parentSessionId: params.parentSessionId,
+        childSessionId: childInfo.id,
+        profile: params.profile,
+        goal,
+        status: "completed",
+        at: new Date().toISOString(),
+      });
       return { childSessionId: childInfo.id, summary, ok: true };
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
       const summary = formatSubagentSummary({
-        goal: params.goal,
+        goal,
         profile: params.profile,
         childSessionId: childInfo.id,
         ok: false,
         error,
       });
-      return { childSessionId: childInfo.id, summary, ok: false, error };
+      this.updateSpawnAttempt(params.parentSessionId, attemptId, {
+        status: "failed",
+        childSessionId: childInfo.id,
+        error,
+        errorCode: "run_failed",
+      });
+      await this.emitParentSubagent(parent, {
+        type: "subagent.updated",
+        sessionId: params.parentSessionId,
+        parentSessionId: params.parentSessionId,
+        childSessionId: childInfo.id,
+        profile: params.profile,
+        goal,
+        status: "failed",
+        error,
+        errorCode: "run_failed",
+        at: new Date().toISOString(),
+      });
+      return {
+        childSessionId: childInfo.id,
+        summary,
+        ok: false,
+        error,
+        errorCode: "run_failed",
+      };
     }
   }
 

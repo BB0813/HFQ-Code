@@ -86,6 +86,28 @@ function parseToolCalls(
   });
 }
 
+/** OpenAI-compatible + DeepSeek/Qwen/etc. reasoning field variants. */
+function extractReasoningText(obj: {
+  reasoning_content?: string | null;
+  reasoning?: string | null;
+} | null | undefined): string {
+  if (!obj) return "";
+  if (typeof obj.reasoning_content === "string" && obj.reasoning_content) {
+    return obj.reasoning_content;
+  }
+  if (typeof obj.reasoning === "string" && obj.reasoning) {
+    return obj.reasoning;
+  }
+  return "";
+}
+
+function deltaReasoningChunk(delta: {
+  reasoning_content?: string | null;
+  reasoning?: string | null;
+} | null | undefined): string {
+  return extractReasoningText(delta);
+}
+
 async function chatNonStream(
   cfg: OpenAICompatibleConfig,
   req: ChatRequest,
@@ -111,6 +133,8 @@ async function chatNonStream(
       message?: {
         content?: string | null;
         tool_calls?: AssistantToolCall[];
+        reasoning_content?: string | null;
+        reasoning?: string | null;
       };
     }>;
     usage?: { prompt_tokens?: number; completion_tokens?: number };
@@ -119,11 +143,14 @@ async function chatNonStream(
   const msg = data.choices?.[0]?.message;
   const toolCalls = parseToolCalls(msg?.tool_calls ?? []);
   const message = typeof msg?.content === "string" ? msg.content : msg?.content ?? "";
+  const reasoning = extractReasoningText(msg);
+  if (reasoning && req.onThinkingDelta) await req.onThinkingDelta(reasoning);
   if (message && req.onDelta) await req.onDelta(message);
 
   return {
     message,
     toolCalls,
+    reasoning: reasoning || undefined,
     usage: {
       inputTokens: data.usage?.prompt_tokens ?? 0,
       outputTokens: data.usage?.completion_tokens ?? 0,
@@ -164,6 +191,7 @@ async function chatStream(
   const decoder = new TextDecoder("utf-8");
   let buffer = "";
   let content = "";
+  let reasoning = "";
   const toolAcc = new Map<
     number,
     { id: string; name: string; arguments: string }
@@ -179,6 +207,8 @@ async function chatStream(
       choices?: Array<{
         delta?: {
           content?: string | null;
+          reasoning_content?: string | null;
+          reasoning?: string | null;
           tool_calls?: Array<{
             index?: number;
             id?: string;
@@ -189,6 +219,8 @@ async function chatStream(
         message?: {
           content?: string | null;
           tool_calls?: AssistantToolCall[];
+          reasoning_content?: string | null;
+          reasoning?: string | null;
         };
       }>;
       usage?: { prompt_tokens?: number; completion_tokens?: number };
@@ -208,6 +240,11 @@ async function chatStream(
 
     const choice = json.choices?.[0];
     const delta = choice?.delta;
+    const thinkChunk = deltaReasoningChunk(delta);
+    if (thinkChunk) {
+      reasoning += thinkChunk;
+      await req.onThinkingDelta?.(thinkChunk);
+    }
     if (delta?.content) {
       content += delta.content;
       await req.onDelta?.(delta.content);
@@ -223,9 +260,16 @@ async function chatStream(
       }
     }
     // Non-delta full message chunks (rare)
-    if (choice?.message?.content && !content) {
-      content = String(choice.message.content);
-      await req.onDelta?.(content);
+    if (choice?.message) {
+      const fullReason = extractReasoningText(choice.message);
+      if (fullReason && !reasoning) {
+        reasoning = fullReason;
+        await req.onThinkingDelta?.(fullReason);
+      }
+      if (choice.message.content && !content) {
+        content = String(choice.message.content);
+        await req.onDelta?.(content);
+      }
     }
   };
 
@@ -261,6 +305,7 @@ async function chatStream(
   return {
     message: content,
     toolCalls,
+    reasoning: reasoning || undefined,
     usage,
   };
 }

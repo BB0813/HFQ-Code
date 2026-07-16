@@ -158,3 +158,93 @@ export async function exportUsageJson(summary: UsageSummary, outPath: string): P
   await fs.mkdir(path.dirname(outPath), { recursive: true });
   await fs.writeFile(outPath, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
 }
+
+function csvEscape(value: unknown): string {
+  const s = value == null ? "" : String(value);
+  if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+/** Sessions sheet: one row per session. */
+export function usageSessionsToCsv(summary: UsageSummary): string {
+  const headers = [
+    "sessionId",
+    "title",
+    "model",
+    "workspacePath",
+    "day",
+    "inputTokens",
+    "outputTokens",
+    "totalTokens",
+    "estimatedCostUsd",
+    "updatedAt",
+  ];
+  const lines = [headers.join(",")];
+  for (const s of summary.sessions) {
+    lines.push(
+      [
+        s.sessionId,
+        s.title,
+        s.model ?? "",
+        s.workspacePath ?? "",
+        s.day,
+        s.inputTokens,
+        s.outputTokens,
+        s.totalTokens,
+        s.estimatedCostUsd ?? "",
+        s.updatedAt,
+      ]
+        .map(csvEscape)
+        .join(","),
+    );
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+/** Daily sheet: one row per day. */
+export function usageDailyToCsv(summary: UsageSummary): string {
+  const headers = [
+    "day",
+    "sessions",
+    "inputTokens",
+    "outputTokens",
+    "totalTokens",
+    "estimatedCostUsd",
+  ];
+  const lines = [headers.join(",")];
+  for (const d of summary.daily) {
+    lines.push(
+      [
+        d.day,
+        d.sessions,
+        d.inputTokens,
+        d.outputTokens,
+        d.totalTokens,
+        d.estimatedCostUsd ?? "",
+      ]
+        .map(csvEscape)
+        .join(","),
+    );
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+/**
+ * Write usage CSV files under outDir:
+ *   usage-sessions.csv · usage-daily.csv · usage-summary.json
+ */
+export async function exportUsageCsvBundle(
+  summary: UsageSummary,
+  outDir: string,
+): Promise<{ dir: string; files: string[] }> {
+  await fs.mkdir(outDir, { recursive: true });
+  const files: string[] = [];
+  const sessionsPath = path.join(outDir, "usage-sessions.csv");
+  const dailyPath = path.join(outDir, "usage-daily.csv");
+  const jsonPath = path.join(outDir, "usage-summary.json");
+  await fs.writeFile(sessionsPath, usageSessionsToCsv(summary), "utf8");
+  await fs.writeFile(dailyPath, usageDailyToCsv(summary), "utf8");
+  await fs.writeFile(jsonPath, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
+  files.push("usage-sessions.csv", "usage-daily.csv", "usage-summary.json");
+  return { dir: outDir, files };
+}

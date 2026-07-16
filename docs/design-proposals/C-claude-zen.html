@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>方案 C · Claude / Zed 式焦点</title>
+    <link rel="stylesheet" href="./_shared.css" />
+  </head>
+  <body data-scheme="c">
+    <header class="review-bar">
+      <a href="./index.html">← 方案列表</a>
+      <strong>方案 C · Claude / Zed 式焦点</strong>
+      <span class="pill">极简 · 对话优先</span>
+    </header>
+    <div class="app app-c">
+      <aside class="rail rail-c">
+        <div class="rail-logo">H</div>
+        <button class="rail-btn active">会话</button>
+        <button class="rail-btn">改动</button>
+        <button class="rail-btn">终端</button>
+        <button class="rail-btn">更多</button>
+      </aside>
+
+      <main class="main main-c">
+        <header class="top top-c">
+          <div class="top-left">
+            <span class="workspace mono">hfq-demo</span>
+            <span class="sep">/</span>
+            <h1>修登录页鉴权</h1>
+          </div>
+          <div class="top-actions">
+            <span class="chip">变更前确认</span>
+            <span class="chip mono">gpt-4.1-mini</span>
+            <button class="btn sm">历史</button>
+          </div>
+        </header>
+
+        <section class="stream stream-c">
+          <div class="day">今天</div>
+          <div class="msg user">
+            <div class="body">登录 401 时跳到 /login 并清 token。先查中间件再改前端。</div>
+          </div>
+          <div class="tool quiet">
+            <span class="mono">read_file</span> · auth.ts · <span class="badge ok">ok</span>
+          </div>
+          <div class="tool quiet">
+            <span class="mono">apply_patch</span> · client.ts · <span class="badge ok">ok</span>
+          </div>
+          <div class="msg assistant">
+            <div class="body">
+              已在 API 客户端统一处理 401。建议你跑一下 <span class="mono">pnpm test auth</span>；
+              需要的话我可以打开终端面板代跑。
+            </div>
+            <div class="inline-actions">
+              <button class="btn sm">查看改动 (2)</button>
+              <button class="btn sm">打开终端</button>
+              <button class="btn sm">继续</button>
+            </div>
+          </div>
+        </section>
+
+        <footer class="composer composer-c">
+          <div class="composer-shell-c">
+            <textarea placeholder="消息 Agent…"></textarea>
+            <div class="composer-bar">
+              <div class="left">
+                <button class="btn sm ghost">+</button>
+                <button class="btn sm ghost">/</button>
+              </div>
+              <button class="btn primary sm">↑</button>
+            </div>
+          </div>
+          <div class="faint center-hint">工具、技能、MCP 收在「更多」与 / 菜单 · 保持主列干净</div>
+        </footer>
+      </main>
+    </div>
+
+    <!-- Floating review sheet (mock) -->
+    <div class="sheet">
+      <div class="sheet-h">
+        <strong>改动 · 2 文件</strong>
+        <button class="btn sm">关闭</button>
+      </div>
+      <div class="file-row active"><span class="mono">client.ts</span></div>
+      <pre class="diff">+ if (res.status === 401) clearToken()</pre>
+    </div>
+
+    <section class="notes">
+      <h3>方案 C 要点</h3>
+      <ul>
+        <li><strong>借鉴：</strong>Claude.ai 对话焦点 + Zed/现代编辑器的极简 chrome。</li>
+        <li><strong>主路径：</strong>几乎全宽时间线；改动/终端以浮层或命令调出。</li>
+        <li><strong>适合：</strong>对话驱动、讨厌侧栏噪音的用户。</li>
+        <li><strong>风险：</strong>多文件审阅与 PTY 不如 B 顺手；高级功能发现成本高。</li>
+      </ul>
+    </section>
+  </body>
+</html>

@@ -32,4 +32,5 @@ jobs:
       - name: pack:verify
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          HFQ_SIGN_SKIP: "1"
         run: pnpm pack:verify

@@ -1,5 +1,12 @@
 # Build Windows NSIS + portable on version tags and publish a GitHub Release.
 # Trigger: push tag v1.0.2 (or workflow_dispatch with tag input).
+#
+# Signing (HFQ-ClodBreeze self-signed):
+#   Repo secrets (recommended for release):
+#     HFQ_SIGN_PFX_BASE64  — base64 of root.pfx (never commit the file)
+#     HFQ_SIGN_PFX_PASSWORD — PFX password
+#   Optional:
+#     workflow_dispatch skip_sign=true for unsigned debug packs only
 name: Release
 
 on:
@@ -12,6 +19,14 @@ on:
         description: "Tag to build (e.g. v1.0.2). Leave empty to use package.json version."
         required: false
         default: ""
+      skip_sign:
+        description: "Skip Authenticode (unsigned pack) — use only for debugging"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 permissions:
   contents: write
@@ -46,12 +61,82 @@ jobs:
       - name: Quality gates
         run: pnpm release:check
 
-      - name: Package Windows (NSIS + portable)
-        # signAndEditExecutable is false in package.json — no winCodeSign / cert required
+      - name: Materialize signing project (HFQ_SIGN_ROOT)
+        id: signsetup
+        shell: pwsh
         env:
-          # Prefer electron from node_modules when present; builder still downloads if needed
+          HFQ_SIGN_PFX_BASE64: ${{ secrets.HFQ_SIGN_PFX_BASE64 }}
+          HFQ_SIGN_PFX_PASSWORD: ${{ secrets.HFQ_SIGN_PFX_PASSWORD }}
+          SKIP_SIGN_INPUT: ${{ github.event.inputs.skip_sign }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root = Join-Path $env:RUNNER_TEMP "hfq-sign"
+          New-Item -ItemType Directory -Force -Path (Join-Path $root "output") | Out-Null
+          New-Item -ItemType Directory -Force -Path (Join-Path $root "tools") | Out-Null
+          New-Item -ItemType Directory -Force -Path (Join-Path $root "dist") | Out-Null
+
+          $trustSrc = "apps/desktop/build/trust"
+          if (Test-Path $trustSrc) {
+            Copy-Item -Path (Join-Path $trustSrc "*") -Destination (Join-Path $root "dist") -Recurse -Force
+          }
+
+          $skip = ($env:SKIP_SIGN_INPUT -eq "true") -or ($env:HFQ_SIGN_SKIP -eq "1")
+          if (-not $env:HFQ_SIGN_PFX_BASE64 -or -not $env:HFQ_SIGN_PFX_PASSWORD) {
+            Write-Host "Secrets HFQ_SIGN_PFX_BASE64 / HFQ_SIGN_PFX_PASSWORD not set."
+            if ($skip) {
+              Write-Host "skip_sign=true — continuing UNSIGNED"
+              "HFQ_SIGN_SKIP=1" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+              "sign_mode=skipped" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+              exit 0
+            }
+            throw "Missing signing secrets. Add HFQ_SIGN_PFX_BASE64 + HFQ_SIGN_PFX_PASSWORD, or set skip_sign=true."
+          }
+
+          $pfxPath = Join-Path $root "output\root.pfx"
+          $pwdPath = Join-Path $root "output\pfx.password"
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:HFQ_SIGN_PFX_BASE64.Trim()))
+          Set-Content -Path $pwdPath -Value $env:HFQ_SIGN_PFX_PASSWORD.Trim() -NoNewline -Encoding ascii
+
+          $sdk = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -ErrorAction SilentlyContinue |
+            Sort-Object Name -Descending |
+            ForEach-Object { Join-Path $_.FullName "x64\signtool.exe" } |
+            Where-Object { Test-Path $_ } |
+            Select-Object -First 1
+          if ($sdk) {
+            Copy-Item $sdk (Join-Path $root "tools\signtool.exe") -Force
+            Write-Host "Using signtool from Windows SDK: $sdk"
+          } else {
+            Write-Host "Windows SDK signtool not found — sign.ps1 may still work if PATH has signtool"
+          }
+
+          $ciSign = "scripts/ci/sign.ps1"
+          if (Test-Path $ciSign) {
+            Copy-Item $ciSign (Join-Path $root "sign.ps1") -Force
+            Write-Host "Installed sign.ps1 from scripts/ci/sign.ps1"
+          } else {
+            throw "Missing scripts/ci/sign.ps1"
+          }
+
+          "HFQ_SIGN_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "sign_mode=enabled" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "HFQ_SIGN_ROOT=$root"
+
+      - name: Package Windows (NSIS + portable)
+        env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: pnpm pack:win
+
+      - name: Assert no private keys in release tree
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $bad = Get-ChildItem -Path "apps/desktop/release" -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '\.pfx$|pfx\.password|密码' }
+          if ($bad) {
+            $bad | ForEach-Object { Write-Host "LEAK:" $_.FullName }
+            throw "Private signing material found under release/"
+          }
+          Write-Host "OK: no pfx/password under release/"
 
       - name: SHA-256 checksums
         run: pnpm sha256:release
@@ -85,50 +170,35 @@ jobs:
           elif [ "${{ github.ref_type }}" = "tag" ]; then
             echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
           else
-            VER=$(node -p "require('./package.json').version")
+            VER=$(node -p "require('./apps/desktop/package.json').version")
             echo "tag=v${VER}" >> "$GITHUB_OUTPUT"
           fi
-          VER=$(node -p "require('./package.json').version")
-          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+          echo "sign_mode=${{ steps.signsetup.outputs.sign_mode }}" >> "$GITHUB_OUTPUT"
 
-      - name: Build release notes body
-        id: notes
-        shell: bash
-        run: |
-          SUMS=$(cat apps/desktop/release/SHA256SUMS.txt)
-          {
-            echo "body<<EOF"
-            echo "## HFQ Code ${{ steps.meta.outputs.tag }}"
-            echo ""
-            echo "Windows desktop coding agent."
-            echo ""
-            echo "### Downloads"
-            echo "- **NSIS installer** — \`HFQ Code-*-x64.exe\`"
-            echo "- **Portable** — \`HFQ Code-*-portable.exe\`"
-            echo "- **Checksums** — \`SHA256SUMS.txt\`"
-            echo ""
-            echo "### SHA-256"
-            echo '```'
-            echo "$SUMS"
-            echo '```'
-            echo ""
-            echo "Verify (PowerShell): \`Get-FileHash .\\<file> -Algorithm SHA256\`"
-            echo ""
-            echo "Unsigned builds may trigger SmartScreen. Data lives in \`%APPDATA%/HFQ-Code\`."
-            echo ""
-            echo "See [docs/RELEASE-1.0.5.md](./docs/RELEASE-1.0.5.md) and [docs/PACKAGING.md](./docs/PACKAGING.md)."
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Create GitHub Release
+      - name: Create / update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
           name: HFQ Code ${{ steps.meta.outputs.tag }}
-          draft: false
-          prerelease: ${{ contains(steps.meta.outputs.tag, '-') }}
           generate_release_notes: true
-          body: ${{ steps.notes.outputs.body }}
+          draft: false
+          prerelease: false
+          body: |
+            ## Artifacts
+            - NSIS installer (`HFQ Code-*-x64.exe`)
+            - Portable (`HFQ Code-*-portable.exe`)
+            - `SHA256SUMS.txt`
+
+            ## Code signing
+            Publisher: **HFQ-ClodBreeze** (self-signed Authenticode).
+            Mode: `${{ steps.signsetup.outputs.sign_mode }}`
+
+            First install may prompt UAC while the trust pack imports the publisher cert
+            (`resources/trust`). Self-signed builds may still show SmartScreen until reputation builds.
+
+            ## Notes
+            - Data dir: `%APPDATA%\HFQ-Code`
+            - See `docs/PACKAGING.md` for verify / trust details
           files: |
             apps/desktop/release/*.exe
             apps/desktop/release/*.blockmap

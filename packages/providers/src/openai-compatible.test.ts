@@ -160,4 +160,44 @@ describe("createOpenAICompatibleProvider", () => {
     expect(chunks.join("")).toBe("Hello");
     expect(result.message).toBe("Hello");
   });
+
+  it("streams reasoning_content via onThinkingDelta", async () => {
+    const sse = [
+      'data: {"choices":[{"delta":{"reasoning_content":"step1 "}}]}\n\n',
+      'data: {"choices":[{"delta":{"reasoning_content":"step2"}}]}\n\n',
+      'data: {"choices":[{"delta":{"content":"answer"}}]}\n\n',
+      "data: [DONE]\n\n",
+    ].join("");
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(sse));
+        controller.close();
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } })),
+    );
+    const think: string[] = [];
+    const body: string[] = [];
+    const p = createOpenAICompatibleProvider({
+      id: "oc",
+      baseURL: "http://example.test/v1",
+      apiKey: "sk-test",
+    });
+    const result = await p.chat({
+      model: "m",
+      messages: [{ role: "user", content: "hi" }],
+      onThinkingDelta: (t) => {
+        think.push(t);
+      },
+      onDelta: (t) => {
+        body.push(t);
+      },
+    });
+    expect(think.join("")).toBe("step1 step2");
+    expect(body.join("")).toBe("answer");
+    expect(result.reasoning).toBe("step1 step2");
+    expect(result.message).toBe("answer");
+  });
 });

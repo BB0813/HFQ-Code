@@ -17,6 +17,8 @@ export interface AnthropicConfig {
 
 type AnthropicContent =
   | { type: "text"; text: string }
+  | { type: "thinking"; thinking: string }
+  | { type: "redacted_thinking"; data?: string }
   | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
   | {
       type: "tool_result";
@@ -97,24 +99,32 @@ function toAnthropicMessages(messages: ChatMessage[]): Array<{
   return out;
 }
 
-function parseToolCallsFromContent(content: unknown): { text: string; toolCalls: ToolCall[] } {
+function parseToolCallsFromContent(content: unknown): {
+  text: string;
+  reasoning: string;
+  toolCalls: ToolCall[];
+} {
   let text = "";
+  let reasoning = "";
   const toolCalls: ToolCall[] = [];
   if (typeof content === "string") {
-    return { text: content, toolCalls };
+    return { text: content, reasoning, toolCalls };
   }
-  if (!Array.isArray(content)) return { text, toolCalls };
+  if (!Array.isArray(content)) return { text, reasoning, toolCalls };
   for (const block of content) {
     if (!block || typeof block !== "object") continue;
     const b = block as {
       type?: string;
       text?: string;
+      thinking?: string;
       id?: string;
       name?: string;
       input?: Record<string, unknown>;
     };
     if (b.type === "text" && typeof b.text === "string") {
       text += b.text;
+    } else if (b.type === "thinking" && typeof b.thinking === "string") {
+      reasoning += b.thinking;
     } else if (b.type === "tool_use") {
       toolCalls.push({
         id: b.id || `tool_${toolCalls.length}`,
@@ -123,7 +133,7 @@ function parseToolCallsFromContent(content: unknown): { text: string; toolCalls:
       });
     }
   }
-  return { text, toolCalls };
+  return { text, reasoning, toolCalls };
 }
 
 export function createAnthropicProvider(cfg: AnthropicConfig): ModelProvider {
@@ -172,11 +182,13 @@ export function createAnthropicProvider(cfg: AnthropicConfig): ModelProvider {
       };
 
       const parsed = parseToolCallsFromContent(data.content);
+      if (parsed.reasoning && req.onThinkingDelta) await req.onThinkingDelta(parsed.reasoning);
       if (parsed.text && req.onDelta) await req.onDelta(parsed.text);
 
       return {
         message: parsed.text,
         toolCalls: parsed.toolCalls,
+        reasoning: parsed.reasoning || undefined,
         usage: {
           inputTokens: data.usage?.input_tokens ?? 0,
           outputTokens: data.usage?.output_tokens ?? 0,

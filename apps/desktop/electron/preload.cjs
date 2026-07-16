@@ -11,7 +11,30 @@ contextBridge.exposeInMainWorld("hfq", {
   openInEditor: (payload) => ipcRenderer.invoke("workspace:openInEditor", payload ?? {}),
   readWorkspaceText: (payload) => ipcRenderer.invoke("workspace:readText", payload ?? {}),
   writeWorkspaceText: (payload) => ipcRenderer.invoke("workspace:writeText", payload ?? {}),
+  /** Shallow directory listing under workspace (Files explorer). */
+  listWorkspaceDir: (payload) => ipcRenderer.invoke("workspace:listDir", payload ?? {}),
+  /** System dialog: pick files under bound workspace → relative paths. */
+  pickWorkspaceFiles: (payload) => ipcRenderer.invoke("workspace:pickFiles", payload ?? {}),
   runShell: (payload) => ipcRenderer.invoke("shell:run", payload ?? {}),
+
+  /** Interactive PTY (1.1 backend). UI agent can wire xterm later. */
+  ptyCreate: (payload) => ipcRenderer.invoke("pty:create", payload ?? {}),
+  ptyWrite: (payload) => ipcRenderer.invoke("pty:write", payload ?? {}),
+  ptyResize: (payload) => ipcRenderer.invoke("pty:resize", payload ?? {}),
+  ptyKill: (payload) => ipcRenderer.invoke("pty:kill", payload ?? {}),
+  ptyList: () => ipcRenderer.invoke("pty:list"),
+  /** { shells: AvailableShell[], preferred: ""|"powershell"|"pwsh"|"cmd" } */
+  ptyShells: () => ipcRenderer.invoke("pty:shells"),
+  onPtyData: (handler) => {
+    const listener = (_event, data) => handler(data);
+    ipcRenderer.on("pty:data", listener);
+    return () => ipcRenderer.removeListener("pty:data", listener);
+  },
+  onPtyExit: (handler) => {
+    const listener = (_event, data) => handler(data);
+    ipcRenderer.on("pty:exit", listener);
+    return () => ipcRenderer.removeListener("pty:exit", listener);
+  },
 
   getConfig: () => ipcRenderer.invoke("config:get"),
   setActiveModel: (payload) => ipcRenderer.invoke("config:setActive", payload),
@@ -33,10 +56,21 @@ contextBridge.exposeInMainWorld("hfq", {
   setPermissionMode: (payload) => ipcRenderer.invoke("session:setPermissionMode", payload ?? {}),
   getPermissionMode: (payload) => ipcRenderer.invoke("session:getPermissionMode", payload ?? {}),
   listChildSessions: (payload) => ipcRenderer.invoke("session:listChildren", payload ?? {}),
+  listSpawnAttempts: (payload) => ipcRenderer.invoke("session:listSpawnAttempts", payload ?? {}),
   spawnSubagent: (payload) => ipcRenderer.invoke("session:spawnSubagent", payload ?? {}),
   resolvePermission: (payload) => ipcRenderer.invoke("permission:resolve", payload),
   revertChange: (payload) => ipcRenderer.invoke("changes:revert", payload),
   writeChangeContent: (payload) => ipcRenderer.invoke("changes:writeContent", payload),
+
+  /** Workspace git for Changes UI (1.1 backend). Frontend owns commit panel UX. */
+  gitStatus: (payload) => ipcRenderer.invoke("git:status", payload ?? {}),
+  gitDiff: (payload) => ipcRenderer.invoke("git:diff", payload ?? {}),
+  gitShow: (payload) => ipcRenderer.invoke("git:show", payload ?? {}),
+  gitStage: (payload) => ipcRenderer.invoke("git:stage", payload ?? {}),
+  gitUnstage: (payload) => ipcRenderer.invoke("git:unstage", payload ?? {}),
+  gitCommit: (payload) => ipcRenderer.invoke("git:commit", payload ?? {}),
+  gitLog: (payload) => ipcRenderer.invoke("git:log", payload ?? {}),
+
   getAppPaths: () => ipcRenderer.invoke("app:paths"),
   listSkills: (payload) => ipcRenderer.invoke("skills:list", payload ?? {}),
   skillsCatalog: (payload) => ipcRenderer.invoke("skills:catalog", payload ?? {}),
@@ -61,12 +95,27 @@ contextBridge.exposeInMainWorld("hfq", {
   upsertMemory: (payload) => ipcRenderer.invoke("memory:upsert", payload ?? {}),
   removeMemory: (payload) => ipcRenderer.invoke("memory:remove", payload ?? {}),
   usageSummary: () => ipcRenderer.invoke("usage:summary"),
+  /** Write usage-sessions.csv / usage-daily.csv / usage-summary.json under data/exports. */
+  usageExport: () => ipcRenderer.invoke("usage:export"),
   importScan: (payload) => ipcRenderer.invoke("import:scan", payload ?? {}),
+
   importApply: (payload) => ipcRenderer.invoke("import:apply", payload ?? {}),
   exportDiagnostics: () => ipcRenderer.invoke("diagnostics:export"),
   checkForUpdates: (payload) => ipcRenderer.invoke("update:check", payload ?? {}),
   openReleasePage: (payload) => ipcRenderer.invoke("update:openRelease", payload ?? {}),
+  /**
+   * D3 — download installer (progress via onUpdateDownload).
+   * omit url → re-check + recommendedAsset; or pass url/fileName from assets.
+   */
+  downloadUpdate: (payload) => ipcRenderer.invoke("update:download", payload ?? {}),
+  cancelUpdateDownload: () => ipcRenderer.invoke("update:downloadCancel"),
+  getUpdateDownloadStatus: () => ipcRenderer.invoke("update:downloadStatus"),
+  /** Open downloaded .exe after confirm dialog (unless confirm:false). */
+  installUpdate: (payload) => ipcRenderer.invoke("update:install", payload ?? {}),
+  clearUpdateDownloads: () => ipcRenderer.invoke("update:clearDownloads"),
   openExternal: (payload) => ipcRenderer.invoke("shell:openExternal", payload ?? {}),
+  /** Reveal path in Explorer (workspace-relative or under app data). */
+  revealInFolder: (payload) => ipcRenderer.invoke("shell:revealInFolder", payload ?? {}),
 
   onSessionEvent: (handler) => {
     const listener = (_event, data) => handler(data);
@@ -82,5 +131,10 @@ contextBridge.exposeInMainWorld("hfq", {
     const listener = (_event, data) => handler(data);
     ipcRenderer.on("update:available", listener);
     return () => ipcRenderer.removeListener("update:available", listener);
+  },
+  onUpdateDownload: (handler) => {
+    const listener = (_event, data) => handler(data);
+    ipcRenderer.on("update:download", listener);
+    return () => ipcRenderer.removeListener("update:download", listener);
   },
 });

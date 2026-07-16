@@ -64,6 +64,13 @@ describe("buildSessionSnapshot", () => {
         at: "2026-01-01T00:00:03.000Z",
       },
       {
+        type: "thinking.completed",
+        sessionId: "s1",
+        messageId: "m-think",
+        text: "I will write a.txt with hello",
+        at: "2026-01-01T00:00:01.200Z",
+      },
+      {
         type: "usage.updated",
         sessionId: "s1",
         inputTokens: 10,
@@ -96,6 +103,14 @@ describe("buildSessionSnapshot", () => {
     expect(snap.info.title).toBe("Custom title");
     expect(snap.usage).toEqual({ inputTokens: 15, outputTokens: 27 });
     expect(snap.messages.some((m) => m.role === "user")).toBe(true);
+    const think = snap.messages.find((m) => m.role === "thinking");
+    expect(think?.text).toContain("write a.txt");
+    expect(think?.thinking).toBe(true);
+    expect(think?.messageId).toBe("m-think");
+    // CoT must not pollute model history.
+    expect(snap.chatMessages.some((m) => (m as { role: string }).role === "thinking")).toBe(
+      false,
+    );
     expect(snap.changes[0]?.path).toBe("a.txt");
     expect(snap.changes[0]?.after).toBe("hello");
     expect(snap.terminal[0]?.command).toBe("echo hi");

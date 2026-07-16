@@ -1,0 +1,21 @@
+{
+  "imports": {
+    "lit": "./vendor/esm/lit/index.js",
+    "lit/": "./vendor/esm/lit/",
+    "lit-html": "./vendor/esm/lit-html/lit-html.js",
+    "lit-html/": "./vendor/esm/lit-html/",
+    "lit-element": "./vendor/esm/lit-element/index.js",
+    "lit-element/": "./vendor/esm/lit-element/",
+    "@lit/reactive-element": "./vendor/esm/@lit/reactive-element/reactive-element.js",
+    "@lit/reactive-element/": "./vendor/esm/@lit/reactive-element/",
+    "@ctrl/tinycolor": "./vendor/esm/@ctrl/tinycolor/dist/module/public_api.js",
+    "@floating-ui/dom": "./vendor/esm/@floating-ui/dom/dist/floating-ui.dom.esm.js",
+    "@floating-ui/core": "./vendor/esm/@floating-ui/core/dist/floating-ui.core.esm.js",
+    "@floating-ui/utils": "./vendor/esm/@floating-ui/utils/dist/floating-ui.utils.esm.js",
+    "@floating-ui/utils/dom": "./vendor/esm/@floating-ui/utils/dist/floating-ui.utils.dom.esm.js",
+    "@shoelace-style/localize": "./vendor/esm/@shoelace-style/localize/dist/index.js",
+    "@shoelace-style/animations": "./vendor/esm/@shoelace-style/animations/dist/index.js",
+    "composed-offset-position": "./vendor/esm/composed-offset-position/dist/composed-offset-position.esm.js",
+    "qr-creator": "./vendor/esm/qr-creator/dist/qr-creator.es6.min.js"
+  }
+}

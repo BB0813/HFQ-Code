@@ -1,6 +1,6 @@
 # Phase-3 delivery status
 
-Last updated: 2026-07-15 · Product **1.0.0**
+UI track: R0–R5 landed (2026-07-15). Last updated: 2026-07-15 · Product **1.0.0**
 
 | ID | Theme | Status | Evidence |
 |----|-------|--------|----------|
@@ -14,15 +14,15 @@ Last updated: 2026-07-15 · Product **1.0.0**
 
 - Auto-updater **not** shipped — documented manual NSIS/portable channel
 - True interactive PTY **not** shipped — Terminal one-shot remains
-- DPAPI for credentials **optional later**
+- DPAPI for credentials — **shipped** ([DPAPI-1.2.md](./DPAPI-1.2.md))
 - **Ship artifacts (2026-07-15):** `apps/desktop/release/HFQ Code-1.0.0-x64.exe` · `HFQ Code-1.0.0-portable.exe` (unsigned)
 
 ### Post-1.0 backlog (optional)
 
-1. electron-updater + code signing  
+1. In-app update download (D3) — **done**; code signing **won't do**  
 2. node-pty / ConPTY  
-3. DPAPI credentials  
-4. Split `app.js` / React UI — tracked in [UI-REDESIGN.md](./UI-REDESIGN.md)  
+3. DPAPI credentials — done  
+4. Split `app.js` / UI architecture — **R0–R5 done** (2026-07-15); see [UI-REDESIGN.md](./UI-REDESIGN.md) · [项目规划书.md](./项目规划书.md)  
 5. ClawHub store depth — preview/conflict/tags in **1.0.6**; remote zip in **1.0.9**  
 6. Update-check resilience — **Done in 1.0.5–1.0.7** (mirrors → ungh → direct)
 
@@ -33,7 +33,8 @@ Last updated: 2026-07-15 · Product **1.0.0**
 | 1.0.1–1.0.3 | Identity, access modes, chat UI polish |
 | 1.0.4 | `/goal` + ghproxy default update checks |
 | 1.0.5 | Update fallback · goal budget hint · Skills store scaffold · UI redesign TODO |
-| 1.0.6 | Store preview/conflict/tags · goal banner · `skills-ui.js` R1 extract |
+| 1.0.6 | Store preview/conflict/tags · goal banner · `skills-ui.js` first R1 extract |
+| 1.0.9+ | R1 structure: `shared-ui` / `nav-ui` / `pages/settings-ui` / `pages/skills-page` / `chat/chat-shell` |
 | 1.0.7 | Update multi-source fallback (HTML ghproxy · ungh · direct) |
 | 1.0.8 | Topbar provider · model-only composer control · menus open upward |
 | 1.0.9 | Remote skill packages (https zip) · permission timeout/unlock · git_commit message in modal |

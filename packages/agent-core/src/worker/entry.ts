@@ -239,6 +239,11 @@ async function handle(req: WorkerRequest): Promise<unknown> {
       return mgr.listChildren(req.params.sessionId);
     }
 
+    case "listSpawnAttempts": {
+      const mgr = await ensureManager();
+      return mgr.listSpawnAttempts(req.params.sessionId);
+    }
+
     case "spawnSubagent": {
       const mgr = await ensureManager();
       const p = req.params;

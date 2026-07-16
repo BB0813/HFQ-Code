@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN" class="sl-theme-dark" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' data:"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HFQ Code</title>
+    <link rel="icon" type="image/png" href="./assets/logo-256.png" />
+    <!-- SHOELACE-IMPORTMAP-START -->
+    <script type="importmap">
+{
+  "imports": {
+    "lit": "./vendor/esm/lit/index.js",
+    "lit/": "./vendor/esm/lit/",
+    "lit-html": "./vendor/esm/lit-html/lit-html.js",
+    "lit-html/": "./vendor/esm/lit-html/",
+    "lit-element": "./vendor/esm/lit-element/index.js",
+    "lit-element/": "./vendor/esm/lit-element/",
+    "@lit/reactive-element": "./vendor/esm/@lit/reactive-element/reactive-element.js",
+    "@lit/reactive-element/": "./vendor/esm/@lit/reactive-element/",
+    "@ctrl/tinycolor": "./vendor/esm/@ctrl/tinycolor/dist/module/public_api.js",
+    "@floating-ui/dom": "./vendor/esm/@floating-ui/dom/dist/floating-ui.dom.esm.js",
+    "@floating-ui/core": "./vendor/esm/@floating-ui/core/dist/floating-ui.core.esm.js",
+    "@floating-ui/utils": "./vendor/esm/@floating-ui/utils/dist/floating-ui.utils.esm.js",
+    "@floating-ui/utils/dom": "./vendor/esm/@floating-ui/utils/dist/floating-ui.utils.dom.esm.js",
+    "@shoelace-style/localize": "./vendor/esm/@shoelace-style/localize/dist/index.js",
+    "@shoelace-style/animations": "./vendor/esm/@shoelace-style/animations/dist/index.js",
+    "composed-offset-position": "./vendor/esm/composed-offset-position/dist/composed-offset-position.esm.js",
+    "qr-creator": "./vendor/esm/qr-creator/dist/qr-creator.es6.min.js"
+  }
+}
+    </script>
+    <!-- SHOELACE-IMPORTMAP-END -->
+    <link rel="stylesheet" href="./vendor/shoelace/dist/themes/dark.css" />
+    <link rel="stylesheet" href="./vendor/shoelace/dist/themes/light.css" />
+    <link rel="stylesheet" href="./ds/theme.css" />
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./ds/shell.css" />
+  </head>
+  <body class="sl-theme-dark" data-theme="dark">
+    <div id="app">
+      <aside class="sidebar" aria-label="主导航侧栏">
+        <div class="brand">
+          <img class="logo" src="./assets/logo-256.png" width="28" height="28" alt="HFQ Code" />
+          <div class="brand-copy">
+            <div class="brand-title">HFQ Code</div>
+            <div class="brand-sub">编码工作台</div>
+          </div>
+        </div>
+
+        <div class="sidebar-scroll">
+          <nav id="nav" class="nav nav-rail" aria-label="主导航"></nav>
+        </div>
+
+        <div class="sidebar-footer">
+          <div class="ws-card">
+            <div class="ws-card-label">已绑定工作区</div>
+            <div id="wsPath" class="ws-path">尚未选择文件夹</div>
+          </div>
+          <sl-button id="openWs" variant="primary" size="medium" class="ws-open-btn">
+            <sl-icon slot="prefix" name="folder2-open"></sl-icon>
+            打开工作区
+          </sl-button>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div class="topbar-left">
+            <h1 id="pageTitle">首页</h1>
+            <div id="crumb" class="crumb"></div>
+          </div>
+          <div class="topbar-right">
+            <button
+              type="button"
+              id="modelProviderBadge"
+              class="pill model-provider-badge"
+              title="当前模型提供方 · 点击打开模型页"
+            >
+              <span class="model-provider-kicker">提供方</span>
+              <span id="modelProviderBadgeText" class="model-provider-text mono">—</span>
+            </button>
+            <div id="sessionBadge" class="pill">
+              <span class="dot"></span>
+              <span id="sessionBadgeText">无会话</span>
+            </div>
+            <div id="status" class="pill">
+              <span class="dot"></span>
+              <span id="statusText">就绪</span>
+            </div>
+          </div>
+        </header>
+
+        <section id="content" class="content"></section>
+
+        <footer class="statusbar" aria-label="状态栏">
+          <span id="sbPage" class="sb-item cyan">首页</span>
+          <span id="sbWorkspace" class="sb-item">未绑定工作区</span>
+          <span class="sb-spacer"></span>
+          <span id="sbStatus" class="sb-item ok">就绪</span>
+          <span class="sb-brand">HFQ Code</span>
+        </footer>
+      </main>
+    </div>
+
+    <sl-dialog id="permModal" label="需要授权" class="perm-dialog" style="--width: 28rem">
+      <p id="permSummary" class="muted"></p>
+      <div class="perm-meta">
+        <sl-badge id="permTool" variant="neutral"></sl-badge>
+        <sl-badge id="permRisk" variant="warning"></sl-badge>
+      </div>
+      <div slot="footer" class="modal-actions">
+        <sl-button data-perm="deny" variant="default">拒绝</sl-button>
+        <sl-button data-perm="allow" variant="default">允许一次</sl-button>
+        <sl-button data-perm="allow_session" variant="primary">本会话允许</sl-button>
+      </div>
+    </sl-dialog>
+
+    <script src="./shared-ui.js"></script>
+    <script src="./nav-ui.js"></script>
+    <script src="./skills-ui.js"></script>
+    <script src="./islands/bootstrap.js"></script>
+    <script src="./pages/settings-ui.js"></script>
+    <script src="./pages/skills-page.js"></script>
+    <script src="./pages/home-page.js"></script>
+    <script src="./pages/tasks-page.js"></script>
+    <script src="./pages/changes-page.js"></script>
+    <script src="./pages/terminal-page.js"></script>
+    <script src="./chat/chat-shell.js"></script>
+    <script src="./app.js"></script>
+    <script type="module" src="./ds/shoelace-boot.js"></script>
+  </body>
+</html>

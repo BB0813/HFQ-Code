@@ -1,0 +1,351 @@
+/* HFQ Code · R8 Shoelace design system bridge
+   Single source of visual truth: Shoelace tokens + product zinc shell
+   Maps --bg-* / --accent* (JS contract) onto --sl-* (component library)
+*/
+
+/* ── Dark (default) ── */
+:root,
+[data-theme="dark"],
+.sl-theme-dark {
+  color-scheme: dark;
+
+  /* Shoelace neutrals → pure zinc (override library blues) */
+  --sl-color-neutral-0: #09090b;
+  --sl-color-neutral-50: #0c0c0e;
+  --sl-color-neutral-100: #131316;
+  --sl-color-neutral-200: #1a1a1f;
+  --sl-color-neutral-300: #27272a;
+  --sl-color-neutral-400: #3f3f46;
+  --sl-color-neutral-500: #52525b;
+  --sl-color-neutral-600: #71717a;
+  --sl-color-neutral-700: #a1a1aa;
+  --sl-color-neutral-800: #d4d4d8;
+  --sl-color-neutral-900: #e4e4e7;
+  --sl-color-neutral-950: #fafafa;
+  --sl-color-neutral-1000: #ffffff;
+
+  /* Primary = neutral white CTA (Linear), not cyan fill */
+  --sl-color-primary-50: #18181b;
+  --sl-color-primary-100: #27272a;
+  --sl-color-primary-200: #3f3f46;
+  --sl-color-primary-300: #52525b;
+  --sl-color-primary-400: #71717a;
+  --sl-color-primary-500: #a1a1aa;
+  --sl-color-primary-600: #d4d4d8;
+  --sl-color-primary-700: #e4e4e7;
+  --sl-color-primary-800: #f4f4f5;
+  --sl-color-primary-900: #fafafa;
+  --sl-color-primary-950: #fafafa;
+
+  /* Success / warning / danger keep Shoelace greens via defaults, tighten: */
+  --sl-color-success-600: #34d399;
+  --sl-color-warning-600: #fbbf24;
+  --sl-color-danger-600: #f87171;
+
+  /* Cyan as “sky” focus only */
+  --sl-color-sky-600: #22d3ee;
+  --sl-color-sky-500: #67e8f9;
+
+  --sl-border-radius-small: 5px;
+  --sl-border-radius-medium: 7px;
+  --sl-border-radius-large: 10px;
+  --sl-border-radius-x-large: 14px;
+
+  --sl-font-sans: "Segoe UI Variable Text", "Segoe UI", "PingFang SC",
+    "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  --sl-font-mono: "Cascadia Code", "JetBrains Mono", "SF Mono", Consolas,
+    ui-monospace, monospace;
+  --sl-font-size-small: 12px;
+  --sl-font-size-medium: 13px;
+  --sl-font-size-large: 14px;
+
+  --sl-input-height-small: 26px;
+  --sl-input-height-medium: 32px;
+  --sl-input-height-large: 38px;
+
+  --sl-spacing-3x-small: 2px;
+  --sl-spacing-2x-small: 4px;
+  --sl-spacing-x-small: 6px;
+  --sl-spacing-small: 8px;
+  --sl-spacing-medium: 12px;
+  --sl-spacing-large: 16px;
+  --sl-spacing-x-large: 20px;
+
+  --sl-shadow-x-small: none;
+  --sl-shadow-small: none;
+  --sl-shadow-medium: 0 12px 32px rgba(0, 0, 0, 0.45);
+  --sl-shadow-large: 0 18px 48px rgba(0, 0, 0, 0.55);
+
+  --sl-panel-background-color: var(--sl-color-neutral-50);
+  --sl-panel-border-color: rgba(255, 255, 255, 0.08);
+  --sl-input-background-color: var(--sl-color-neutral-0);
+  --sl-input-border-color: rgba(255, 255, 255, 0.1);
+  --sl-input-border-color-hover: rgba(255, 255, 255, 0.16);
+  --sl-input-border-color-focus: rgba(34, 211, 238, 0.45);
+  --sl-input-focus-ring-color: rgba(34, 211, 238, 0.2);
+  --sl-focus-ring-color: rgba(34, 211, 238, 0.35);
+  --sl-focus-ring-width: 2px;
+
+  /* Product CSS contract (pages / app.js) */
+  --bg-0: var(--sl-color-neutral-0);
+  --bg-1: var(--sl-color-neutral-50);
+  --bg-2: var(--sl-color-neutral-100);
+  --bg-3: var(--sl-color-neutral-200);
+  --bg-4: var(--sl-color-neutral-300);
+  --bg-hover: #25252c;
+  --bg-active: rgba(255, 255, 255, 0.06);
+
+  --line: rgba(255, 255, 255, 0.07);
+  --line-2: rgba(255, 255, 255, 0.1);
+  --line-strong: rgba(255, 255, 255, 0.16);
+  --line-focus: rgba(34, 211, 238, 0.5);
+
+  --text: var(--sl-color-neutral-950);
+  --text-2: var(--sl-color-neutral-700);
+  --text-3: var(--sl-color-neutral-600);
+  --text-4: var(--sl-color-neutral-500);
+
+  --accent: #22d3ee;
+  --accent-2: #67e8f9;
+  --accent-hover: #67e8f9;
+  --accent-press: #06b6d4;
+  --accent-soft: rgba(34, 211, 238, 0.08);
+  --accent-ring: rgba(34, 211, 238, 0.2);
+  --accent-ink: #09090b;
+  --accent-rgb: 34, 211, 238;
+
+  --primary: #d4d4d8;
+  --primary-hover: #e4e4e7;
+  --primary-press: #a1a1aa;
+  --primary-ink: #09090b;
+
+  --ok: #34d399;
+  --ok-soft: rgba(52, 211, 153, 0.1);
+  --warn: #fbbf24;
+  --warn-soft: rgba(251, 191, 36, 0.1);
+  --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.1);
+
+  --r-sm: var(--sl-border-radius-small);
+  --r-md: var(--sl-border-radius-medium);
+  --r-lg: var(--sl-border-radius-large);
+  --r-xl: var(--sl-border-radius-x-large);
+
+  --shadow-sm: none;
+  --shadow-panel: none;
+  --shadow-float: var(--sl-shadow-large);
+
+  --sidebar-w: 232px;
+  --topbar-h: 48px;
+  --statusbar-h: 28px;
+  --font: var(--sl-font-sans);
+  --mono: var(--sl-font-mono);
+
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --dur: 120ms;
+  --dur-fast: 80ms;
+  --dur-slow: 180ms;
+  --focus-ring: 0 0 0 2px var(--bg-0), 0 0 0 3.5px var(--accent-ring);
+  --z-dropdown: 40;
+  --z-sticky: 20;
+  --z-modal: 50;
+  --z-toast: 60;
+}
+
+/* ── Light ── */
+[data-theme="light"],
+.sl-theme-light {
+  color-scheme: light;
+
+  --sl-color-neutral-0: #ffffff;
+  --sl-color-neutral-50: #fafafa;
+  --sl-color-neutral-100: #f4f4f5;
+  --sl-color-neutral-200: #e4e4e7;
+  --sl-color-neutral-300: #d4d4d8;
+  --sl-color-neutral-400: #a1a1aa;
+  --sl-color-neutral-500: #71717a;
+  --sl-color-neutral-600: #52525b;
+  --sl-color-neutral-700: #3f3f46;
+  --sl-color-neutral-800: #27272a;
+  --sl-color-neutral-900: #18181b;
+  --sl-color-neutral-950: #09090b;
+  --sl-color-neutral-1000: #000000;
+
+  --sl-color-primary-600: #18181b;
+  --sl-color-primary-700: #09090b;
+  --sl-color-primary-500: #3f3f46;
+  --sl-color-primary-800: #000000;
+
+  --sl-panel-background-color: #ffffff;
+  --sl-panel-border-color: rgba(9, 9, 11, 0.1);
+  --sl-input-background-color: #ffffff;
+  --sl-input-border-color: rgba(9, 9, 11, 0.12);
+  --sl-input-border-color-hover: rgba(9, 9, 11, 0.18);
+  --sl-input-border-color-focus: rgba(8, 145, 178, 0.5);
+  --sl-input-focus-ring-color: rgba(8, 145, 178, 0.2);
+  --sl-focus-ring-color: rgba(8, 145, 178, 0.35);
+
+  --bg-0: #fafafa;
+  --bg-1: #f4f4f5;
+  --bg-2: #ffffff;
+  --bg-3: #f4f4f5;
+  --bg-4: #e4e4e7;
+  --bg-hover: #ececef;
+  --bg-active: rgba(9, 9, 11, 0.06);
+
+  --line: rgba(9, 9, 11, 0.08);
+  --line-2: rgba(9, 9, 11, 0.12);
+  --line-strong: rgba(9, 9, 11, 0.18);
+  --line-focus: #0891b2;
+
+  --text: #09090b;
+  --text-2: #3f3f46;
+  --text-3: #52525b;
+  --text-4: #71717a;
+
+  --accent: #0891b2;
+  --accent-2: #06b6d4;
+  --accent-hover: #0e7490;
+  --accent-press: #155e75;
+  --accent-soft: rgba(8, 145, 178, 0.08);
+  --accent-ring: rgba(8, 145, 178, 0.2);
+  --accent-ink: #fafafa;
+  --accent-rgb: 8, 145, 178;
+
+  --primary: #18181b;
+  --primary-hover: #27272a;
+  --primary-press: #3f3f46;
+  --primary-ink: #fafafa;
+
+  --ok: #059669;
+  --ok-soft: rgba(5, 150, 105, 0.1);
+  --warn: #d97706;
+  --warn-soft: rgba(217, 119, 6, 0.1);
+  --danger: #dc2626;
+  --danger-soft: rgba(220, 38, 38, 0.08);
+
+  --shadow-float: 0 16px 40px rgba(9, 9, 11, 0.1), 0 0 0 1px rgba(9, 9, 11, 0.06);
+}
+
+/* Shoelace primary button → solid light/dark ink (not sky) */
+sl-button[variant="primary"]::part(base) {
+  background-color: var(--primary);
+  border-color: transparent;
+  color: var(--primary-ink);
+  font-weight: 600;
+}
+sl-button[variant="primary"]:hover::part(base) {
+  background-color: var(--primary-hover);
+  border-color: transparent;
+}
+sl-button[variant="primary"]:active::part(base) {
+  background-color: var(--primary-press);
+}
+
+sl-button[size="small"]::part(base) {
+  font-size: 12px;
+}
+
+sl-button[variant="default"]::part(base),
+sl-button:not([variant])::part(base) {
+  background: transparent;
+  border-color: var(--line-2);
+  color: var(--text-2);
+}
+sl-button[variant="default"]:hover::part(base),
+sl-button:not([variant]):hover::part(base) {
+  background: var(--bg-2);
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+sl-button[variant="text"]::part(base),
+sl-button[variant="neutral"]::part(base) {
+  color: var(--text-2);
+}
+
+sl-divider {
+  --color: var(--line);
+  --spacing: 10px;
+}
+
+sl-badge::part(base) {
+  font-weight: 500;
+  border: 1px solid var(--line);
+}
+
+sl-tag::part(base) {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  color: var(--text-3);
+  height: 22px;
+  font-size: 11px;
+}
+
+sl-card {
+  --border-color: var(--line);
+  --border-radius: var(--r-lg);
+  --padding: 12px 14px;
+  background: var(--bg-1);
+  box-shadow: none;
+}
+sl-card::part(base) {
+  background: var(--bg-1);
+  border-color: var(--line);
+  box-shadow: none;
+}
+
+sl-input,
+sl-textarea,
+sl-select {
+  --sl-input-border-radius-medium: var(--r-md);
+  --sl-input-font-family: var(--font);
+}
+
+
+/* Host full-width CTA in sidebar */
+.sidebar-footer sl-button,
+.sidebar-footer #openWs {
+  width: 100%;
+  display: block;
+}
+
+/* sl-button FOUC placeholder (primary) */
+sl-button:not(:defined) {
+  visibility: visible;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--r-md);
+  background: var(--primary);
+  color: var(--primary-ink);
+  font-weight: 600;
+  font-size: 13px;
+  border: 0;
+  box-sizing: border-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* R8.3: sidebar open CTA — solid soft zinc, not pure white flash */
+.sidebar-footer sl-button.ws-open-btn::part(base),
+.sidebar-footer #openWs::part(base) {
+  background: var(--primary);
+  border-color: transparent;
+  color: var(--primary-ink);
+  font-weight: 600;
+}
+.sidebar-footer sl-button.ws-open-btn:hover::part(base),
+.sidebar-footer #openWs:hover::part(base) {
+  background: var(--primary-hover);
+}

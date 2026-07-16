@@ -6,6 +6,17 @@ export interface UiMessage {
   text?: string;
   name?: string;
   detail?: unknown;
+  /** Tool call id when role === "tool" (R2 card merge). */
+  callId?: string;
+  /** running | done for tool cards */
+  phase?: "running" | "done";
+  ok?: boolean;
+  input?: unknown;
+  output?: unknown;
+  messageId?: string;
+  streaming?: boolean;
+  /** Model chain-of-thought when role === "thinking" (collapsed CoT UI). */
+  thinking?: boolean;
 }
 
 export interface UiChange {
@@ -69,6 +80,10 @@ export function buildSessionSnapshot(
   let status: SessionInfo["status"] = fallback.status ?? "idle";
   let title = fallback.title ?? "Session";
   let model = fallback.model;
+  let parentSessionId = fallback.parentSessionId;
+  let subagentProfile = fallback.subagentProfile;
+  let subagentDepth = fallback.subagentDepth;
+  let goal = fallback.goal;
   let firstUser: string | undefined;
   let metaTitle: string | undefined;
   let usage: SessionUsage = { inputTokens: 0, outputTokens: 0 };
@@ -106,6 +121,26 @@ export function buildSessionSnapshot(
           title = metaTitle;
         }
         if (event.model?.trim()) model = event.model.trim();
+        if (event.parentSessionId) parentSessionId = event.parentSessionId;
+        if (event.subagentProfile) subagentProfile = event.subagentProfile;
+        if (event.subagentDepth != null) subagentDepth = event.subagentDepth;
+        if (event.goal?.trim()) goal = event.goal.trim();
+        break;
+      case "subagent.updated":
+        // Parent tree event — no local message reconstruction.
+        break;
+      case "thinking.delta":
+        // Live-only; not in durable JSONL.
+        break;
+      case "thinking.completed":
+        if (event.text?.trim()) {
+          messages.push({
+            role: "thinking",
+            text: event.text,
+            messageId: event.messageId,
+            thinking: true,
+          });
+        }
         break;
       case "usage.updated":
         usage = {
@@ -114,7 +149,11 @@ export function buildSessionSnapshot(
         };
         break;
       case "message.completed":
-        messages.push({ role: event.role, text: event.text });
+        messages.push({
+          role: event.role,
+          text: event.text,
+          messageId: event.messageId,
+        });
         if (event.role === "user") {
           chatMessages.push({ role: "user", content: event.text });
           if (!firstUser) firstUser = event.text;
@@ -130,6 +169,9 @@ export function buildSessionSnapshot(
           name: event.name,
           text: `开始执行 ${event.name}`,
           detail: event.input,
+          callId: event.callId,
+          phase: "running",
+          input: event.input,
         });
         // Reconstruct OpenAI-compatible assistant.tool_calls so resumed sessions can continue.
         chatMessages.push({
@@ -149,12 +191,28 @@ export function buildSessionSnapshot(
         break;
       }
       case "tool.completed": {
-        messages.push({
-          role: "tool",
+        const idx = event.callId
+          ? messages.findIndex(
+              (m) =>
+                m &&
+                m.role === "tool" &&
+                (m as { callId?: string }).callId === event.callId &&
+                (m as { phase?: string }).phase === "running",
+            )
+          : -1;
+        const row = {
+          role: "tool" as const,
           name: event.name,
           text: event.ok ? `完成 ${event.name}` : `失败 ${event.name}`,
           detail: event.output,
-        });
+          callId: event.callId,
+          phase: "done" as const,
+          ok: event.ok,
+          input: idx >= 0 ? (messages[idx] as { input?: unknown }).input : undefined,
+          output: event.output,
+        };
+        if (idx >= 0) messages[idx] = { ...messages[idx], ...row };
+        else messages.push(row);
         const content =
           typeof event.output === "string" ? event.output : JSON.stringify(event.output ?? {});
         chatMessages.push({
@@ -250,6 +308,10 @@ export function buildSessionSnapshot(
     createdAt,
     updatedAt,
     status,
+    parentSessionId,
+    subagentProfile,
+    subagentDepth,
+    goal,
   };
 
   return {

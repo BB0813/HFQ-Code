@@ -104,6 +104,7 @@ export type WorkerRequestMethod =
   | "setPermissionMode"
   | "getPermissionMode"
   | "listChildren"
+  | "listSpawnAttempts"
   | "spawnSubagent"
   | "resolvePermission"
   | "listSessionAllows"
@@ -133,6 +134,7 @@ export type WorkerRequest =
     }
   | { id: string; method: "getPermissionMode"; params: { sessionId: string } }
   | { id: string; method: "listChildren"; params: { sessionId: string } }
+  | { id: string; method: "listSpawnAttempts"; params: { sessionId: string } }
   | { id: string; method: "spawnSubagent"; params: WorkerSpawnParams }
   | { id: string; method: "resolvePermission"; params: WorkerPermissionParams }
   | { id: string; method: "listSessionAllows"; params: { sessionId: string } }
@@ -172,4 +174,5 @@ export type WorkerSpawnResult = {
   summary: string;
   ok: boolean;
   error?: string;
+  errorCode?: string;
 };

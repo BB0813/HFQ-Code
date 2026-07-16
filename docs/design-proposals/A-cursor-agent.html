@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>方案 A · Cursor 式 Agent 中枢</title>
+    <link rel="stylesheet" href="./_shared.css" />
+  </head>
+  <body data-scheme="a">
+    <header class="review-bar">
+      <a href="./index.html">← 方案列表</a>
+      <strong>方案 A · Cursor 式 Agent 中枢</strong>
+      <span class="pill">推荐作为默认</span>
+    </header>
+    <div class="app">
+      <!-- Activity rail -->
+      <aside class="rail" aria-label="活动栏">
+        <div class="rail-logo">H</div>
+        <button class="rail-btn active" title="会话">💬</button>
+        <button class="rail-btn" title="文件">📁</button>
+        <button class="rail-btn" title="改动"> cons</button>
+        <button class="rail-btn" title="终端">⌨</button>
+        <button class="rail-btn" title="任务">☑</button>
+        <div class="rail-spacer"></div>
+        <button class="rail-btn" title="技能">✦</button>
+        <button class="rail-btn" title="设置">⚙</button>
+      </aside>
+
+      <!-- Session list -->
+      <aside class="side">
+        <div class="side-head">
+          <div>
+            <div class="side-title">会话</div>
+            <div class="side-sub mono">D:\proj\hfq-demo</div>
+          </div>
+          <button class="btn primary sm">新建</button>
+        </div>
+        <input class="search" placeholder="搜索会话…" />
+        <div class="session-item active">
+          <div class="si-title">修登录页鉴权</div>
+          <div class="si-meta">进行中 · 2 分钟前</div>
+        </div>
+        <div class="session-item">
+          <div class="si-title">整理 skills 安装</div>
+          <div class="si-meta">完成 · 昨天</div>
+        </div>
+        <div class="session-item">
+          <div class="si-title">排查 release:check</div>
+          <div class="si-meta">完成 · 周一</div>
+        </div>
+        <div class="side-foot">
+          <div class="chip">变更前确认</div>
+          <div class="chip mono">gpt-4.1-mini</div>
+        </div>
+      </aside>
+
+      <!-- Main chat -->
+      <main class="main">
+        <header class="top">
+          <div>
+            <h1>修登录页鉴权</h1>
+            <div class="crumb mono">会话 · abc12f · 入 12.4k · 出 3.1k</div>
+          </div>
+          <div class="top-actions">
+            <button class="btn sm">停止</button>
+            <button class="btn sm">改动 3</button>
+            <button class="btn sm">终端</button>
+            <button class="btn primary sm">发送焦点 ⌘J</button>
+          </div>
+        </header>
+
+        <section class="stream">
+          <div class="msg user">
+            <div class="role">你</div>
+            <div class="body">登录接口 401 时前端应跳到 /login，并清掉本地 token。先查 auth 中间件再改。</div>
+          </div>
+          <div class="msg assistant">
+            <div class="role">HFQ</div>
+            <div class="body">我会先定位鉴权中间件与前端拦截器，再给出最小补丁。</div>
+          </div>
+          <div class="tool">
+            <div class="tool-h">
+              <span class="mono">read_file</span>
+              <span class="badge ok">完成</span>
+              <span class="faint mono">src/middleware/auth.ts</span>
+            </div>
+            <div class="tool-preview faint">export function requireAuth(req) { … }</div>
+          </div>
+          <div class="tool">
+            <div class="tool-h">
+              <span class="mono">apply_patch</span>
+              <span class="badge info">运行中</span>
+              <span class="faint mono">src/api/client.ts</span>
+            </div>
+          </div>
+          <div class="msg assistant">
+            <div class="role">HFQ</div>
+            <div class="body">已在响应拦截器处理 401：清 token 并 <span class="mono">navigate('/login')</span>。请在右侧审阅 2 个文件。</div>
+          </div>
+        </section>
+
+        <footer class="composer">
+          <textarea placeholder="继续说明需求，或 /goal · / 命令 · $ 技能"></textarea>
+          <div class="composer-bar">
+            <div class="left">
+              <button class="btn sm">变更前确认 ▾</button>
+              <button class="btn sm mono">gpt-4.1-mini ▾</button>
+              <button class="btn sm">/ 命令</button>
+            </div>
+            <div class="right">
+              <span class="faint">Enter 发送 · Shift+Enter 换行</span>
+              <button class="btn primary sm">发送</button>
+            </div>
+          </div>
+        </footer>
+      </main>
+
+      <!-- Right inspector -->
+      <aside class="inspector">
+        <div class="tabs">
+          <button class="tab active">改动</button>
+          <button class="tab">终端</button>
+          <button class="tab">任务</button>
+        </div>
+        <div class="insp-body">
+          <div class="file-row active">
+            <span class="mono">src/api/client.ts</span>
+            <span class="badge info">修改</span>
+          </div>
+          <div class="file-row">
+            <span class="mono">src/middleware/auth.ts</span>
+            <span class="badge ok">修改</span>
+          </div>
+          <div class="file-row">
+            <span class="mono">tests/auth.spec.ts</span>
+            <span class="badge">新增</span>
+          </div>
+          <pre class="diff">@@
+- if (res.status === 500) …
++ if (res.status === 401) {
++   clearToken();
++   navigate('/login');
++ }</pre>
+          <div class="insp-actions">
+            <button class="btn sm">全部拒绝</button>
+            <button class="btn primary sm">全部接受</button>
+          </div>
+        </div>
+      </aside>
+    </div>
+    <section class="notes">
+      <h3>方案 A 要点</h3>
+      <ul>
+        <li><strong>借鉴：</strong>Cursor Agent 面板 + 侧栏会话列表 + 右侧 diff 检视。</li>
+        <li><strong>主路径：</strong>对话始终在中心；改动/终端不抢主导航，而用右侧 tab。</li>
+        <li><strong>适合：</strong>以「说 → 改 → 审」为主的编码 Agent 用户。</li>
+        <li><strong>框架：</strong>多面板状态适合 React/Preact；可先 vanilla 分区模块验证。</li>
+      </ul>
+    </section>
+  </body>
+</html>

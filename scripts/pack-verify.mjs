@@ -155,13 +155,23 @@ async function assertTree(unpacked) {
   }
 
   // Brand assets must ship inside the app (window icon + sidebar)
+  // Vite builds put static files under renderer/dist/; legacy layout used renderer/assets/
   const iconIco = path.join(appDir, "build", "icon.ico");
   const iconPng = path.join(appDir, "build", "icon.png");
-  const logo = path.join(appDir, "renderer", "assets", "logo-256.png");
+  const logoCandidates = [
+    path.join(appDir, "renderer", "dist", "assets", "logo-256.png"),
+    path.join(appDir, "renderer", "assets", "logo-256.png"),
+  ];
+  let logo = null;
+  for (const p of logoCandidates) {
+    if (await exists(p)) {
+      logo = p;
+      break;
+    }
+  }
   for (const [label, p] of [
     ["app icon.ico", iconIco],
     ["app icon.png", iconPng],
-    ["sidebar logo-256", logo],
   ]) {
     if (!(await exists(p))) {
       throw new Error(`missing ${label}: ${p}`);
@@ -170,6 +180,16 @@ async function assertTree(unpacked) {
     if (st.size < 1000) throw new Error(`${label} too small (${st.size} bytes)`);
     console.log("OK", label, p, st.size);
   }
+  if (!logo) {
+    throw new Error(
+      `missing sidebar logo-256 (tried ${logoCandidates.join(" | ")})`,
+    );
+  }
+  {
+    const st = await fs.stat(logo);
+    if (st.size < 1000) throw new Error(`sidebar logo-256 too small (${st.size} bytes)`);
+    console.log("OK sidebar logo-256", logo, st.size);
+  }
 
   // Main exe should no longer be a pure Electron default after stamp-win-icon
   const exeStat = await fs.stat(exe);
@@ -177,6 +197,95 @@ async function assertTree(unpacked) {
     throw new Error(`main exe unexpectedly small: ${exeStat.size}`);
   }
   console.log("OK exe size", exeStat.size);
+
+  // Trust pack (public only — never pfx) + portable launcher
+  const trustDir = path.join(resources, "trust");
+  const trustFiles = [
+    ["trust dir", trustDir],
+    ["trust cer", path.join(trustDir, "HFQ-ClodBreeze.cer")],
+    ["trust silent bat", path.join(trustDir, "config-silent.bat")],
+    ["trust certmgr", path.join(trustDir, "certmgr.exe")],
+  ];
+  for (const [label, p] of trustFiles) {
+    if (!(await exists(p))) throw new Error(`missing ${label}: ${p}`);
+    console.log("OK", label, p);
+  }
+  // Private material must never ship
+  for (const bad of ["root.pfx", "pfx.password", "PFX密码.txt"]) {
+    const leak = path.join(trustDir, bad);
+    if (await exists(leak)) {
+      throw new Error(`PRIVATE signing material leaked into pack: ${leak}`);
+    }
+  }
+  const launchBat = path.join(resources, "Launch-HFQ-Code.bat");
+  if (!(await exists(launchBat))) {
+    throw new Error(`missing portable launcher: ${launchBat}`);
+  }
+  console.log("OK portable launcher", launchBat);
+
+  // @hfq/pty package must ship (spawn-pipe always; node-pty optional native)
+  const ptyPkgCandidates = [
+    path.join(appDir, "node_modules", "@hfq", "pty", "package.json"),
+    path.join(appDir, "node_modules", "@hfq", "pty", "dist", "index.js"),
+  ];
+  let ptyFound = false;
+  for (const p of ptyPkgCandidates) {
+    if (await exists(p)) {
+      console.log("OK @hfq/pty", p);
+      ptyFound = true;
+      break;
+    }
+  }
+  if (!ptyFound) {
+    throw new Error("missing @hfq/pty in packed app (expected package.json or dist/index.js)");
+  }
+
+  // node-pty is optionalDependencies — report presence of native binding when packed
+  const nodePtyRoots = [
+    path.join(appDir, "node_modules", "node-pty"),
+    path.join(appDir, "node_modules", "@hfq", "pty", "node_modules", "node-pty"),
+  ];
+  let nodePtyDir = null;
+  for (const r of nodePtyRoots) {
+    if (await exists(r)) {
+      nodePtyDir = r;
+      break;
+    }
+  }
+  if (!nodePtyDir) {
+    console.warn(
+      "WARN: node-pty not in packed tree — runtime will use spawn-pipe fallback (still valid)",
+    );
+  } else {
+    console.log("OK node-pty package dir", nodePtyDir);
+    // Look for a .node binary somewhere under prebuilds / build / lib
+    async function findNodeBinary(dir, depth = 0) {
+      if (depth > 5) return null;
+      let entries;
+      try {
+        entries = await fs.readdir(dir, { withFileTypes: true });
+      } catch {
+        return null;
+      }
+      for (const e of entries) {
+        const full = path.join(dir, e.name);
+        if (e.isFile() && e.name.endsWith(".node")) return full;
+        if (e.isDirectory() && e.name !== "node_modules") {
+          const hit = await findNodeBinary(full, depth + 1);
+          if (hit) return hit;
+        }
+      }
+      return null;
+    }
+    const native = await findNodeBinary(nodePtyDir);
+    if (native) {
+      console.log("OK node-pty native binding", native);
+    } else {
+      console.warn(
+        "WARN: node-pty present but no .node binding found — may still load via require path or fall back",
+      );
+    }
+  }
 }
 
 async function main() {

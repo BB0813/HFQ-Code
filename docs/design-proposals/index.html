@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HFQ Code · 布局方案审核</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b0d11;
+        --panel: #12151b;
+        --line: rgba(255, 255, 255, 0.08);
+        --text: #e8ecf2;
+        --muted: #8b93a3;
+        --accent: #38bdf8;
+        --font: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: var(--font);
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.5;
+        padding: 32px 28px 64px;
+      }
+      h1 { margin: 0 0 8px; font-size: 22px; letter-spacing: -0.02em; }
+      .lede { color: var(--muted); max-width: 68ch; margin: 0 0 28px; }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 16px;
+      }
+      a.card {
+        display: block;
+        text-decoration: none;
+        color: inherit;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 18px;
+        transition: border-color .15s ease, transform .12s ease;
+      }
+      a.card:hover {
+        border-color: rgba(56, 189, 248, 0.35);
+        transform: translateY(-1px);
+      }
+      .tag {
+        display: inline-flex;
+        font-size: 11px;
+        color: var(--accent);
+        border: 1px solid rgba(56, 189, 248, 0.28);
+        background: rgba(56, 189, 248, 0.08);
+        border-radius: 999px;
+        padding: 2px 8px;
+        margin-bottom: 10px;
+      }
+      .card h2 { margin: 0 0 8px; font-size: 16px; }
+      .card p { margin: 0; color: var(--muted); font-size: 13px; }
+      .meta {
+        margin-top: 28px;
+        padding: 16px 18px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #0f1217;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .meta strong { color: var(--text); }
+      code { font-family: Consolas, ui-monospace, monospace; font-size: 12px; color: #c8d0dc; }
+    </style>
+  </head>
+  <body>
+    <h1>HFQ Code · 三套布局方案（仅审核，未接入生产）</h1>
+    <p class="lede">
+      参考 Cursor / VS Code / Claude Code / Zed / Linear 的工作台结构，先定信息架构再改生产 UI。
+      请优先点开 <strong>方案 D（三合一）</strong>；也可对比 A/B/C。回复选用 <strong>D / A / B / C</strong>（可微调）。框架选型见文末说明。
+    </p>
+    <div class="grid">
+      <a class="card" href="./hfq-v1-obsidian/index.html" style="border-color: rgba(34,211,238,.45); box-shadow: 0 0 0 1px rgba(34,211,238,.12);">
+        <span class="tag">NEW · 20 pages</span>
+        <h2>HFQ Code v1.0 · Obsidian Intelligence</h2>
+        <p>完整高保真桌面原型：顶栏 / 侧栏 / 20 页（Dashboard → Design System）· Ctrl K 命令面板 · 可点导航。</p>
+      </a>
+      <a class="card" href="./D-hybrid-workbench.html" style="border-color: rgba(56,189,248,.35); box-shadow: 0 0 0 1px rgba(56,189,248,.08);">
+        <span class="tag">方案 D · 三合一（请先看这个）</span>
+        <h2>A 中枢 + B 底栏 + C 焦点</h2>
+        <p>会话中心、右侧改动、可折叠底栏 PTY、按需文件树。把三套优点收成一套默认可落地布局。</p>
+      </a>
+
+      <a class="card" href="./A-cursor-agent.html">
+        <span class="tag">方案 A · 推荐主路径</span>
+        <h2>Cursor 式 Agent 中枢</h2>
+        <p>左侧活动栏 + 会话列表 · 中央对话 · 右侧改动/终端抽屉。最接近主流 AI IDE 日常流。</p>
+      </a>
+      <a class="card" href="./B-vscode-workbench.html">
+        <span class="tag">方案 B · IDE 深度</span>
+        <h2>VS Code 工作台</h2>
+        <p>活动栏 + 侧栏面板 + 编辑区/对话切换 + 底栏终端。适合强调文件树与多面板。</p>
+      </a>
+      <a class="card" href="./C-claude-zen.html">
+        <span class="tag">方案 C · 极简会话</span>
+        <h2>Claude / Zed 式焦点</h2>
+        <p>极窄导航 + 宽对话时间线 + 底部命令条；改动与终端为浮层。最干净，工具入口更深。</p>
+      </a>
+    </div>
+    <div class="meta">
+      <p><strong>审核方式：</strong>本地打开本目录任意 HTML（浏览器即可，不依赖 Electron）。</p>
+      <p><strong>路径：</strong><code>docs/design-proposals/</code></p>
+      <p><strong>框架建议（审核后再做）：</strong>若选定 D / A / B 的多面板布局，建议生产侧用 <strong>React + 自研 token CSS</strong>（或 Preact）做 shell；Agent 核心保持现有 TS monorepo。当前 vanilla 可继续撑到选型落地，不阻塞 1.1 PTY 预研。</p>
+      <p><strong>详细对照：</strong><code>docs/LAYOUT-PROPOSALS.md</code> · <strong>PTY 预研：</strong><code>docs/PTY-1.1.md</code></p>
+    </div>
+  </body>
+</html>

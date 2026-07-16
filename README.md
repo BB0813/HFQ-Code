@@ -26,12 +26,12 @@ See [docs/PHASE3-STATUS.md](./docs/PHASE3-STATUS.md) · [docs/ROADMAP.md](./docs
 
 Official builds: [GitHub Releases](https://github.com/BB0813/HFQ-Code/releases) (NSIS installer + portable).
 
-**Current releases are not Authenticode code-signed.** Windows may show:
+**Releases are Authenticode-signed with self-signed publisher `HFQ-ClodBreeze`** (not a commercial OV/EV cert). Windows may still show:
 
-- 「无法验证发布者 / 未知发布者」
-- SmartScreen：「Windows 已保护你的电脑」
+- 「无法验证发布者 / 未知发布者」 until the machine trusts the publisher root
+- SmartScreen：「Windows 已保护你的电脑」 (reputation / new publisher)
 
-This is expected for unsigned desktop apps, not a corrupt download.
+This is expected for self-signed desktop apps, not a corrupt download. Details: [docs/PACKAGING.md](./docs/PACKAGING.md).
 
 ### What to do
 
@@ -39,27 +39,28 @@ This is expected for unsigned desktop apps, not a corrupt download.
 2. Optionally verify the file against `SHA256SUMS.txt` on the same release.
 3. In the open-file dialog, choose **运行**.
 4. If SmartScreen appears: **更多信息 → 仍要运行**.
+5. **NSIS install** may elevate and import the publisher trust pack (`resources/trust`). **Portable** users can run `resources/Launch-HFQ-Code.bat` or `Install-Trust.bat` (admin) once.
 
-### Free alternatives (no paid certificate)
+### Build / sign notes
 
 | Approach | Effect |
 |----------|--------|
 | Confirm **运行 / 仍要运行** after checking the Release URL + SHA-256 | Practical for self-use and small internal tests |
-| Use the **portable** build | Same trust model; often fewer reinstall prompts |
-| Build from source (`pnpm pack:win`) | You trust your own tree; the resulting exe is still unsigned |
-| Self-signed certificate | Does **not** remove the warning (Windows does not trust it by default) |
+| Use the **portable** build + trust launcher | Same publisher; optional silent trust import |
+| Build from source (`pnpm pack:win`) with `HFQ_SIGN_ROOT` | Signs with local PFX; never commit `root.pfx` |
+| `HFQ_SIGN_SKIP=1` | Unsigned local debug pack only |
 
-There is **no reliable free way** to make Windows show a verified publisher for public `.exe` downloads. Paid OV/EV code signing is planned later ([docs/ROADMAP.md](./docs/ROADMAP.md) Track D · 1.2). Do **not** disable SmartScreen or UAC system-wide to “fix” this.
+Self-signed signing **does not** guarantee SmartScreen clearance. Commercial OV/EV certs + download reputation are a separate later option. Do **not** disable SmartScreen or UAC system-wide to “fix” this.
 
 ### Installer vs portable
 
 | Artifact | Notes |
 |----------|--------|
-| `HFQ Code-*-x64.exe` | NSIS installer |
-| `HFQ Code-*-portable.exe` | Portable; no install wizard |
+| `HFQ Code-*-x64.exe` | NSIS installer (per-machine; trust import on install) |
+| `HFQ Code-*-portable.exe` | Portable; use `Launch-HFQ-Code.bat` for trust + start |
 | `SHA256SUMS.txt` | Checksums for the above |
 
-Update policy remains **manual**: in-app check → open download page; no silent auto-install.
+Update policy remains **manual**: in-app check → download → confirm open installer; no silent auto-install.
 
 ## Decisions (frozen)
 

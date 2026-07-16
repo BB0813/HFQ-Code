@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>方案 B · VS Code 工作台</title>
+    <link rel="stylesheet" href="./_shared.css" />
+  </head>
+  <body data-scheme="b">
+    <header class="review-bar">
+      <a href="./index.html">← 方案列表</a>
+      <strong>方案 B · VS Code 工作台</strong>
+      <span class="pill">IDE 深度 / 多面板</span>
+    </header>
+    <div class="app app-b">
+      <aside class="rail">
+        <div class="rail-logo">H</div>
+        <button class="rail-btn active" title="资源管理器">📁</button>
+        <button class="rail-btn" title="搜索">⌕</button>
+        <button class="rail-btn" title="会话">💬</button>
+        <button class="rail-btn" title="改动"> cons</button>
+        <button class="rail-btn" title="扩展/技能">▣</button>
+        <div class="rail-spacer"></div>
+        <button class="rail-btn" title="设置">⚙</button>
+      </aside>
+
+      <aside class="side side-b">
+        <div class="side-head">
+          <div class="side-title">资源管理器</div>
+        </div>
+        <div class="tree">
+          <div class="tree-item">▾ src</div>
+          <div class="tree-item nest">auth.ts</div>
+          <div class="tree-item nest active">client.ts</div>
+          <div class="tree-item nest">routes/</div>
+          <div class="tree-item">▾ tests</div>
+          <div class="tree-item nest">auth.spec.ts</div>
+          <div class="tree-item">package.json</div>
+        </div>
+        <div class="side-section">会话</div>
+        <div class="session-item active compact">
+          <div class="si-title">修登录页鉴权</div>
+        </div>
+        <div class="session-item compact">
+          <div class="si-title">整理 skills</div>
+        </div>
+      </aside>
+
+      <div class="center-col">
+        <div class="editor-tabs">
+          <div class="etab">client.ts</div>
+          <div class="etab active">Agent 会话</div>
+          <div class="etab">终端</div>
+        </div>
+        <main class="main main-b">
+          <section class="stream stream-b">
+            <div class="msg user">
+              <div class="role">你</div>
+              <div class="body">401 时跳转登录并清 token。</div>
+            </div>
+            <div class="tool">
+              <div class="tool-h"><span class="mono">apply_patch</span><span class="badge ok">完成</span></div>
+            </div>
+            <div class="msg assistant">
+              <div class="role">HFQ</div>
+              <div class="body">补丁已写入。可在底部面板看测试输出，或切到「改动」对比。</div>
+            </div>
+          </section>
+          <footer class="composer">
+            <textarea placeholder="向 Agent 发消息…"></textarea>
+            <div class="composer-bar">
+              <div class="left">
+                <button class="btn sm">计划模式 ▾</button>
+                <button class="btn sm mono">model ▾</button>
+              </div>
+              <button class="btn primary sm">发送</button>
+            </div>
+          </footer>
+        </main>
+        <div class="bottom">
+          <div class="bottom-tabs">
+            <button class="tab active">终端</button>
+            <button class="tab">问题</button>
+            <button class="tab">输出</button>
+            <button class="tab">调试控制台</button>
+          </div>
+          <pre class="term-pane mono">PS D:\proj\hfq-demo> pnpm test
+ ✓ auth.spec.ts (3)
+ Test Files  1 passed
+</pre>
+        </div>
+      </div>
+
+      <aside class="inspector inspector-b">
+        <div class="tabs">
+          <button class="tab active">改动</button>
+          <button class="tab">任务</button>
+        </div>
+        <div class="insp-body">
+          <div class="file-row active"><span class="mono">client.ts</span><span class="badge info">+12 −3</span></div>
+          <div class="file-row"><span class="mono">auth.ts</span><span class="badge">+4</span></div>
+          <pre class="diff">+ clearToken();
++ navigate('/login');</pre>
+        </div>
+      </aside>
+    </div>
+    <section class="notes">
+      <h3>方案 B 要点</h3>
+      <ul>
+        <li><strong>借鉴：</strong>VS Code 活动栏 + 资源管理器 + 编辑区标签 + 底栏面板 + 右侧 SCM/改动。</li>
+        <li><strong>主路径：</strong>文件与终端权重更高；Agent 是中心标签之一，而非唯一中心。</li>
+        <li><strong>适合：</strong>习惯 IDE 的用户、需要长期看文件树 / 跑测试。</li>
+        <li><strong>成本：</strong>面板状态最多，最吃前端框架与布局引擎；PTY 底栏是自然落点。</li>
+      </ul>
+    </section>
+  </body>
+</html>

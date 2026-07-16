@@ -15,8 +15,8 @@
 │  window · IPC bridge · policy dialogs        │
 │  config / credentials / MCP registry UI      │
 │         │                                    │
-│         ├── Renderer (vanilla SPA)           │
-│         │     preload bridge                 │
+│         ├── Renderer (React + Vite bundle)   │
+│         │     dist/ · preload window.hfq     │
 │         │                                    │
 │         └── Session Worker (child Node)      │
 │               SessionManager · agent loop    │
@@ -32,7 +32,7 @@ Phase-3 **M3.3**: desktop prefers `SessionWorkerHost` (child process). If spawn 
 ```
 hfq-code/
   apps/
-    desktop/                 # Electron main + preload + renderer
+    desktop/                 # Electron main + preload + React renderer (Vite → dist)
   packages/
     shared/                  # types, events, zod schemas
     session-api/             # local RPC contract

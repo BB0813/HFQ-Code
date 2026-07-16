@@ -33,6 +33,11 @@ export interface ChatResult {
   message: string;
   toolCalls: ToolCall[];
   usage?: { inputTokens: number; outputTokens: number };
+  /**
+   * Model chain-of-thought / extended thinking for this round (when the API returns it).
+   * Not re-injected into subsequent ChatMessage history by agent-core.
+   */
+  reasoning?: string;
 }
 
 export interface ChatRequest {
@@ -42,6 +47,12 @@ export interface ChatRequest {
   temperature?: number;
   /** When set, providers may stream text chunks via this callback (message.delta). */
   onDelta?: (text: string) => void | Promise<void>;
+  /**
+   * When set, providers may stream reasoning / thinking chunks (thinking.delta).
+   * OpenAI-compatible: delta.reasoning_content | delta.reasoning
+   * Anthropic: content_block type thinking
+   */
+  onThinkingDelta?: (text: string) => void | Promise<void>;
 }
 
 export interface ModelProvider {

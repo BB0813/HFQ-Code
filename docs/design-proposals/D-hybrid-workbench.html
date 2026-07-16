@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>方案 D · 三合一工作台（推荐审核稿）</title>
+    <link rel="stylesheet" href="./_shared.css" />
+    <link rel="stylesheet" href="./_hybrid.css" />
+  </head>
+  <body data-scheme="d">
+    <header class="review-bar">
+      <a href="./index.html">← 方案列表</a>
+      <strong>方案 D · 三合一工作台</strong>
+      <span class="pill">A 中枢 + B 底栏 + C 焦点</span>
+    </header>
+
+    <div class="hybrid" id="workbench">
+      <!-- A: activity rail -->
+      <aside class="h-rail" aria-label="活动栏">
+        <div class="rail-logo" title="HFQ Code">H</div>
+        <button type="button" class="rail-btn active" data-rail="chat" title="会话">
+          <span class="ri">◎</span>
+          <span class="rl">会话</span>
+        </button>
+        <button type="button" class="rail-btn" data-rail="files" title="文件">
+          <span class="ri">▣</span>
+          <span class="rl">文件</span>
+        </button>
+        <button type="button" class="rail-btn" data-rail="changes" title="改动">
+          <span class="ri"> cons</span>
+          <span class="rl">改动</span>
+        </button>
+        <button type="button" class="rail-btn" data-rail="tasks" title="任务">
+          <span class="ri">☰</span>
+          <span class="rl">任务</span>
+        </button>
+        <div class="rail-spacer"></div>
+        <button type="button" class="rail-btn" data-rail="skills" title="技能">
+          <span class="ri">✦</span>
+          <span class="rl">技能</span>
+        </button>
+        <button type="button" class="rail-btn" data-rail="more" title="更多">
+          <span class="ri">⋯</span>
+          <span class="rl">更多</span>
+        </button>
+      </aside>
+
+      <!-- A: secondary list (sessions / files) -->
+      <aside class="h-side" id="sidePanel">
+        <div class="side-mode" data-mode="chat">
+          <div class="side-head">
+            <div>
+              <div class="side-title">会话</div>
+              <div class="side-sub mono">D:\proj\hfq-demo</div>
+            </div>
+            <button type="button" class="btn primary sm">新建</button>
+          </div>
+          <input class="search" placeholder="搜索会话 / 目标…" />
+          <div class="session-item active">
+            <div class="si-title">修登录页鉴权</div>
+            <div class="si-meta">进行中 · 2 分钟前 · 改动 3</div>
+          </div>
+          <div class="session-item">
+            <div class="si-title">整理 skills 安装</div>
+            <div class="si-meta">完成 · 昨天</div>
+          </div>
+          <div class="session-item">
+            <div class="si-title">排查 release:check</div>
+            <div class="si-meta">完成 · 周一</div>
+          </div>
+          <div class="side-foot">
+            <span class="chip">变更前确认</span>
+            <span class="chip mono">gpt-4.1-mini</span>
+          </div>
+        </div>
+
+        <div class="side-mode hidden" data-mode="files">
+          <div class="side-head">
+            <div class="side-title">资源管理器</div>
+          </div>
+          <div class="tree">
+            <div class="tree-item">▾ src</div>
+            <div class="tree-item nest">middleware/auth.ts</div>
+            <div class="tree-item nest active">api/client.ts</div>
+            <div class="tree-item nest">routes/</div>
+            <div class="tree-item">▾ tests</div>
+            <div class="tree-item nest">auth.spec.ts</div>
+            <div class="tree-item">package.json</div>
+          </div>
+          <p class="side-hint faint">文件树为辅助浏览；写码主路径仍是会话 + 改动审阅。</p>
+        </div>
+      </aside>
+
+      <!-- C-ish center: chat timeline focus -->
+      <div class="h-center">
+        <header class="h-top">
+          <div class="h-top-left">
+            <span class="workspace mono">hfq-demo</span>
+            <span class="sep">/</span>
+            <h1>修登录页鉴权</h1>
+            <span class="badge info">进行中</span>
+          </div>
+          <div class="h-top-right">
+            <button type="button" class="btn sm" id="toggleInspector">改动 3</button>
+            <button type="button" class="btn sm" id="toggleBottom">终端 ▾</button>
+            <button type="button" class="btn sm">停止</button>
+          </div>
+        </header>
+
+        <section class="h-stream">
+          <div class="day">今天 · 会话时间线</div>
+          <div class="msg user">
+            <div class="role">你</div>
+            <div class="body">登录接口 401 时前端应跳到 /login，并清掉本地 token。先查 auth 中间件再改客户端。</div>
+          </div>
+          <div class="msg assistant">
+            <div class="role">HFQ</div>
+            <div class="body">先定位鉴权中间件与响应拦截器，再给最小补丁；改完你在右侧审阅。</div>
+          </div>
+          <div class="tool">
+            <div class="tool-h">
+              <span class="mono">read_file</span>
+              <span class="badge ok">完成</span>
+              <span class="faint mono">src/middleware/auth.ts</span>
+            </div>
+          </div>
+          <div class="tool">
+            <div class="tool-h">
+              <span class="mono">apply_patch</span>
+              <span class="badge ok">完成</span>
+              <span class="faint mono">src/api/client.ts</span>
+            </div>
+            <div class="tool-preview faint">+ if (res.status === 401) { clearToken(); navigate('/login'); }</div>
+          </div>
+          <div class="msg assistant">
+            <div class="role">HFQ</div>
+            <div class="body">
+              已在 API 客户端统一处理 401。建议跑 <span class="mono">pnpm test auth</span>；
+              需要的话用底栏终端直跑，或让我代跑 shell（会按访问模式确认）。
+            </div>
+            <div class="inline-actions">
+              <button type="button" class="btn sm" id="jumpChanges">查看改动</button>
+              <button type="button" class="btn sm" id="jumpTerm">打开终端</button>
+              <button type="button" class="btn sm">继续</button>
+            </div>
+          </div>
+        </section>
+
+        <footer class="h-composer">
+          <textarea placeholder="描述任务 · /goal 长目标 · / 命令 · $ 技能"></textarea>
+          <div class="composer-bar">
+            <div class="left">
+              <button type="button" class="btn sm">变更前确认 ▾</button>
+              <button type="button" class="btn sm mono">gpt-4.1-mini ▾</button>
+              <button type="button" class="btn sm">/ 命令</button>
+            </div>
+            <div class="right">
+              <span class="faint">Enter 发送</span>
+              <button type="button" class="btn primary sm">发送</button>
+            </div>
+          </div>
+        </footer>
+
+        <!-- B: bottom panel (terminal / problems) -->
+        <div class="h-bottom" id="bottomPanel">
+          <div class="bottom-tabs">
+            <button type="button" class="tab active">终端</button>
+            <button type="button" class="tab">输出</button>
+            <button type="button" class="tab">问题</button>
+            <span class="bottom-meta faint mono">cwd D:\proj\hfq-demo · PTY</span>
+            <button type="button" class="btn sm ghost bottom-close" id="collapseBottom">收起</button>
+          </div>
+          <pre class="term-pane mono">PS D:\proj\hfq-demo&gt; pnpm test auth
+ ✓ tests/auth.spec.ts (3)
+ Test Files  1 passed (1)
+
+PS D:\proj\hfq-demo&gt; _</pre>
+        </div>
+      </div>
+
+      <!-- A: right inspector -->
+      <aside class="h-inspector" id="inspector">
+        <div class="tabs">
+          <button type="button" class="tab active">改动</button>
+          <button type="button" class="tab">任务</button>
+          <button type="button" class="tab">详情</button>
+        </div>
+        <div class="insp-body">
+          <div class="insp-summary">
+            <span class="chip">3 文件</span>
+            <span class="chip">+19 −4</span>
+          </div>
+          <div class="file-row active">
+            <span class="mono">src/api/client.ts</span>
+            <span class="badge info">+12 −3</span>
+          </div>
+          <div class="file-row">
+            <span class="mono">src/middleware/auth.ts</span>
+            <span class="badge">+4</span>
+          </div>
+          <div class="file-row">
+            <span class="mono">tests/auth.spec.ts</span>
+            <span class="badge ok">新增</span>
+          </div>
+          <pre class="diff">@@ client.ts
+- if (res.status === 500) throw …
++ if (res.status === 401) {
++   clearToken();
++   navigate('/login');
++   return;
++ }</pre>
+          <div class="insp-actions">
+            <button type="button" class="btn sm">拒绝</button>
+            <button type="button" class="btn primary sm">接受</button>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <section class="notes hybrid-notes">
+      <h3>方案 D · 三合一怎么拼</h3>
+      <div class="merge-grid">
+        <div class="merge-card">
+          <h4>来自 A · Cursor</h4>
+          <ul>
+            <li>左侧活动栏 + 会话列表</li>
+            <li>右侧改动检视（主审阅面）</li>
+            <li>对话是默认中心，不是附属标签</li>
+          </ul>
+        </div>
+        <div class="merge-card">
+          <h4>来自 B · VS Code</h4>
+          <ul>
+            <li>可折叠<strong>底栏终端（PTY 首选挂载）</strong></li>
+            <li>活动栏可切「文件」显示轻量树</li>
+            <li>底栏多 tab：终端 / 输出 / 问题</li>
+          </ul>
+        </div>
+        <div class="merge-card">
+          <h4>来自 C · Claude/Zed</h4>
+          <ul>
+            <li>中央时间线干净、少 chrome</li>
+            <li>顶栏极简：工作区 / 标题 / 关键开关</li>
+            <li>次要入口收进「更多」与 / 菜单</li>
+          </ul>
+        </div>
+      </div>
+      <h3>默认布局与折叠规则</h3>
+      <ul>
+        <li><strong>默认开：</strong>活动栏 + 会话列表 + 对话 + 右侧改动（有 diff 时）</li>
+        <li><strong>默认收：</strong>底栏终端（点「终端」或 Agent 引导再展开）</li>
+        <li><strong>文件树：</strong>按需，不默认占主路径</li>
+        <li><strong>窄屏：</strong>先藏右侧，再藏侧栏；底栏全宽</li>
+      </ul>
+      <h3>框架建议（若定 D）</h3>
+      <p>
+        与 A/B 相同：生产壳倾向 <strong>React 或 Preact + 现有 CSS tokens</strong>；
+        Agent 核心保持 TS monorepo。可先 vanilla 分区验证再迁框架。
+      </p>
+      <p class="pick-line"><strong>审核回复示例：</strong>「定 D」/「定 D，但默认关掉右侧」/「定 D，文件树不要」</p>
+    </section>
+
+    <script>
+      (function () {
+        const wb = document.getElementById("workbench");
+        const side = document.getElementById("sidePanel");
+        const bottom = document.getElementById("bottomPanel");
+        const inspector = document.getElementById("inspector");
+
+        function showSideMode(mode) {
+          side.querySelectorAll(".side-mode").forEach((el) => {
+            el.classList.toggle("hidden", el.getAttribute("data-mode") !== mode);
+          });
+        }
+
+        document.querySelectorAll("[data-rail]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            document.querySelectorAll("[data-rail]").forEach((b) => b.classList.remove("active"));
+            btn.classList.add("active");
+            const id = btn.getAttribute("data-rail");
+            if (id === "files") showSideMode("files");
+            else if (id === "chat" || id === "tasks") showSideMode("chat");
+            if (id === "changes") {
+              inspector.classList.remove("collapsed");
+              wb.classList.remove("no-inspector");
+            }
+          });
+        });
+
+        document.getElementById("toggleInspector")?.addEventListener("click", () => {
+          const on = inspector.classList.toggle("collapsed");
+          wb.classList.toggle("no-inspector", on);
+        });
+        document.getElementById("toggleBottom")?.addEventListener("click", () => {
+          bottom.classList.toggle("collapsed");
+          wb.classList.toggle("bottom-collapsed", bottom.classList.contains("collapsed"));
+        });
+        document.getElementById("collapseBottom")?.addEventListener("click", () => {
+          bottom.classList.add("collapsed");
+          wb.classList.add("bottom-collapsed");
+        });
+        document.getElementById("jumpChanges")?.addEventListener("click", () => {
+          inspector.classList.remove("collapsed");
+          wb.classList.remove("no-inspector");
+        });
+        document.getElementById("jumpTerm")?.addEventListener("click", () => {
+          bottom.classList.remove("collapsed");
+          wb.classList.remove("bottom-collapsed");
+        });
+
+        // demo: bottom open so reviewer sees B piece; can collapse
+        bottom.classList.remove("collapsed");
+      })();
+    </script>
+  </body>
+</html>

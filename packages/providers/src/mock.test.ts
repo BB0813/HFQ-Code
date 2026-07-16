@@ -45,6 +45,20 @@ describe("createMockProvider", () => {
     expect(res.message).toMatch(/list|read|write|shell/i);
   });
 
+  it("streams mock thinking when user asks for 思考过程", async () => {
+    const think: string[] = [];
+    const res = await provider.chat({
+      model: "mock",
+      messages: [{ role: "user", content: "show 思考过程 please" }],
+      tools,
+      onThinkingDelta: (t) => {
+        think.push(t);
+      },
+    });
+    expect(think.join("").length).toBeGreaterThan(10);
+    expect(res.reasoning).toMatch(/mock thinking/i);
+  });
+
   it("emits list_dir tool call", async () => {
     const res = await provider.chat({
       model: "mock",

@@ -368,6 +368,10 @@ export class SessionWorkerHost {
     return this.call("listChildren", { sessionId });
   }
 
+  async listSpawnAttempts(sessionId: string): Promise<unknown[]> {
+    return this.call("listSpawnAttempts", { sessionId });
+  }
+
   async spawnSubagent(params: {
     parentSessionId: string;
     goal: string;

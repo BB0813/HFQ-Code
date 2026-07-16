@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   defaultAppConfig,
   loadAppConfig,
@@ -17,8 +17,16 @@ import {
 } from "./index.js";
 
 const temps: string[] = [];
+const prevPlain = process.env.HFQ_CREDENTIALS_PLAIN;
+
+// Store tests assert credentials.json plaintext shape; force plain encoding.
+beforeEach(() => {
+  process.env.HFQ_CREDENTIALS_PLAIN = "1";
+});
 
 afterEach(async () => {
+  if (prevPlain === undefined) delete process.env.HFQ_CREDENTIALS_PLAIN;
+  else process.env.HFQ_CREDENTIALS_PLAIN = prevPlain;
   await Promise.all(
     temps.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })),
   );
@@ -42,11 +50,15 @@ describe("config store", () => {
       theme: "light",
       proxyUrl: "http://127.0.0.1:7890",
       memoryEnabled: false,
+      terminalShell: "pwsh",
     });
     expect(cfg.prefs.theme).toBe("light");
     expect(cfg.prefs.proxyUrl).toMatch(/7890/);
     expect(cfg.prefs.memoryEnabled).toBe(false);
     expect(cfg.prefs.compactMaxChars).toBe(48_000);
+    expect(cfg.prefs.terminalShell).toBe("pwsh");
+    const auto = withPrefs(cfg, { terminalShell: "" });
+    expect(auto.prefs.terminalShell).toBe("");
   });
 
   it("merges permissionMode and keeps planModeDefault in sync", () => {

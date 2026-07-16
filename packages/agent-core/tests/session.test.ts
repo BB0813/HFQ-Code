@@ -286,6 +286,108 @@ describe("SessionManager integration", () => {
     expect(again.removedFile).toBe(false);
   });
 
+  it("spawns sub-agents with listChildren + failed spawn reasons", async () => {
+    const ws = await makeWorkspace();
+    const events: SessionEvent[] = [];
+    const mgr = new SessionManager({
+      onEvent: async (e) => {
+        events.push(e);
+      },
+    });
+    const parent = await mgr.create({ workspacePath: ws, title: "parent" });
+
+    const spawned = await mgr.spawnSubagent({
+      parentSessionId: parent.id,
+      goal: "list the workspace root",
+      profile: "explore",
+    });
+    expect(spawned.ok).toBe(true);
+    expect(spawned.childSessionId).toBeTruthy();
+
+    const children = mgr.listChildren(parent.id);
+    expect(children.some((c) => c.id === spawned.childSessionId)).toBe(true);
+    const child = children.find((c) => c.id === spawned.childSessionId);
+    expect(child?.parentSessionId).toBe(parent.id);
+    expect(child?.subagentProfile).toBe("explore");
+    expect(child?.goal).toMatch(/list the workspace/i);
+    expect(child?.subagentDepth).toBe(1);
+
+    const attempts = mgr.listSpawnAttempts(parent.id);
+    expect(attempts.some((a) => a.status === "completed" && a.childSessionId)).toBe(true);
+
+    const subEvents = events.filter((e) => e.type === "subagent.updated");
+    expect(subEvents.some((e) => e.type === "subagent.updated" && e.status === "started")).toBe(
+      true,
+    );
+    expect(subEvents.some((e) => e.type === "subagent.updated" && e.status === "completed")).toBe(
+      true,
+    );
+
+    // Depth limit from a depth-1 child should fail with errorCode depth (or from depth-2 if we nest).
+    const childSess = mgr.get(spawned.childSessionId!);
+    expect(childSess).toBeTruthy();
+    // Manually create a depth-2 child then attempt spawn from it → depth > 2 fails early.
+    const d2 = await mgr.create({
+      workspacePath: ws,
+      title: "depth2",
+      parentSessionId: spawned.childSessionId,
+      subagentDepth: 2,
+      subagentProfile: "explore",
+      goal: "deep",
+    });
+    // Wire depth via creating under d2 as parent requires live session depth getter.
+    // spawnSubagent uses parent.getSubagentDepth()+1 — open d2 session depth is 2, so +1=3 > 2.
+    const deepFail = await mgr.spawnSubagent({
+      parentSessionId: d2.id,
+      goal: "should fail depth",
+      profile: "explore",
+    });
+    expect(deepFail.ok).toBe(false);
+    expect(deepFail.errorCode).toBe("depth");
+    expect(deepFail.childSessionId).toBe("");
+
+    const failAttempts = mgr.listSpawnAttempts(d2.id);
+    expect(failAttempts.some((a) => a.status === "failed" && a.errorCode === "depth")).toBe(true);
+    expect(
+      events.some(
+        (e) =>
+          e.type === "subagent.updated" &&
+          e.parentSessionId === d2.id &&
+          e.status === "failed" &&
+          e.errorCode === "depth",
+      ),
+    ).toBe(true);
+  });
+
+  it("emits thinking.delta / thinking.completed when mock CoT is requested", async () => {
+    const ws = await makeWorkspace();
+    const events: SessionEvent[] = [];
+    const mgr = new SessionManager({
+      onEvent: async (e) => {
+        events.push(e);
+      },
+    });
+    const session = await mgr.create({ workspacePath: ws, title: "think" });
+    await mgr.send(session.id, "show 思考过程 please");
+
+    const deltas = events.filter((e) => e.type === "thinking.delta");
+    const done = events.find((e) => e.type === "thinking.completed");
+    expect(deltas.length).toBeGreaterThan(0);
+    expect(done && done.type === "thinking.completed" && done.text).toMatch(/mock thinking/i);
+    if (done && done.type === "thinking.completed") {
+      const sameId = deltas.every(
+        (d) => d.type === "thinking.delta" && d.messageId === done.messageId,
+      );
+      expect(sameId).toBe(true);
+    }
+    // Live deltas must not land in durable snapshot event log.
+    const snap = mgr.getSnapshot(session.id);
+    expect(snap).toBeTruthy();
+    expect(snap!.events.some((e) => e.type === "thinking.delta")).toBe(false);
+    expect(snap!.events.some((e) => e.type === "thinking.completed")).toBe(true);
+    expect(snap!.messages.some((m) => m.role === "thinking")).toBe(true);
+  });
+
   it("injects getExtraTools (MCP-style) into the agent loop", async () => {
     const ws = await makeWorkspace();
     const events: SessionEvent[] = [];

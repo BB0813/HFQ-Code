@@ -88,4 +88,34 @@ describe("anthropic provider", () => {
     const p = createAnthropicProvider({ id: "a", apiKey: "k" });
     expect(p.id).toBe("a");
   });
+
+  it("parses thinking blocks into reasoning", async () => {
+    const thinkChunks: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        async json() {
+          return {
+            content: [
+              { type: "thinking", thinking: "plan A then B" },
+              { type: "text", text: "Done." },
+            ],
+            usage: { input_tokens: 3, output_tokens: 4 },
+          };
+        },
+      })),
+    );
+    const p = createAnthropicProvider({ id: "anthropic", apiKey: "sk-ant-test" });
+    const res = await p.chat({
+      model: "claude-sonnet-4-20250514",
+      messages: [{ role: "user", content: "hi" }],
+      onThinkingDelta: (t) => {
+        thinkChunks.push(t);
+      },
+    });
+    expect(res.reasoning).toBe("plan A then B");
+    expect(res.message).toBe("Done.");
+    expect(thinkChunks.join("")).toBe("plan A then B");
+  });
 });

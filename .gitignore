@@ -1,15 +1,78 @@
+# Dependencies
 node_modules/
+
+# Build outputs (packages/*/dist, vite dist, etc.)
 dist/
 out/
 .turbo/
+.vite/
+**/.vite/
+*.tsbuildinfo
+coverage/
+*.lcov
+
+# Electron / native caches
+.cache/
+**/.cache/
+
+# Logs / OS
 *.log
 .DS_Store
+Thumbs.db
+Desktop.ini
+
+# Env & secrets — never commit
 .env
 .env.*
 !.env.example
-coverage/
-*.tsbuildinfo
-apps/desktop/release/
-.hfq/
 credentials.json
+*.pfx
+*.p12
+*.key
+*.pem
+pfx.password
+PFX密码.txt
+**/pfx.password
+**/*密码*.txt
+
+# Local agent / product data
+.hfq/
 /.zcode
+.zcode/
+
+# Electron builder output
+apps/desktop/release/
+apps/desktop/dist/
+**/*.blockmap
+builder-effective-config.yaml
+builder-debug.yml
+
+# Local signing material (must never ship)
+**/root.pfx
+**/signing/
+.secrets/
+.sign/
+sign-local/
+hfq-sign/
+**/output/root.pfx
+**/output/pfx.password
+
+# Editor / IDE
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Python one-off tooling leftovers
+__pycache__/
+*.pyc
+.pytest_cache/
+scripts/_patch_*.py
+scripts/_visual_*.py
+scripts/ui-*.py
+scripts/screenshot-*.py
+
+# Temp
+tmp/
+temp/
+*.tmp
+*.bak

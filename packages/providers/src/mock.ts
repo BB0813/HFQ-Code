@@ -239,6 +239,22 @@ export function createMockProvider(): ModelProvider {
         "",
         "Tip: say `list`, `read README.md`, `grep …`, `git status`, `write …`, or `shell …` to exercise tools.",
       ].join("\n");
+      // Demo CoT when user says thinking / 思考 — exercises thinking.delta path.
+      // Note: \b does not work around CJK; use plain includes / latin word edges.
+      let reasoning: string | undefined;
+      if (
+        /思考过程|推理|思考/.test(text) ||
+        /\bthinking\b/i.test(text) ||
+        /\breason(ing)?\b/i.test(text)
+      ) {
+        reasoning =
+          "[mock thinking] User asked for reasoning demo. I will echo their message and tip them toward tools.";
+        if (req.onThinkingDelta) {
+          const mid = Math.max(1, Math.floor(reasoning.length / 2));
+          await req.onThinkingDelta(reasoning.slice(0, mid));
+          await req.onThinkingDelta(reasoning.slice(mid));
+        }
+      }
       if (req.onDelta) {
         // Simulate streaming for UI path.
         const mid = Math.max(1, Math.floor(reply.length / 2));
@@ -248,6 +264,7 @@ export function createMockProvider(): ModelProvider {
       return {
         message: reply,
         toolCalls: [],
+        reasoning,
         usage: { inputTokens: 0, outputTokens: 40 },
       };
     },

@@ -1,86 +1,16 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="dark">
   <head>
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' data: blob: ws: wss: http://localhost:* http://127.0.0.1:*;"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>HFQ Code</title>
-    <link rel="icon" type="image/png" href="./assets/logo-256.png" />
-    <link rel="stylesheet" href="./styles.css" />
   </head>
-  <body>
-    <div id="app">
-      <aside class="sidebar">
-        <div class="brand">
-          <img class="logo" src="./assets/logo-256.png" width="36" height="36" alt="HFQ Code" />
-          <div class="brand-copy">
-            <div class="brand-title">HFQ Code</div>
-            <div class="brand-sub">本地编码智能体</div>
-          </div>
-        </div>
-
-        <div class="nav-section">工作区</div>
-        <nav id="nav" class="nav" aria-label="主导航"></nav>
-
-        <div class="sidebar-footer">
-          <div class="ws-card">
-            <div class="ws-card-label">已绑定工作区</div>
-            <div id="wsPath" class="ws-path">尚未选择文件夹</div>
-          </div>
-          <button id="openWs" class="btn primary block" type="button">打开工作区</button>
-        </div>
-      </aside>
-
-      <main class="main">
-        <header class="topbar">
-          <div class="topbar-left">
-            <h1 id="pageTitle">首页</h1>
-            <div id="crumb" class="crumb"></div>
-          </div>
-          <div class="topbar-right">
-            <button
-              type="button"
-              id="modelProviderBadge"
-              class="pill model-provider-badge"
-              title="当前模型提供方 · 点击打开模型页"
-            >
-              <span class="model-provider-kicker">提供方</span>
-              <span id="modelProviderBadgeText" class="model-provider-text mono">—</span>
-            </button>
-            <div id="sessionBadge" class="pill">
-              <span class="dot"></span>
-              <span id="sessionBadgeText">无会话</span>
-            </div>
-            <div id="status" class="pill">
-              <span class="dot"></span>
-              <span id="statusText">就绪</span>
-            </div>
-          </div>
-        </header>
-        <section id="content" class="content"></section>
-      </main>
-    </div>
-
-    <div id="permModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="permTitle">
-      <div class="modal-card">
-        <h2 id="permTitle">需要授权</h2>
-        <p id="permSummary" class="muted"></p>
-        <div class="perm-meta">
-          <span id="permTool" class="badge info"></span>
-          <span id="permRisk" class="badge warn"></span>
-        </div>
-        <div class="modal-actions">
-          <button type="button" class="btn" data-perm="deny">拒绝</button>
-          <button type="button" class="btn" data-perm="allow">允许一次</button>
-          <button type="button" class="btn primary" data-perm="allow_session">本会话允许</button>
-        </div>
-      </div>
-    </div>
-
-    <script src="./skills-ui.js"></script>
-    <script src="./app.js"></script>
+  <body class="dark bg-background text-foreground antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

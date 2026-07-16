@@ -1,0 +1,106 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+
+  --hfq-bg-primary: #080a0f;
+  --hfq-bg-secondary: #0d1117;
+  --hfq-bg-surface: #151b26;
+  --hfq-bg-elevated: #1b2330;
+  --hfq-bg-hover: #222b3a;
+
+  --hfq-text-primary: #f8fafc;
+  --hfq-text-secondary: #94a3b8;
+  --hfq-text-muted: #64748b;
+  --hfq-text-disabled: #475569;
+
+  --hfq-brand-cyan: #22d3ee;
+  --hfq-brand-blue: #3b82f6;
+  --hfq-brand-purple: #8b5cf6;
+  --hfq-cyan-hover: #67e8f9;
+  --hfq-cyan-soft: rgba(34, 211, 238, 0.12);
+  --hfq-cyan-ring: rgba(34, 211, 238, 0.28);
+  --hfq-cyan-ink: #041018;
+  --hfq-violet-soft: rgba(139, 92, 246, 0.14);
+
+  --hfq-success: #22c55e;
+  --hfq-success-soft: rgba(34, 197, 94, 0.12);
+  --hfq-warning: #f59e0b;
+  --hfq-warning-soft: rgba(245, 158, 11, 0.12);
+  --hfq-error: #ef4444;
+  --hfq-error-soft: rgba(239, 68, 68, 0.12);
+
+  --hfq-border-default: rgba(255, 255, 255, 0.08);
+  --hfq-border-strong: rgba(255, 255, 255, 0.16);
+  --hfq-border-focus: #22d3ee;
+  --hfq-line-2: rgba(255, 255, 255, 0.12);
+
+  --hfq-shadow-float: 0 20px 60px rgba(0, 0, 0, 0.55);
+  --hfq-topbar-h: 48px;
+  --hfq-sidebar-w: 240px;
+  --hfq-statusbar-h: 28px;
+
+  --hfq-font-sans: "Inter", "Segoe UI Variable Text", "Segoe UI", "PingFang SC",
+    "Microsoft YaHei UI", system-ui, sans-serif;
+  --hfq-font-mono: "JetBrains Mono", "Cascadia Code", "SF Mono", Consolas,
+    ui-monospace, monospace;
+}
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    margin: 0;
+    min-height: 100%;
+  }
+
+  body {
+    background: #05070b;
+    color: var(--hfq-text-primary);
+    font-family: var(--hfq-font-sans);
+    font-size: 13px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+    color: inherit;
+  }
+
+  button {
+    cursor: pointer;
+    border: 0;
+    background: none;
+  }
+
+  ::selection {
+    background: rgba(34, 211, 238, 0.28);
+  }
+
+  /* thin scrollbars matching prototype */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+  }
+}
+
+@layer utilities {
+  .hfq-stage-bg {
+    background:
+      radial-gradient(900px 420px at 20% -10%, rgba(34, 211, 238, 0.06), transparent 60%),
+      radial-gradient(700px 360px at 90% 110%, rgba(139, 92, 246, 0.05), transparent 55%),
+      #05070b;
+  }
+}

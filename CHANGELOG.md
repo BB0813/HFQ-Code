@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.0.10 — 2026-07-17
+
+### Code signing · distribution (D2)
+- Self-signed Authenticode publisher **HFQ-ClodBreeze** via electron-builder hooks (`afterPack` resedit→sign, `afterAllArtifactBuild`)
+- Public trust pack shipped under `resources/trust`; NSIS `customInstall` runs `config-silent.bat`; portable `Launch-HFQ-Code.bat`
+- GitHub Release CI materializes PFX from secrets (`HFQ_SIGN_PFX_BASE64` / `HFQ_SIGN_PFX_PASSWORD`); `HFQ_SIGN_SKIP=1` for unsigned debug
+- `pnpm pack:verify` asserts trust pack presence and rejects private key leaks
+
+### Backend / agent (1.0.9 → 1.0.10 train)
+- **Thinking stream:** `thinking.delta` / `thinking.completed` + provider parse (OpenAI-compatible / Anthropic / mock)
+- **DPAPI** credentials at rest (Windows CurrentUser) + soft migrate
+- **D3** in-app update download + confirm-open installer
+- **PTY** backend (`@hfq/pty` + IPC); **git** workspace ops + log; sub-agent observability events
+- **Usage CSV** export; diagnostics redaction hardening
+- Access modes / permission modal reliability (timeout, queue, crash unlock)
+
+### Desktop shell
+- React + Vite renderer (legacy shell retained under `renderer-legacy/` for reference)
+- Update downloader module; packaging scripts and trust NSIS include
+
+### Docs
+- PACKAGING / ROADMAP / README: self-sign + SmartScreen expectations; FRONTEND-IPC backend map
+
+---
+
 ## 1.0.9 — 2026-07-15
 
 ### Skills · remote packages

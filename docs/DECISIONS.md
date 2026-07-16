@@ -55,4 +55,36 @@ See [NAMING.md](./NAMING.md). **Recommended product name: HFQ Code.**
 
 ## Forward plan
 
-Post-1.0.5 execution plan (patches, 1.1 coding depth, store, UI redesign, 1.2 security): **[ROADMAP.md](./ROADMAP.md)**.
+Post-1.0.5 execution plan: **[ROADMAP.md](./ROADMAP.md)** · 中文总览 **[项目规划书.md](./项目规划书.md)**.
+
+**2026-07-15 product note:** UI/UX **architecture migration is pulled forward** (R1 module split of renderer before large 1.1 page work). See Track C in ROADMAP and [UI-REDESIGN.md](./UI-REDESIGN.md).
+
+## UI layout (2026-07-15) — **frozen: Layout A**
+
+Selected: **A · Cursor Agent 中枢** — activity bar + session sidebar + center chat + right drawer (changes / terminal / tasks). See [LAYOUT-PROPOSALS.md](./LAYOUT-PROPOSALS.md).
+
+**1.1 PTY:** backend ready ([PTY-1.1.md](./PTY-1.1.md)); Terminal UI lives in right drawer tab (Layout A).
+
+## Q5 — UI component system (**superseded by Q6 / R9**)
+
+~~R8 Choice: Shoelace 2.20.1 (Web Components), no React.~~ **Overturned 2026-07-15.**
+
+Legacy vanilla + Shoelace tree archived at `apps/desktop/renderer-legacy/` (not packed).
+
+## Q6 — React + shadcn shell (R9 · 2026-07-15)
+
+**Choice: Electron renderer = React 19 + Vite 6 + Tailwind 3 + shadcn/ui (Radix), Layout A**
+
+| Constraint | Decision |
+|------------|----------|
+| Framework | **Direct replace** vanilla SPA — no long-lived dual shell |
+| Build | `apps/desktop/renderer` Vite app → `renderer/dist`; `base: './'` for `file://` |
+| Load | `main.cjs` → `renderer/dist/index.html`; dev optional `ELECTRON_RENDERER_URL` |
+| UI kit | shadcn/ui (zinc dark, IDE density) + lucide-react; **no** production Shoelace |
+| State | zustand + `window.hfq` typed facade (`src/lib/hfq.ts`) |
+| Router | `react-router-dom` **hash** mode (file:// safe) |
+| Terminal | `@xterm/xterm` + fit addon ↔ `pty*` IPC |
+| Unchanged | electron IPC semantics, agent-core, path sandbox, permission resolve |
+
+Rationale: R8 Shoelace/vanilla polish could not reach Cursor/Claude-Desktop density; user ordered full shadcn refactor + wire ready backend APIs in one train.
+

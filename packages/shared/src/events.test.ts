@@ -78,8 +78,61 @@ describe("SessionEventSchema", () => {
         sessionId: "s1",
         title: "Rename me",
         model: "mock-hfq",
+        parentSessionId: "parent-1",
+        subagentProfile: "explore",
+        subagentDepth: 1,
+        goal: "scan files",
         at: new Date().toISOString(),
       }).type,
     ).toBe("session.meta");
+
+    expect(
+      SessionEventSchema.parse({
+        type: "subagent.updated",
+        sessionId: "parent-1",
+        parentSessionId: "parent-1",
+        childSessionId: "child-1",
+        profile: "explore",
+        goal: "scan files",
+        status: "completed",
+        at: new Date().toISOString(),
+      }).type,
+    ).toBe("subagent.updated");
+
+    expect(
+      SessionEventSchema.parse({
+        type: "subagent.updated",
+        sessionId: "parent-1",
+        parentSessionId: "parent-1",
+        profile: "edit",
+        goal: "too deep",
+        status: "failed",
+        error: "sub-agent depth exceeded (max 2)",
+        errorCode: "depth",
+        at: new Date().toISOString(),
+      }).type,
+    ).toBe("subagent.updated");
+  });
+
+  it("accepts thinking.delta and thinking.completed", () => {
+    expect(
+      SessionEventSchema.parse({
+        type: "thinking.delta",
+        sessionId: "s1",
+        messageId: "m-think",
+        text: "step 1…",
+        at: new Date().toISOString(),
+      }).type,
+    ).toBe("thinking.delta");
+
+    expect(
+      SessionEventSchema.parse({
+        type: "thinking.completed",
+        sessionId: "s1",
+        messageId: "m-think",
+        text: "step 1… step 2…",
+        at: new Date().toISOString(),
+      }).type,
+    ).toBe("thinking.completed");
   });
 });

@@ -1,0 +1,318 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 222 47% 11%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    /* slate-600-ish for WCAG muted text on light */
+    --muted-foreground: 215 16% 35%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --success: 142 71% 35%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 40%;
+    --warning-foreground: 0 0% 100%;
+    /* warm workbench accent (multi-agent hub, not brand copy) */
+    --workbench: 24 92% 48%;
+    --workbench-foreground: 0 0% 100%;
+    --border: 214 32% 88%;
+    --input: 214 32% 88%;
+    --ring: 222 47% 20%;
+    --radius: 0.5rem;
+    --sidebar: 210 40% 98%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-border: 214 32% 88%;
+    --sidebar-accent: 210 40% 94%;
+    --panel: 210 40% 98%;
+    --panel-elevated: 0 0% 100%;
+  }
+
+  .dark {
+    /* zinc multi-agent coding workbench — dock grammar, warm active accent */
+    --background: 240 6% 5%;
+    --foreground: 210 20% 97%;
+    --card: 240 6% 7.5%;
+    --card-foreground: 210 20% 97%;
+    --popover: 240 7% 8%;
+    --popover-foreground: 210 20% 97%;
+    --primary: 0 0% 95%;
+    --primary-foreground: 240 10% 6%;
+    --secondary: 240 5% 13%;
+    --secondary-foreground: 210 20% 96%;
+    --muted: 240 5% 12%;
+    /* readable secondary (~zinc-400) */
+    --muted-foreground: 240 5% 68%;
+    --accent: 240 5% 14%;
+    --accent-foreground: 210 20% 96%;
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --success: 142 68% 44%;
+    --success-foreground: 144 80% 8%;
+    --warning: 38 92% 54%;
+    --warning-foreground: 30 80% 8%;
+    /* soft orange active (tab underline / rail / capability tags) */
+    --workbench: 24 95% 58%;
+    --workbench-foreground: 24 90% 8%;
+    /* clearer pane edges for multi-column dock */
+    --border: 240 5% 18%;
+    --input: 240 5% 15%;
+    --ring: 240 5% 74%;
+    --sidebar: 240 8% 4%;
+    --sidebar-foreground: 240 5% 90%;
+    --sidebar-border: 240 6% 11%;
+    --sidebar-accent: 240 5% 11%;
+    --panel: 240 7% 5%;
+    --panel-elevated: 240 6% 8%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    @apply bg-background text-foreground text-[14px] leading-normal;
+    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    user-select: none;
+    letter-spacing: -0.011em;
+  }
+
+  /* IDE density: selectable text in content panes */
+  .selectable,
+  .chat-content,
+  .prose-selectable,
+  pre,
+  code,
+  textarea,
+  input {
+    user-select: text;
+  }
+
+  ::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.22);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.38);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  /* Focus — never remove without replacement (a11y) */
+  :focus {
+    outline: none;
+  }
+  :focus-visible {
+    outline: none;
+  }
+
+  /* xterm host fill */
+  .xterm,
+  .xterm-viewport {
+    height: 100%;
+  }
+
+  ::selection {
+    background: hsl(210 40% 50% / 0.28);
+  }
+}
+
+@layer components {
+  /* Shared interactive affordance — IDE clickable chrome */
+  .interactive {
+    @apply cursor-pointer transition-colors duration-150;
+  }
+  .interactive:focus-visible {
+    @apply ring-2 ring-ring ring-offset-1 ring-offset-background;
+  }
+
+  /* Soft surface used by empty states / cards */
+  .surface-card {
+    @apply rounded-xl border border-border bg-card shadow-sm;
+  }
+
+  .surface-panel {
+    background: hsl(var(--panel));
+  }
+
+  .surface-elevated {
+    background: hsl(var(--panel-elevated));
+  }
+
+  /* Athena-like dock panel chrome */
+  .dock-pane {
+    @apply flex h-full min-h-0 flex-col border-border/80 bg-[hsl(var(--panel))];
+  }
+  .dock-pane-header {
+    @apply flex h-11 shrink-0 items-center gap-2 border-b border-border/80 px-3;
+  }
+  .dock-pane-title {
+    @apply text-sm font-semibold tracking-tight text-foreground/95;
+  }
+  .dock-pane-body {
+    @apply min-h-0 flex-1 overflow-hidden;
+  }
+  .dock-split {
+    @apply border-border/90;
+  }
+
+  /* Subtle status pulse for running agent (respects reduced-motion) */
+  .status-pulse {
+    @apply animate-pulse;
+  }
+
+  .status-dot {
+    @apply inline-block h-2 w-2 shrink-0 rounded-full;
+  }
+  .status-dot-running {
+    @apply status-dot bg-success;
+    box-shadow: 0 0 0 2px hsl(var(--success) / 0.18);
+  }
+  .status-dot-idle {
+    @apply status-dot bg-muted-foreground;
+    opacity: 0.4;
+  }
+  .status-dot-warn {
+    @apply status-dot;
+    background: hsl(var(--warning));
+  }
+
+  /* Skeleton placeholder for async content */
+  .skeleton {
+    @apply animate-pulse rounded-md bg-muted;
+  }
+
+  /* Chat message role rails */
+  .msg-user {
+    @apply ml-8 border-l-2 border-l-zinc-400 bg-muted/40;
+  }
+  .msg-agent {
+    @apply mr-6 border-l-2 border-l-transparent bg-card;
+  }
+  .msg-tool {
+    @apply border-l-2 border-l-amber-500 bg-muted font-mono text-sm;
+  }
+  .msg-thinking {
+    @apply mr-10 border-l-2 border-l-workbench/50 bg-workbench/[0.04];
+  }
+  .msg-error {
+    @apply border border-destructive bg-destructive/10 text-destructive;
+  }
+
+  /* Composer shell — multi-row (textarea + optional chips + tool bar) */
+  .composer-shell {
+    @apply overflow-hidden rounded-xl border bg-card shadow-lg ring-1 transition-colors duration-150;
+  }
+  .composer-shell-focused {
+    @apply border-zinc-400 ring-zinc-400/20;
+  }
+  .composer-shell-idle {
+    @apply border-border ring-transparent;
+  }
+
+  /* Empty-state hint chips */
+  .hint-chip {
+    @apply interactive rounded-lg border border-border bg-muted/40 px-3.5 py-2.5 text-left text-sm text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground;
+  }
+
+  /* Section label in side panels */
+  .section-label {
+    @apply text-xs font-medium uppercase tracking-wider text-muted-foreground;
+  }
+
+  /* Rail active indicator — warm workbench accent */
+  .rail-active-bar {
+    @apply absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r;
+    background: hsl(var(--workbench));
+    box-shadow: 0 0 8px hsl(var(--workbench) / 0.45);
+  }
+
+  /* Metric tiles (skills / MCP / models summary strip) */
+  .metric-strip {
+    @apply mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4;
+  }
+  .metric-tile {
+    @apply rounded-lg border border-border/70 bg-card/80 px-3.5 py-3 shadow-none;
+  }
+  .metric-tile-label {
+    @apply text-xs font-medium text-muted-foreground;
+  }
+  .metric-tile-value {
+    @apply mt-1 text-xl font-semibold tabular-nums tracking-tight text-foreground;
+  }
+
+  /* Capability / extension-style cards (multi-agent tools hub) */
+  .capability-card {
+    @apply rounded-xl border border-border/70 bg-card/80 shadow-none transition-colors duration-150;
+  }
+  .capability-card:hover {
+    border-color: hsl(var(--border) / 0.95);
+    background: hsl(var(--card) / 0.95);
+  }
+  .capability-tag {
+    @apply inline-flex items-center rounded-md border border-workbench/25 bg-workbench/10 px-1.5 py-0.5 text-[11px] font-medium leading-none text-workbench;
+  }
+  .tab-underline-active {
+    @apply relative text-foreground;
+  }
+  .tab-underline-active::after {
+    content: "";
+    @apply absolute inset-x-2 -bottom-0.5 h-0.5 rounded-full;
+    background: hsl(var(--workbench));
+  }
+}
+
+@layer utilities {
+  .app-drag {
+    -webkit-app-region: drag;
+  }
+  .app-no-drag {
+    -webkit-app-region: no-drag;
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* prefers-reduced-motion — kill decorative motion only */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

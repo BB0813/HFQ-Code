@@ -37,7 +37,7 @@ Packages: `agent-core`, `config`, `mcp`, `memory`, `policy`, `providers`, `sessi
 | **S-04** | **SSRF / cloud metadata via `network_fetch`.** Only scheme + URL credentials blocked; `http://169.254.169.254/` and `metadata.google.internal` allowed (still behind user ask). | **Mitigated (P3)** | Block link-local `169.254/16` and known metadata hostnames. Residual: private RFC1918 still allowed by design for local dev servers (policy ask). |
 | **S-05** | **Shell inherits full parent env.** Child `cmd`/`bash` received `process.env`, so provider keys in the Electron process env could leak into tool subprocesses. | **Mitigated (P3)** | Strip `*API*KEY*`, `*SECRET*`, `*TOKEN*`, `*PASSWORD*`, etc. from child env for shell/git. |
 | **S-06** | **Plan mode did not block `spawn_subagent`.** Sub-agent could still mutate (edit/shell profiles) while parent was in plan mode. | **Fixed (P3)** | Treat `spawn_subagent` as mutating under plan mode. |
-| **S-07** | **API keys lived in `config.json`.** | **Mitigated (M3.1)** | Secrets in `credentials.json`; still plaintext on disk (OS user profile). Residual: optional DPAPI. |
+| **S-07** | **API keys lived in `config.json`.** | **Mitigated (M3.1 + D1)** | Secrets in `credentials.json`; Windows DPAPI CurrentUser envelope by default ([DPAPI-1.2.md](./DPAPI-1.2.md)). Residual: same-user malware; non-Windows still plaintext. |
 | **S-08** | **MCP stdio spawns user-configured command.** Full power of local process; intentional but high risk if malicious MCP entry imported. | Open | Import wizard + UI should keep “enabled=false” default; document risk. |
 
 ### Low / informational
@@ -65,7 +65,7 @@ Packages: `agent-core`, `config`, `mcp`, `memory`, `policy`, `providers`, `sessi
 | Doc claim | Actual | Gap |
 |-----------|--------|-----|
 | Renderer **React** + Session Worker isolation | Vanilla `app.js`; **SessionWorkerHost** child process (M3.3) with in-process fallback | React still deferred; worker isolation landed |
-| `credentials.json` | Implemented (M3.1); optional DPAPI still open | See S-07 residual |
+| `credentials.json` | Implemented (M3.1); **D1 DPAPI shipped** on Windows | See S-07 residual |
 | Daemon process | Child session worker (not full multi-daemon) | Crash of worker no longer takes Electron main |
 | `session-api` package | Thin types only | Worker uses agent-core protocol; session-api still channel names |
 

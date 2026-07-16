@@ -207,6 +207,15 @@ export function withPrefs(
         typeof patch.updateProxyBase === "string"
           ? patch.updateProxyBase.trim() || "https://ghproxy.com/"
           : cfg.prefs?.updateProxyBase?.trim() || "https://ghproxy.com/",
+      terminalShell: (() => {
+        const raw =
+          patch.terminalShell !== undefined
+            ? patch.terminalShell
+            : cfg.prefs?.terminalShell;
+        const s = String(raw ?? "").trim().toLowerCase();
+        if (s === "powershell" || s === "pwsh" || s === "cmd") return s;
+        return "";
+      })(),
     },
   };
 }

@@ -80,6 +80,11 @@ export const UiPrefsSchema = z.object({
    * Only used when updateSource is ghproxy.
    */
   updateProxyBase: z.string().default("https://ghproxy.com/"),
+  /**
+   * Preferred interactive terminal shell (Windows: powershell | pwsh | cmd).
+   * Empty = auto (prefer powershell → pwsh → cmd).
+   */
+  terminalShell: z.enum(["", "powershell", "pwsh", "cmd"]).default(""),
 });
 
 export type UiPrefs = z.infer<typeof UiPrefsSchema>;
@@ -106,6 +111,7 @@ export const AppConfigSchema = z.object({
     checkUpdatesOnStartup: true,
     updateSource: "ghproxy",
     updateProxyBase: "https://ghproxy.com/",
+    terminalShell: "",
   }),
 });
 
@@ -130,6 +136,7 @@ export function defaultAppConfig(): AppConfig {
       checkUpdatesOnStartup: true,
       updateSource: "ghproxy",
       updateProxyBase: "https://ghproxy.com/",
+      terminalShell: "",
     },
     providers: [
       {
