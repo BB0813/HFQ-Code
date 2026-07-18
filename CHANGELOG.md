@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.1.3 — 2026-07-18
+
+### Session identity
+- `listSessions` / session list items **always** expose `model` and `providerId` (empty string when unbound)
+- Desktop UI helpers: `sessionModel` / `sessionProviderId` / `sessionUnbound` across header, status bar, chat, sidebar, tasks, store
+
+### Tasks cold-start
+- Persist **`goal_required`** failed spawn attempts for durable `listSpawnAttempts` after restart
+- Prefer `attemptId` on chips; clearer empty-goal labels
+
+### CI / tests
+- Diagnostics tests isolate `HFQ_DATA_DIR` (no shared home dir clobber)
+
+### Docs
+- Bilingual README: [README.md](./README.md) · [README.zh-CN.md](./README.zh-CN.md) with version history tables
+- [docs/RELEASE-1.1.3.md](./docs/RELEASE-1.1.3.md)
+
+---
+
 ## 1.1.2 — 2026-07-16
 
 ### Desktop UI (with backend 1.1.1 APIs)

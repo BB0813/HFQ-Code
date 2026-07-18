@@ -1,8 +1,8 @@
 # HFQ Code — Development roadmap (post-1.0.5)
 
 Status: **active plan**  
-Baseline: product **1.1.2** (`v1.1.2`) · 2026-07-16  
-Last updated: 2026-07-16 · **1.1.2 full ship** (1.1.1 backend + Settings/Tasks/Changes/Models UI)
+Baseline: product **1.1.3** (`v1.1.3`) · 2026-07-18  
+Last updated: 2026-07-18 · **1.1.3** session identity + Tasks spawn cold-start + bilingual README
 
 ## Positioning (frozen)
 
@@ -33,13 +33,14 @@ Last updated: 2026-07-16 · **1.1.2 full ship** (1.1.1 backend + Settings/Tasks/
 | Thinking / reasoning stream | **Backend shipped** · ThinkingBlock UI present — polish optional |
 | React shell (Q6) | **Shipped** (1.0.10+) — pages under `apps/desktop/renderer` |
 
-### Next train (post-1.1.2)
+### Next train (post-1.1.3)
 
 | Owner | Work | Notes |
 |-------|------|--------|
+| **Product** | **1.1.3** session identity + spawn cold-start + README zh | **Shipped** (`v1.1.3`) |
 | **Product** | **1.1.2** full installer = 1.1.1 backend + Settings/Tasks/Changes/Models UI | **Shipped** (`v1.1.2`) |
 | **Backend** | **1.1.1** D3 · `providerId` · Tasks cold-start | In 1.1.1/1.1.2 tree |
-| **Frontend** | Settings update UX · B2 · B3 polish | **In 1.1.2** |
+| **Frontend** | Settings update UX · B2 · B3 polish | **In 1.1.2**; identity helpers in **1.1.3** |
 | Later | Track E (embeddings, Python sidecar, MCP OAuth, cost charts) | Not Phase-1 |
 
 ---
