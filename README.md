@@ -8,7 +8,7 @@ Windows desktop **coding agent** (WorkBuddy / ZCode class): full GUI, workspace-
 
 ## Status
 
-**1.1.3** — Windows coding agent (Phase-1+2 + Phase-3 + 1.0.x patch train + 1.1 provider lifecycle / session model rebind + session identity & Tasks cold-start fixes):
+**1.1.4** — Windows coding agent (Phase-1+2 + Phase-3 + 1.0.x patch train + 1.1 provider lifecycle / session model rebind + 1.1.3 identity + 1.1.4 abort isolation & permission queue):
 
 - Session loop: create / resume / stop / delete / rename + auto-title, streaming, tokens, compaction, **plan mode**, **sub-agents**
 - **Session worker** (child process) for agent loop isolation; in-process fallback
@@ -23,6 +23,7 @@ Windows desktop **coding agent** (WorkBuddy / ZCode class): full GUI, workspace-
 - Providers: delete mock/last channel · empty fail-closed · `models:list` · baseURL normalize
 - Session: open/send rebind to global active · identity pin against stale self-claims
 - Chat UI: topbar provider · model · model-id-only composer control · menus open upward
+- **1.1.4:** abort isolation (only deny own session tree); live list enriched with `permissionMode`/`planMode`; permission queue (multi-session FIFO); Chat MessageBlock/copy/lazy routes/CSS tokens
 - **1.1.3:** `listSessions` always exposes `model`/`providerId`; Tasks `goal_required` spawn cold-start; UI identity helpers
 
 See [docs/PHASE3-STATUS.md](./docs/PHASE3-STATUS.md) · [docs/ROADMAP.md](./docs/ROADMAP.md) · [docs/PACKAGING.md](./docs/PACKAGING.md) · [docs/AUDIT.md](./docs/AUDIT.md) · [CHANGELOG.md](./CHANGELOG.md).
@@ -73,6 +74,7 @@ Full notes: [CHANGELOG.md](./CHANGELOG.md). Release handoffs: `docs/RELEASE-*.md
 
 | Version | Date | Summary |
 |---------|------|---------|
+| **[1.1.4](./docs/RELEASE-1.1.4.md)** | 2026-07-19 | Abort permission isolation; live list access modes; permission queue; Chat MessageBlock+copy; lazy routes; CSS token migration |
 | **[1.1.3](./docs/RELEASE-1.1.3.md)** | 2026-07-18 | Always expose session `model`/`providerId`; Tasks `goal_required` spawn cold-start; UI identity helpers; diagnostics test data-dir isolation |
 | [1.1.2](./docs/RELEASE-1.1.2.md) | 2026-07-16 | Full product ship: 1.1.1 backend + Settings/Tasks/Changes/Models UI |
 | [1.1.1](./docs/RELEASE-1.1.1.md) | 2026-07-16 | D3 install auto-download; `providerId`; Tasks children/spawn cold-start |
@@ -143,8 +145,8 @@ Artifacts under `apps/desktop/release/`. Update policy: **manual** download/inst
 | **Pack verify** | weekly / manual | `pnpm pack:verify` |
 
 ```bash
-git tag -a v1.1.3 -m "HFQ Code 1.1.3"
-git push origin v1.1.3   # triggers Release workflow
+git tag -a v1.1.4 -m "HFQ Code 1.1.4"
+git push origin v1.1.4   # triggers Release workflow
 ```
 
 ### Desktop try-out

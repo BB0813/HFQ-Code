@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.1.4 — 2026-07-19
+
+### Backend
+- **abort isolation**: bind permission waiters to sessionId — `abort` only denies the session tree, not all sessions
+- **list enrichment**: `list` / `listAll` / `get` / `create` / `setProviderModel` attach `permissionMode` + `planMode` for in-memory sessions; cold disk rows omit these (fall back to `getPermissionMode` / prefs)
+- **delete sidecar**: `SessionManager.delete` also removes `<id>.spawn-attempts.json` + clears memory maps
+- **rename identity**: offline rename preserves `model`/`providerId` in meta events
+
+### Desktop UI
+- **Permission queue**: FIFO multi-session `pendingPermissions[]` — no longer a single slot; queue count + "other session" badge in dialog
+- **`full_access` guard**: requires explicit `window.confirm` before switching
+- **list enrichment consumer**: `selectSession` uses listing's `permissionMode` to avoid an extra IPC round-trip
+- **Chat MessageBlock**: memoized message card with copy button; sticky-content scroll with "↓ 跳到底部" button
+- **Lazy routes**: secondary pages switched to `React.lazy` + `Suspense` (smaller first paint)
+- **Permission dropdown**: Header 原生 `<select>`→`DropdownMenu` with per-mode summary
+- **Command palette**: group headers
+- **ErrorBoundary**: icon + labelled error title
+- **StatusBar**: git polling pauses on `visibilitychange`
+- **CSS tokens**: various elements migrate from hardcoded colors to `--panel`, `--statusbar`, `--dialog-surface`, etc.
+
+### Docs
+- docs/FRONTEND-IPC.md: abort isolation, live list access mode semantics
+
+---
+
 ## 1.1.3 — 2026-07-18
 
 ### Session identity
