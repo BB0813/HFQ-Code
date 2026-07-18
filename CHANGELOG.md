@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.1.5 — 2026-07-19
+
+### Backend
+
+- **Coding Profiles**: config schema + 6 built-in profiles (Refactor/Debug/Review/Docs/Frontend/Research) with `systemAddon`, `skillIds`, optional `permissionMode`/`providerId`/`model`. `session:create`/`open` inject profile fields into create/open params. Worker protocol/entry carry coding profile + skill match + model roles.
+- **Skill progressive match**: `matchSkills()` ranks skills by user text + profile `skillIds` preference; `formatMatchedSkillBodies()` injects top-K full skill bodies under the index. Rebuilds system prompt per-turn when user input changes.
+- **Goal driver fields**: `task.updated` event extended with `kind`/`objective`/`progress`/`budget`/`parentTaskId`/`blockedReason`/`acceptance`. `UiTask` type updated. Snapshot rebuild preserves tasks with normalized fields.
+- **Model roles**: `prefs.modelRoles.title` / `.compression` config + resolve to provider+model at session create/open. Title model failure non-fatal; compression role is reserved (persisted, not driving compact yet).
+- **Memory links**: `MemoryHit`/`MemoryDoc` carry optional `links[]` (max 32). `createFileMemory` stores/replays links.
+
+### Desktop UI
+
+- **Chat mermaid rendering**: `MarkdownMessage` renders `agent` role messages through mermaid.js (`securityLevel: "strict"`). Streaming text also passes through MarkdownMessage. Agent system prompt nudged to prefer mermaid for architecture/flows.
+- **Goal banner**: active in-progress goal shown above composer with progress % + blocked indicator.
+- **Tasks goal panel**: `/goal` tasks shown in dedicated goal section with progress bar, objective detail, budget chips, blocked warnings. Empty-state guide.
+- **Coding Profiles Settings**: chip selector for active profile (with description); skillMatch on/off toggle; model roles fields for title/compression.
+- **MemoryPage**: display `tags` and `links` chips on memory items.
+
+### Bundled skills
+
+- `skills/bundled/diagram/SKILL.md`: mermaid-first architecture diagram skill for coding sessions.
+
+### Docs
+
+- `docs/ADOPT-KIVIO-ATHENA.md` — adoption decisions
+- `docs/DECISIONS.md` Q8 — Track F decisions
+- `docs/FRONTEND-IPC.md` F1 section
+- `docs/prompts/F1-*.md` handoff + audit records
+
+---
+
 ## 1.1.4 — 2026-07-19
 
 ### Backend

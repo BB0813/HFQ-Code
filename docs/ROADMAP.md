@@ -1,8 +1,8 @@
 # HFQ Code — Development roadmap (post-1.0.5)
 
 Status: **active plan**  
-Baseline: product **1.1.4** (`v1.1.4`) · 2026-07-19  
-Last updated: 2026-07-19 · **1.1.4** abort isolation + permission queue + live list access modes + Chat polish + CSS tokens
+Baseline: product **1.1.5** (`v1.1.5`) · 2026-07-19  
+Last updated: 2026-07-19 · **1.1.5** (F1) Coding Profiles + mermaid + skill match + goal fields + memory links + diagram skill
 
 ## Positioning (frozen)
 
@@ -40,6 +40,7 @@ Last updated: 2026-07-19 · **1.1.4** abort isolation + permission queue + live 
 | **Product** | **Track F — Adopt Kivio/Athena patterns** | Canonical: [ADOPT-KIVIO-ATHENA.md](./ADOPT-KIVIO-ATHENA.md) · DECISIONS Q8 |
 | **F1** | Chat mermaid · Coding Profiles · model roles · skill progressive match · goal fields · memory links · bundled `diagram` | 1.1.x patch train |
 | **F2** | Goal tree sidecar · Memory FTS · pdf/docx skills · optional panel prefs | 1.2+ |
+| **Product** | **1.1.5 F1** Coding Profiles · mermaid · skill match · goal fields · memory links · diagram skill | **Shipped** (`v1.1.5`) |
 | **Product** | **1.1.4** abort isolation + permission queue + live list access modes + Chat/route/CSS polish | **Shipped** (`v1.1.4`) |
 | **Product** | **1.1.3** session identity + spawn cold-start + README zh | **Shipped** (`v1.1.3`) |
 | **Product** | **1.1.2** full installer = 1.1.1 backend + Settings/Tasks/Changes/Models UI | **Shipped** (`v1.1.2`) |
