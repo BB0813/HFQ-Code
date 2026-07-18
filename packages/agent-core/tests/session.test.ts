@@ -309,6 +309,50 @@ describe("SessionManager integration", () => {
     expect(again.removedFile).toBe(false);
   });
 
+  it("delete clears spawn-attempts sidecar and parent children links", async () => {
+    const ws = await makeWorkspace();
+    const mgr = new SessionManager();
+    const parent = await mgr.create({ workspacePath: ws, title: "parent-del" });
+
+    const spawned = await mgr.spawnSubagent({
+      parentSessionId: parent.id,
+      goal: "list the workspace root",
+      profile: "explore",
+    });
+    expect(spawned.ok).toBe(true);
+    expect(spawned.childSessionId).toBeTruthy();
+
+    // Force a failed attempt on parent so sidecar has content.
+    const noGoal = await mgr.spawnSubagent({
+      parentSessionId: parent.id,
+      goal: "  ",
+      profile: "explore",
+    });
+    expect(noGoal.errorCode).toBe("goal_required");
+
+    const before = await mgr.listSpawnAttempts(parent.id);
+    expect(before.some((a) => a.errorCode === "goal_required")).toBe(true);
+    expect((await mgr.listChildren(parent.id)).length).toBeGreaterThan(0);
+
+    const del = await mgr.delete(parent.id);
+    expect(del.ok).toBe(true);
+
+    // Same process: attempts sidecar + memory cleared.
+    expect(await mgr.listSpawnAttempts(parent.id)).toEqual([]);
+    // Children are NOT cascade-deleted: disk JSONL still has parentSessionId →
+    // listChildren may still return them (orphan recovery / Tasks history).
+    const kidsAfter = await mgr.listChildren(parent.id);
+    expect(kidsAfter.some((c) => c.id === spawned.childSessionId)).toBe(true);
+
+    // Cold manager: sidecar file removed — no resurrected attempts.
+    const cold = new SessionManager();
+    expect(await cold.listSpawnAttempts(parent.id)).toEqual([]);
+    expect((await cold.listAll(ws)).some((s) => s.id === parent.id)).toBe(false);
+    expect(
+      (await cold.listChildren(parent.id)).some((c) => c.id === spawned.childSessionId),
+    ).toBe(true);
+  });
+
   it("spawns sub-agents with listChildren + failed spawn reasons", async () => {
     const ws = await makeWorkspace();
     const events: SessionEvent[] = [];

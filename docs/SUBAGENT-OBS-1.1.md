@@ -81,7 +81,8 @@ await hfq.spawnSubagent({ sessionId, goal, profile? })
 | `listSpawnAttempts` | 内存优先；未加载时读 `%data%/sessions/<parentId>.spawn-attempts.json`（`{ version, parentSessionId, attempts[] }`，最近 50 条；含 **depth / goal_required** 等失败无 child） |
 | 子会话 transcript | 仍由 JSONL 承担；open 时从 meta 恢复 parent/goal/profile/depth 并回填 children map |
 
-损坏的 attempts 文件 → 返回 `[]`，不拖垮 list。
+损坏的 attempts 文件 → 返回 `[]`，不拖垮 list。  
+`session:delete` / `mgr.delete(parentId)` → 删除 JSONL **并** 删除 `<parentId>.spawn-attempts.json`，清理内存 children / attempts / provider 缓存（不级联删除子会话 transcript）。
 
 ## 非目标
 

@@ -790,17 +790,52 @@ export class SessionManager {
 
   /**
    * Drop an in-memory session and delete its JSONL transcript.
+   * Also clears spawn-attempts sidecar, parent→child map links, and provider cache
+   * so Tasks / listChildren do not keep ghost rows after delete.
    * Aborts a running turn first (permission waiters denied).
    */
   async delete(sessionId: string): Promise<{ ok: true; removedFile: boolean; wasLive: boolean }> {
-    const live = this.sessions.get(sessionId);
+    const id = String(sessionId ?? "").trim();
+    if (!id) return { ok: true, removedFile: false, wasLive: false };
+
+    const live = this.sessions.get(id);
+    const parentId = live?.info.parentSessionId
+      ? String(live.info.parentSessionId).trim()
+      : "";
+
     if (live) {
-      this.abort(sessionId);
-      this.sessions.delete(sessionId);
-      this.sendQueues.delete(sessionId);
+      this.abort(id);
+      this.sessions.delete(id);
+      this.sendQueues.delete(id);
     }
+    this.sessionProviders.delete(id);
+
+    // Unlink from parent's children set (live map).
+    if (parentId) {
+      const set = this.children.get(parentId);
+      if (set) {
+        set.delete(id);
+        if (!set.size) this.children.delete(parentId);
+      }
+    }
+    // Drop this id as a parent of any in-memory children links.
+    this.children.delete(id);
+
+    // Drop in-memory spawn attempts for this parent id.
+    this.spawnAttempts.delete(id);
+
     const dirs = await ensureDataDirs();
-    const removedFile = await JsonlTranscript.delete(dirs.sessions, sessionId);
+    const removedFile = await JsonlTranscript.delete(dirs.sessions, id);
+
+    // Remove durable attempts sidecar (best-effort).
+    try {
+      await fs.unlink(this.spawnAttemptsPath(dirs.sessions, id));
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+        /* ignore other disk errors — transcript already handled */
+      }
+    }
+
     return { ok: true, removedFile, wasLive: Boolean(live) };
   }
 
@@ -838,7 +873,8 @@ export class SessionManager {
     });
     const events = await tr.readEvents();
     const snap = buildSessionSnapshot(events, { id: sessionId, title: next });
-    return { ...snap.info, title: next, updatedAt: at };
+    // Offline rename still exposes identity keys for list/open UI.
+    return withSessionIdentityKeys({ ...snap.info, title: next, updatedAt: at });
   }
 
   listSessionAllows(sessionId: string): string[] {
