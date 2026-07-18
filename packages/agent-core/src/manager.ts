@@ -5,7 +5,11 @@ import type { ModelProvider } from "@hfq/providers";
 import { createMockProvider } from "@hfq/providers";
 import type { SessionEvent, SessionInfo } from "@hfq/shared";
 import { JsonlTranscript } from "@hfq/transcript";
-import { buildSessionSnapshot, type SessionSnapshot } from "./history.js";
+import {
+  buildSessionSnapshot,
+  withSessionIdentityKeys,
+  type SessionSnapshot,
+} from "./history.js";
 import {
   AgentSession,
   type AgentSessionOptions,
@@ -98,12 +102,12 @@ export class SessionManager {
   constructor(private readonly opts: SessionManagerOptions = {}) {}
 
   list(): SessionInfo[] {
-    return [...this.sessions.values()].map((s) => ({ ...s.info }));
+    return [...this.sessions.values()].map((s) => withSessionIdentityKeys({ ...s.info }));
   }
 
   /**
    * Children of a parent session.
-   * Live map first; if empty/partial, rebuild from disk JSONL via listAll
+   * Live map first; always also merge disk JSONL via listAll
    * (`SessionInfo.parentSessionId`) so Tasks tree survives cold start.
    */
   async listChildren(parentSessionId: string): Promise<SessionInfo[]> {
@@ -115,17 +119,21 @@ export class SessionManager {
     if (memIds?.size) {
       for (const id of memIds) {
         const live = this.sessions.get(id)?.info;
-        if (live) byId.set(id, { ...live });
+        if (live) byId.set(id, withSessionIdentityKeys({ ...live }));
       }
     }
 
     try {
+      // Cold-start / partial map: scan all sessions by parentSessionId.
       const all = await this.listAll();
       for (const s of all) {
         if (s.parentSessionId !== parentId) continue;
         const prev = byId.get(s.id);
-        // Prefer live memory fields when both exist.
-        byId.set(s.id, prev ? { ...s, ...prev } : { ...s });
+        // Prefer live memory fields when both exist; identity keys always present.
+        byId.set(
+          s.id,
+          withSessionIdentityKeys(prev ? { ...s, ...prev } : { ...s }),
+        );
         const set = this.children.get(parentId) ?? new Set();
         set.add(s.id);
         this.children.set(parentId, set);
@@ -251,7 +259,7 @@ export class SessionManager {
 
   get(sessionId: string): SessionInfo | undefined {
     const s = this.sessions.get(sessionId);
-    return s ? { ...s.info } : undefined;
+    return s ? withSessionIdentityKeys({ ...s.info }) : undefined;
   }
 
   getSnapshot(sessionId: string): SessionSnapshot | undefined {
@@ -268,6 +276,7 @@ export class SessionManager {
     const byId = new Map<string, SessionInfo>();
 
     for (const live of this.list()) {
+      // list() already normalizes model/providerId keys.
       byId.set(live.id, live);
     }
 
@@ -282,7 +291,8 @@ export class SessionManager {
         if (workspacePath && snap.info.workspacePath && snap.info.workspacePath !== workspacePath) {
           // still include; UI can filter
         }
-        byId.set(id, snap.info);
+        // UX1: always include model + providerId keys ("" if unknown).
+        byId.set(id, withSessionIdentityKeys(snap.info));
       } catch {
         /* skip corrupt */
       }

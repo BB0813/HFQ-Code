@@ -68,6 +68,19 @@ function asRecord(e: SessionEvent): Record<string, unknown> {
 }
 
 /**
+ * UX1: list/open/children SessionInfo always expose identity keys.
+ * Empty string = unknown (not configured / legacy transcript without session.meta).
+ * Prefer this over omitting optional fields so UI never treats "missing key" as "loading".
+ */
+export function withSessionIdentityKeys(info: SessionInfo): SessionInfo {
+  return {
+    ...info,
+    model: info.model != null ? String(info.model) : "",
+    providerId: info.providerId != null ? String(info.providerId) : "",
+  };
+}
+
+/**
  * Rebuild session info + UI/model context from a JSONL event stream.
  */
 export function buildSessionSnapshot(
@@ -302,12 +315,15 @@ export function buildSessionSnapshot(
       ? fallback.title
       : undefined;
 
-  const info: SessionInfo = {
+  const info: SessionInfo = withSessionIdentityKeys({
     id: fallback.id,
     workspacePath,
     title: metaTitle || explicitFallback || title,
-    model,
-    providerId,
+    model: model != null && String(model).trim() ? String(model).trim() : "",
+    providerId:
+      providerId != null && String(providerId).trim()
+        ? String(providerId).trim()
+        : "",
     createdAt,
     updatedAt,
     status,
@@ -315,7 +331,7 @@ export function buildSessionSnapshot(
     subagentProfile,
     subagentDepth,
     goal,
-  };
+  });
 
   return {
     info,

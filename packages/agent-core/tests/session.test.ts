@@ -225,6 +225,29 @@ describe("SessionManager integration", () => {
     expect(listed.find((s) => s.id === session.id)?.title).toBe("Offline title");
   });
 
+  it("listAll cold-start always exposes model + providerId keys", async () => {
+    const ws = await makeWorkspace();
+    const mgr = new SessionManager();
+    const session = await mgr.create({ workspacePath: ws, title: "identity" });
+    // Live create always has identity keys.
+    expect(Object.prototype.hasOwnProperty.call(session, "model")).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(session, "providerId")).toBe(true);
+    expect(session.model).toBeTruthy();
+    expect(session.providerId).toBeTruthy();
+
+    await mgr.send(session.id, "list the workspace root");
+
+    // Cold manager: rebuild from JSONL only — keys must still exist.
+    const cold = new SessionManager();
+    const listed = await cold.listAll(ws);
+    const row = listed.find((s) => s.id === session.id);
+    expect(row).toBeTruthy();
+    expect(Object.prototype.hasOwnProperty.call(row!, "model")).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(row!, "providerId")).toBe(true);
+    expect(String(row!.model ?? "")).toBeTruthy();
+    expect(String(row!.providerId ?? "")).toBeTruthy();
+  });
+
   it("runs /goal as a long-running task with elevated budget markers", async () => {
     const ws = await makeWorkspace();
     const events: SessionEvent[] = [];

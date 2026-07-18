@@ -173,8 +173,9 @@ export class AgentSession {
       id: opts.sessionId ?? randomUUID(),
       workspacePath: opts.workspacePath,
       title: opts.title ?? "New session",
-      model: opts.model,
-      providerId: opts.provider?.id,
+      // UX1: always present on SessionInfo ("" if provider has no id yet).
+      model: opts.model != null ? String(opts.model) : "",
+      providerId: opts.provider?.id != null ? String(opts.provider.id) : "",
       createdAt: now,
       updatedAt: now,
       status: "idle",

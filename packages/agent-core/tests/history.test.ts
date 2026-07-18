@@ -177,4 +177,29 @@ describe("buildSessionSnapshot", () => {
     expect(snap.info.subagentDepth).toBe(1);
     expect(snap.info.goal).toBe("list root");
   });
+
+  it("always includes model + providerId keys (empty string when unknown)", () => {
+    const events: SessionEvent[] = [
+      {
+        type: "session.started",
+        sessionId: "s4",
+        workspacePath: "D:/legacy",
+        at: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        type: "message.completed",
+        sessionId: "s4",
+        messageId: "m1",
+        role: "user",
+        text: "hello legacy",
+        at: "2026-01-01T00:00:01.000Z",
+      },
+    ];
+    const snap = buildSessionSnapshot(events, { id: "s4" });
+    // UX1: keys present even without session.meta identity.
+    expect(Object.prototype.hasOwnProperty.call(snap.info, "model")).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(snap.info, "providerId")).toBe(true);
+    expect(snap.info.model).toBe("");
+    expect(snap.info.providerId).toBe("");
+  });
 });

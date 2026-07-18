@@ -92,7 +92,8 @@ Detail: [CHANGES-GIT-1.1.md](./CHANGES-GIT-1.1.md)
 
 ```js
 const children = await hfq.listChildSessions({ sessionId });
-// SessionInfo may include parentSessionId, subagentProfile, subagentDepth, goal, model, providerId
+// SessionInfo always has model + providerId ("" if unknown);
+// may also include parentSessionId, subagentProfile, subagentDepth, goal
 // Cold start: merges live parent→children map + disk sessions (filter parentSessionId)
 
 const attempts = await hfq.listSpawnAttempts({ sessionId });
@@ -272,8 +273,10 @@ await hfq.removeProvider({ id: "mock" });
 //   sessionApplyError?: string | null, // e.g. busy
 // }
 
-// listSessions / open / listChildren SessionInfo includes (when known):
-// model, providerId, parentSessionId, goal, subagentProfile, subagentDepth
+// listSessions / open / listChildren SessionInfo identity (UX1):
+// model + providerId keys are ALWAYS present ("" if unknown / legacy transcript).
+// Also when known: parentSessionId, goal, subagentProfile, subagentDepth
+// Do not treat missing key as loading — key missing should not happen after 1.1.x.
 ```
 
 | Rule | Behavior |
