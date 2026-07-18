@@ -84,7 +84,7 @@ export function TerminalPanel() {
 
   useEffect(() => {
     activeIdRef.current = activeId;
-    termRef.current?.clear();
+    // Don't clear on tab switch — preserve scrollback for revisiting.
     if (!hasHfq()) return;
 
     unsubData.current?.();

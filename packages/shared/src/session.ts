@@ -24,6 +24,13 @@ export const SessionInfoSchema = z.object({
   subagentDepth: z.number().int().min(0).max(8).optional(),
   /** Short goal text for sub-agent children (UI tree). */
   goal: z.string().optional(),
+  /**
+   * Access mode for live in-memory sessions (list/open enrichment).
+   * Omitted/undefined for cold disk-only rows — UI falls back to getPermissionMode / prefs.
+   */
+  permissionMode: z.string().optional(),
+  /** True when permissionMode === "plan" (live sessions only). */
+  planMode: z.boolean().optional(),
 });
 
 export type SessionInfo = z.infer<typeof SessionInfoSchema>;

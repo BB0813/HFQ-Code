@@ -36,7 +36,8 @@ interface AppState {
   /** Live CoT buffer for thinking.delta (paired messageId). */
   streamingThinking: string;
   streamingThinkingId: string | null;
-  permission: PermissionRequest | null;
+  /** Permission modal queue — supports multi-session, FIFO, requestId matching. */
+  pendingPermissions: PermissionRequest[];
   /** Active session permission mode (main.cjs setPermissionMode). */
   permissionMode: string;
   planMode: boolean;
@@ -279,6 +280,7 @@ function mergeSessionListItem(
     listed.subagentDepth != null && listed.subagentDepth !== ("" as unknown)
       ? Number(listed.subagentDepth)
       : NaN;
+  const listPermMode = String(listed.permissionMode ?? "").trim();
   return {
     ...prev,
     ...listed,
@@ -290,6 +292,11 @@ function mergeSessionListItem(
     subagentDepth: !Number.isNaN(listDepth)
       ? listDepth
       : prev.subagentDepth,
+    permissionMode: listPermMode || prev.permissionMode,
+    planMode:
+      listed.planMode !== undefined
+        ? listed.planMode
+        : prev.planMode,
   };
 }
 
@@ -375,7 +382,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   streamingText: "",
   streamingThinking: "",
   streamingThinkingId: null,
-  permission: null,
+  pendingPermissions: [],
   permissionMode: "confirm_before_change",
   planMode: false,
   statusLine: "Starting…",
@@ -554,6 +561,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectSession: async (sessionId) => {
     const hfq = getHfq();
     clearRunningReconcile();
+    // Clear permission queue for the old session when switching.
+    const { activeSessionId, pendingPermissions } = get();
+    if (activeSessionId && activeSessionId !== sessionId) {
+      set((s) => ({
+        pendingPermissions: s.pendingPermissions.filter(
+          (p) => String(p.sessionId ?? "") !== activeSessionId,
+        ),
+      }));
+    }
     set({
       activeSessionId: sessionId,
       streamingText: "",
@@ -562,7 +578,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       running: false,
       messages: [],
       changes: [],
-      permission: null,
+      pendingPermissions: [],
       permissionMode: "confirm_before_change",
       planMode: false,
     });
@@ -655,22 +671,34 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (running) scheduleRunningReconcile(get, set);
       else clearRunningReconcile();
 
-      void (async () => {
-        try {
-          const r = await hfq.getPermissionMode({ sessionId });
-          const live =
-            (r as { permissionMode?: string; mode?: string })?.permissionMode ||
-            (r as { mode?: string })?.mode;
-          if (live) {
-            set({
-              permissionMode: String(live),
-              planMode: String(live) === "plan",
-            });
+      // Consume permissionMode/planMode from session:list enrichment if available,
+      // avoiding an extra getPermissionMode IPC round-trip.
+      const listPermMode = String(
+        (info as SessionInfo | null)?.permissionMode ?? "",
+      ).trim();
+      if (listPermMode) {
+        set({
+          permissionMode: listPermMode,
+          planMode: listPermMode === "plan",
+        });
+      } else {
+        void (async () => {
+          try {
+            const r = await hfq.getPermissionMode({ sessionId });
+            const live =
+              (r as { permissionMode?: string; mode?: string })?.permissionMode ||
+              (r as { mode?: string })?.mode;
+            if (live) {
+              set({
+                permissionMode: String(live),
+                planMode: String(live) === "plan",
+              });
+            }
+          } catch {
+            /* optional */
           }
-        } catch {
-          /* optional */
-        }
-      })();
+        })();
+      }
     } catch (e) {
       set({
         error: errMessage(e),
@@ -772,36 +800,50 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   abortSession: async () => {
-    const { activeSessionId } = get();
+    const { activeSessionId, pendingPermissions } = get();
     if (!activeSessionId) return;
+    // Clear permission queue for this session only (abort isolation).
+    const remaining = pendingPermissions.filter(
+      (p) => String(p.sessionId ?? "") !== activeSessionId,
+    );
+    set({ pendingPermissions: remaining });
     try {
       await getHfq().abortSession({ sessionId: activeSessionId });
     } catch (e) {
       toast.error(errMessage(e));
     } finally {
-      // Always unlock UI — backend abort is cooperative and may lag
       markTurnIdle(set, activeSessionId, "idle");
       void get().refreshSessions();
     }
   },
 
   resolvePermission: async (allow, remember = false) => {
-    const { permission } = get();
-    if (!permission?.requestId) return;
+    const { pendingPermissions } = get();
+    const perm = pendingPermissions[0];
+    if (!perm?.requestId) return;
     const decision: PermissionDecision = !allow
       ? "deny"
       : remember
         ? "allow_session"
         : "allow";
     try {
-      await getHfq().resolvePermission({
-        requestId: permission.requestId,
+      const r = await getHfq().resolvePermission({
+        requestId: perm.requestId,
         decision,
       });
+      const ok = (r as { ok?: boolean } | null)?.ok !== false;
+      if (!ok) {
+        toast.message("权限请求已失效（已超时/已中止）");
+      }
     } catch (e) {
       toast.error(errMessage(e));
     } finally {
-      set({ permission: null });
+      // Remove resolved request from queue (regardless of ok).
+      set((s) => ({
+        pendingPermissions: s.pendingPermissions.filter(
+          (p) => p.requestId !== perm.requestId,
+        ),
+      }));
     }
   },
 
@@ -812,6 +854,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
     const next = String(mode || "confirm_before_change");
+
+    // Full_access requires explicit confirmation.
+    if (next === "full_access") {
+      const ok = window.confirm(
+        "将自动允许所有操作，包括危险命令（如删除文件）。\n请仅在信任的工作区使用。\n\n确定切换到「完全访问」模式？",
+      );
+      if (!ok) return;
+    }
+
     try {
       const r = await getHfq().setPermissionMode({
         sessionId: activeSessionId,
@@ -1017,9 +1068,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     if (type === "session.completed" || type === "session.aborted") {
-      markTurnIdle(set, sessionId || active, type === "session.aborted" ? "idle" : "idle");
+      const sid = sessionId || active;
+      markTurnIdle(set, sid, "idle");
+      // Clear permission queue for this session (abort isolation).
+      if (sid) {
+        set((s) => ({
+          pendingPermissions: s.pendingPermissions.filter(
+            (p) => String(p.sessionId ?? "") !== sid,
+          ),
+        }));
+      }
       if (active) {
-        // Soft refresh snapshot so tool cards / changes land — keep running false.
         void get()
           .selectSession(active)
           .finally(() => {
@@ -1032,7 +1091,16 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     if (type === "session.failed") {
       const error = String(ev.error ?? "Session failed");
-      markTurnIdle(set, sessionId || active, "failed");
+      const sid = sessionId || active;
+      markTurnIdle(set, sid, "failed");
+      // Clear permission queue for this session.
+      if (sid) {
+        set((s) => ({
+          pendingPermissions: s.pendingPermissions.filter(
+            (p) => String(p.sessionId ?? "") !== sid,
+          ),
+        }));
+      }
       set({ error });
       toast.error(error);
       void get().refreshSessions();
@@ -1058,21 +1126,22 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
 
-    // agent-core permission.requested (summary, not description)
+    // agent-core permission.requested — push to queue (multi-session FIFO).
     if (
       type === "permission.requested" ||
       type === "permission.request" ||
       type === "permission.required"
     ) {
+      const req: PermissionRequest = {
+        requestId: String(ev.requestId ?? ev.id ?? ""),
+        sessionId: sessionId ?? undefined,
+        toolName: String(ev.toolName ?? ev.tool ?? ""),
+        description: String(ev.summary ?? ev.description ?? ""),
+        risk: String(ev.risk ?? ""),
+        args: ev.args ?? ev.input,
+      };
       set((s) => ({
-        permission: {
-          requestId: String(ev.requestId ?? ev.id ?? ""),
-          sessionId: sessionId ?? undefined,
-          toolName: String(ev.toolName ?? ev.tool ?? ""),
-          description: String(ev.summary ?? ev.description ?? ""),
-          risk: String(ev.risk ?? ""),
-          args: ev.args ?? ev.input,
-        },
+        pendingPermissions: [...s.pendingPermissions, req],
         running: true,
         sessions: patchSessionStatus(
           s.sessions,
@@ -1085,7 +1154,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     if (type === "permission.resolved") {
-      set({ permission: null });
+      const resolvedId = String(ev.requestId ?? "");
+      set((s) => ({
+        pendingPermissions: s.pendingPermissions.filter(
+          (p) => p.requestId !== resolvedId,
+        ),
+      }));
       return;
     }
 

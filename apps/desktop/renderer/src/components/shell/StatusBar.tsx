@@ -31,6 +31,7 @@ export function StatusBar() {
       return;
     }
     let cancelled = false;
+    let interval: ReturnType<typeof setInterval>;
     const load = async () => {
       try {
         const st = await getHfq().gitStatus({ includeLog: false });
@@ -39,16 +40,31 @@ export function StatusBar() {
         if (!cancelled) setGit(null);
       }
     };
+    const schedule = (ms: number) => {
+      if (interval) clearInterval(interval);
+      interval = setInterval(load, ms);
+    };
     void load();
-    const t = window.setInterval(load, 8000);
+    schedule(8000);
+    const onVis = () => {
+      // Pause polling when window is hidden (other tab / minimized).
+      if (document.hidden) {
+        clearInterval(interval);
+      } else {
+        void load();
+        schedule(8000);
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
     return () => {
       cancelled = true;
-      window.clearInterval(t);
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVis);
     };
   }, [workspace?.path]);
 
   return (
-    <footer className="flex h-7 shrink-0 items-center gap-2.5 border-t border-border/80 bg-[hsl(240_9%_3%)] px-2.5 text-xs text-muted-foreground">
+    <footer className="flex h-7 shrink-0 items-center gap-2.5 border-t border-border/80 bg-[hsl(var(--statusbar))] px-2.5 text-xs text-muted-foreground">
       <button
         type="button"
         className="cursor-pointer font-medium text-foreground/85 transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"

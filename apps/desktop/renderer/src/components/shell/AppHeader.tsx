@@ -1,14 +1,23 @@
 import {
+  Check,
+  Command,
   PanelLeft,
   PanelRight,
   Square,
   FolderOpen,
-  Command,
   Shield,
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { shortPath } from "@/lib/utils";
 import { sessionModel } from "@/lib/hfq";
 import { useAppStore } from "@/store/app-store";
@@ -115,27 +124,49 @@ export function AppHeader() {
 
       <div className="flex shrink-0 items-center gap-1.5">
         {workbench && activeSessionId && (
-          <label className="mr-0.5 hidden items-center gap-1.5 sm:inline-flex" title={modeMeta.hint}>
-            <Shield
-              className={
-                modeMeta.warn
-                  ? "h-3.5 w-3.5 shrink-0 text-warning"
-                  : "h-3.5 w-3.5 shrink-0 text-muted-foreground"
-              }
-            />
-            <select
-              className="h-8 max-w-[132px] cursor-pointer rounded-md border border-border/80 bg-[hsl(var(--panel-elevated))] px-2 text-xs text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
-              value={modeMeta.id}
-              aria-label="权限模式"
-              onChange={(e) => void setSessionPermissionMode(e.target.value)}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="mr-0.5 hidden h-8 items-center gap-1.5 rounded-md border border-border/80 bg-[hsl(var(--panel-elevated))] px-2 text-xs text-foreground sm:inline-flex hover:bg-muted/50"
+                title={modeMeta.hint}
+                aria-label="权限模式"
+              >
+                <Shield
+                  className={`h-3.5 w-3.5 shrink-0 ${
+                    modeMeta.warn ? "text-warning" : "text-muted-foreground"
+                  }`}
+                />
+                <span className="max-w-[88px] truncate">{modeMeta.short}</span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="w-56 border-border/80 bg-popover"
             >
+              <DropdownMenuLabel className="text-xs text-muted-foreground">
+                权限模式
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
               {PERMISSION_MODES.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.short}
-                </option>
+                <DropdownMenuItem
+                  key={m.id}
+                  className="cursor-pointer gap-2 py-2"
+                  onClick={() => void setSessionPermissionMode(m.id)}
+                >
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <span className="text-sm">{m.label}</span>
+                    <span className="text-[11px] text-muted-foreground">
+                      {m.summary}
+                    </span>
+                  </div>
+                  {permissionMode === m.id && (
+                    <Check className="h-4 w-4 shrink-0 text-workbench" />
+                  )}
+                </DropdownMenuItem>
               ))}
-            </select>
-          </label>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
         {workbench &&
           (displayModel ? (

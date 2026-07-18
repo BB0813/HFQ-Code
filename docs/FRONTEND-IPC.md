@@ -117,6 +117,7 @@ hfq.onSessionEvent((ev) => {
 | `listSpawnAttempts` | Memory first; else `%data%/sessions/<parentId>.spawn-attempts.json` (incl. depth/goal failures) |
 | `open` child | Restores parent/goal/profile/depth from meta and re-links children map |
 | `delete(sessionId)` | Removes JSONL + `<id>.spawn-attempts.json`; clears memory maps. **Does not** cascade-delete child transcripts (orphans keep `parentSessionId`) |
+| `abort(sessionId)` | Stops that session + live children; **only** denies permission waiters for that tree (other sessions' modals stay) |
 
 Detail: [SUBAGENT-OBS-1.1.md](./SUBAGENT-OBS-1.1.md)
 
@@ -278,6 +279,11 @@ await hfq.removeProvider({ id: "mock" });
 // model + providerId keys are ALWAYS present ("" if unknown / legacy transcript).
 // Also when known: parentSessionId, goal, subagentProfile, subagentDepth
 // Do not treat missing key as loading — key missing should not happen after 1.1.x.
+//
+// listSessions / listChildren / get / create — live access mode enrichment:
+// Live in-memory rows include permissionMode + planMode (no N+1 getPermissionMode).
+// Cold disk-only rows OMIT permissionMode/planMode (undefined) — fall back to
+// getPermissionMode IPC or prefs.permissionMode; do not invent a default from list.
 ```
 
 | Rule | Behavior |

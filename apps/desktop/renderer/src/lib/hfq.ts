@@ -51,6 +51,10 @@ export interface SessionInfo {
   goal?: string | null;
   model?: string;
   providerId?: string;
+  /** Enriched by session:list handler to avoid extra round-trip. */
+  permissionMode?: string;
+  planMode?: boolean;
+  sessionBackend?: string;
   [key: string]: unknown;
 }
 

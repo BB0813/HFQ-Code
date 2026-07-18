@@ -200,6 +200,47 @@ describe("SessionManager integration", () => {
     expect(mgr.get(session.id)?.status).toBe("idle");
   });
 
+  it("abort only denies permissions for the aborted session tree", async () => {
+    const ws = await makeWorkspace();
+    const mgr = new SessionManager();
+    const a = await mgr.create({ workspacePath: ws, title: "sess-a" });
+    const b = await mgr.create({ workspacePath: ws, title: "sess-b" });
+
+    // Inject waiters as the permission modal queue would (unit-level isolation).
+    type Pending = {
+      resolve: (d: "allow" | "deny" | "allow_session") => void;
+      sessionId: string;
+    };
+    const pending = (
+      mgr as unknown as { pending: Map<string, Pending> }
+    ).pending;
+
+    let gotA: string | null = null;
+    let gotB: string | null = null;
+    pending.set("req-a", {
+      sessionId: a.id,
+      resolve: (d) => {
+        gotA = d;
+      },
+    });
+    pending.set("req-b", {
+      sessionId: b.id,
+      resolve: (d) => {
+        gotB = d;
+      },
+    });
+
+    expect(mgr.abort(a.id)).toBe(true);
+    expect(gotA).toBe("deny");
+    expect(gotB).toBeNull();
+    expect(pending.has("req-a")).toBe(false);
+    expect(pending.has("req-b")).toBe(true);
+
+    expect(mgr.resolvePermission("req-b", "allow")).toBe(true);
+    expect(gotB).toBe("allow");
+    expect(pending.has("req-b")).toBe(false);
+  });
+
   it("auto-titles from first message and supports rename", async () => {
     const ws = await makeWorkspace();
     const events: SessionEvent[] = [];
@@ -246,6 +287,40 @@ describe("SessionManager integration", () => {
     expect(Object.prototype.hasOwnProperty.call(row!, "providerId")).toBe(true);
     expect(String(row!.model ?? "")).toBeTruthy();
     expect(String(row!.providerId ?? "")).toBeTruthy();
+  });
+
+  it("list/listAll attach permissionMode+planMode for live sessions only", async () => {
+    const ws = await makeWorkspace();
+    const mgr = new SessionManager();
+    const session = await mgr.create({
+      workspacePath: ws,
+      title: "access-mode",
+      permissionMode: "auto_edit",
+    });
+
+    // create / get / list enrich live access mode (no extra IPC needed).
+    expect(session.permissionMode).toBe("auto_edit");
+    expect(session.planMode).toBe(false);
+    expect(mgr.get(session.id)?.permissionMode).toBe("auto_edit");
+    expect(mgr.get(session.id)?.planMode).toBe(false);
+
+    const listedLive = await mgr.listAll(ws);
+    const liveRow = listedLive.find((s) => s.id === session.id);
+    expect(liveRow?.permissionMode).toBe("auto_edit");
+    expect(liveRow?.planMode).toBe(false);
+
+    expect(mgr.setPermissionMode(session.id, "plan")).toBe(true);
+    const afterPlan = (await mgr.listAll(ws)).find((s) => s.id === session.id);
+    expect(afterPlan?.permissionMode).toBe("plan");
+    expect(afterPlan?.planMode).toBe(true);
+
+    // Cold disk-only row must omit authoritative mode (UI falls back to getPermissionMode/prefs).
+    await mgr.send(session.id, "list the workspace root");
+    const cold = new SessionManager();
+    const coldRow = (await cold.listAll(ws)).find((s) => s.id === session.id);
+    expect(coldRow).toBeTruthy();
+    expect(coldRow!.permissionMode).toBeUndefined();
+    expect(coldRow!.planMode).toBeUndefined();
   });
 
   it("runs /goal as a long-running task with elevated budget markers", async () => {

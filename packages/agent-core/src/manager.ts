@@ -83,6 +83,8 @@ export interface SessionManagerOptions {
 
 interface PendingPermission {
   resolve: (decision: PermissionDecision) => void;
+  /** Owning session — abort/delete only denies waiters for that session (+ children). */
+  sessionId: string;
 }
 
 export class SessionManager {
@@ -101,8 +103,25 @@ export class SessionManager {
 
   constructor(private readonly opts: SessionManagerOptions = {}) {}
 
+  /**
+   * Attach live access-mode fields for in-memory sessions only.
+   * Disk-only (cold) rows omit permissionMode/planMode so UI can fall back
+   * to getPermissionMode / prefs without treating a default as authoritative.
+   */
+  private withLiveAccessMode(info: SessionInfo): SessionInfo {
+    const base = withSessionIdentityKeys(info);
+    const live = this.sessions.get(base.id);
+    if (!live) return base;
+    const permissionMode = live.getPermissionMode();
+    return {
+      ...base,
+      permissionMode,
+      planMode: permissionMode === "plan" || live.getPlanMode(),
+    };
+  }
+
   list(): SessionInfo[] {
-    return [...this.sessions.values()].map((s) => withSessionIdentityKeys({ ...s.info }));
+    return [...this.sessions.values()].map((s) => this.withLiveAccessMode({ ...s.info }));
   }
 
   /**
@@ -119,7 +138,7 @@ export class SessionManager {
     if (memIds?.size) {
       for (const id of memIds) {
         const live = this.sessions.get(id)?.info;
-        if (live) byId.set(id, withSessionIdentityKeys({ ...live }));
+        if (live) byId.set(id, this.withLiveAccessMode({ ...live }));
       }
     }
 
@@ -130,10 +149,8 @@ export class SessionManager {
         if (s.parentSessionId !== parentId) continue;
         const prev = byId.get(s.id);
         // Prefer live memory fields when both exist; identity keys always present.
-        byId.set(
-          s.id,
-          withSessionIdentityKeys(prev ? { ...s, ...prev } : { ...s }),
-        );
+        // listAll already attaches live access modes when available.
+        byId.set(s.id, prev ? { ...s, ...prev } : { ...s });
         const set = this.children.get(parentId) ?? new Set();
         set.add(s.id);
         this.children.set(parentId, set);
@@ -263,7 +280,7 @@ export class SessionManager {
 
   get(sessionId: string): SessionInfo | undefined {
     const s = this.sessions.get(sessionId);
-    return s ? withSessionIdentityKeys({ ...s.info }) : undefined;
+    return s ? this.withLiveAccessMode({ ...s.info }) : undefined;
   }
 
   getSnapshot(sessionId: string): SessionSnapshot | undefined {
@@ -280,7 +297,7 @@ export class SessionManager {
     const byId = new Map<string, SessionInfo>();
 
     for (const live of this.list()) {
-      // list() already normalizes model/providerId keys.
+      // list() already normalizes identity + live permissionMode/planMode.
       byId.set(live.id, live);
     }
 
@@ -296,6 +313,7 @@ export class SessionManager {
           // still include; UI can filter
         }
         // UX1: always include model + providerId keys ("" if unknown).
+        // Cold disk rows intentionally omit permissionMode/planMode.
         byId.set(id, withSessionIdentityKeys(snap.info));
       } catch {
         /* skip corrupt */
@@ -313,9 +331,14 @@ export class SessionManager {
     const sharedAgentsDir =
       this.opts.sharedAgentsDir ?? path.join(os.homedir(), ".agents", "skills");
 
+    // Filled after AgentSession construction (id is known in constructor).
+    const sessionIdRef = { id: "" };
     const onPermission: PermissionHandler = async (req) => {
       return new Promise<PermissionDecision>((resolve) => {
-        this.pending.set(req.requestId, { resolve });
+        this.pending.set(req.requestId, {
+          resolve,
+          sessionId: sessionIdRef.id,
+        });
       });
     };
 
@@ -352,6 +375,7 @@ export class SessionManager {
       },
       onPermission,
     });
+    sessionIdRef.id = session.info.id;
 
     await session.init();
     if (params.title) {
@@ -366,7 +390,8 @@ export class SessionManager {
       set.add(session.info.id);
       this.children.set(params.parentSessionId, set);
     }
-    return { ...session.info };
+    // UX1 + access mode: create return always exposes identity + live permission fields.
+    return this.withLiveAccessMode({ ...session.info });
   }
 
   /**
@@ -686,7 +711,10 @@ export class SessionManager {
 
     const onPermission: PermissionHandler = async (req) => {
       return new Promise<PermissionDecision>((resolve) => {
-        this.pending.set(req.requestId, { resolve });
+        this.pending.set(req.requestId, {
+          resolve,
+          sessionId: params.sessionId,
+        });
       });
     };
 
@@ -767,12 +795,15 @@ export class SessionManager {
   }
 
   /**
-   * Cooperative abort of the current agent turn. Pending permission prompts are denied.
+   * Cooperative abort of the current agent turn.
+   * Denies pending permission waiters for this session and its live children only
+   * (does not steal another session's modal queue).
+   * Returns true if the session exists (waiters cleared even when already idle).
    */
   abort(sessionId: string): boolean {
     const session = this.sessions.get(sessionId);
     if (!session) return false;
-    const ok = session.requestAbort();
+    session.requestAbort();
     // Cascade to children
     const kids = this.children.get(sessionId);
     if (kids) {
@@ -780,12 +811,27 @@ export class SessionManager {
         this.sessions.get(childId)?.requestAbort();
       }
     }
-    // Unblock any waiters so the loop can observe abort.
+    this.denyPendingForSessions(this.sessionTreeIds(sessionId));
+    return true;
+  }
+
+  /** Live session id + known child ids (memory map only). */
+  private sessionTreeIds(rootId: string): Set<string> {
+    const ids = new Set<string>([rootId]);
+    const kids = this.children.get(rootId);
+    if (kids) {
+      for (const c of kids) ids.add(c);
+    }
+    return ids;
+  }
+
+  /** Deny + drop waiters owned by any of the given session ids. */
+  private denyPendingForSessions(sessionIds: Set<string>): void {
     for (const [requestId, waiter] of this.pending) {
+      if (!sessionIds.has(waiter.sessionId)) continue;
       this.pending.delete(requestId);
       waiter.resolve("deny");
     }
-    return ok;
   }
 
   /**
@@ -851,7 +897,7 @@ export class SessionManager {
     if (!session) throw new Error(`unknown session: ${sessionId}`);
     const info = await session.setProviderModel(provider, model);
     this.sessionProviders.set(sessionId, { provider, model: info.model || model });
-    return info;
+    return this.withLiveAccessMode({ ...info });
   }
 
   async rename(sessionId: string, title: string): Promise<SessionInfo> {
@@ -859,21 +905,25 @@ export class SessionManager {
     if (!next) throw new Error("title required");
 
     const live = this.sessions.get(sessionId);
-    if (live) return live.setTitle(next);
+    if (live) return this.withLiveAccessMode({ ...(await live.setTitle(next)) });
 
     const dirs = await ensureDataDirs();
     const tr = await JsonlTranscript.openExisting(dirs.sessions, sessionId);
     if (!tr) throw new Error(`unknown session: ${sessionId}`);
     const at = new Date().toISOString();
+    const priorEvents = await tr.readEvents();
+    const prior = buildSessionSnapshot(priorEvents, { id: sessionId });
+    // Preserve identity on offline rename so listSessions keeps model/providerId.
     await tr.append({
       type: "session.meta",
       sessionId,
       title: next,
+      model: prior.info.model || undefined,
+      providerId: prior.info.providerId || undefined,
       at,
     });
     const events = await tr.readEvents();
     const snap = buildSessionSnapshot(events, { id: sessionId, title: next });
-    // Offline rename still exposes identity keys for list/open UI.
     return withSessionIdentityKeys({ ...snap.info, title: next, updatedAt: at });
   }
 

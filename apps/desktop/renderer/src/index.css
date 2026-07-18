@@ -38,6 +38,10 @@
     --sidebar-accent: 210 40% 94%;
     --panel: 210 40% 98%;
     --panel-elevated: 0 0% 100%;
+    /* IDE chrome rails — darker in dark, light in light */
+    --statusbar: 215 25% 22%;
+    --activitybar: 215 25% 22%;
+    --dialog-surface: 0 0% 100%;
   }
 
   .dark {
@@ -76,6 +80,9 @@
     --sidebar-accent: 240 5% 11%;
     --panel: 240 7% 5%;
     --panel-elevated: 240 6% 8%;
+    --statusbar: 240 9% 3%;
+    --activitybar: 240 9% 3%;
+    --dialog-surface: 240 8% 6%;
   }
 
   * {
@@ -241,9 +248,9 @@
     @apply border-border ring-transparent;
   }
 
-  /* Empty-state hint chips */
+  /* Empty-state hint chips — visible hover feedback */
   .hint-chip {
-    @apply interactive rounded-lg border border-border bg-muted/40 px-3.5 py-2.5 text-left text-sm text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground;
+    @apply interactive rounded-lg border border-border bg-muted/40 px-3.5 py-2.5 text-left text-sm text-muted-foreground hover:border-foreground/25 hover:bg-muted hover:text-foreground;
   }
 
   /* Section label in side panels */

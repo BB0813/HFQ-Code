@@ -231,7 +231,7 @@ export function SessionSideBar() {
       </ScrollArea>
 
       <Dialog open={!!pendingDelete} onOpenChange={(o) => !o && setPendingDelete(null)}>
-        <DialogContent className="max-w-sm gap-4 border-border/80 bg-[hsl(240_8%_6%)] p-5">
+        <DialogContent className="max-w-sm gap-4 border-border/80 bg-[hsl(var(--dialog-surface))] p-5">
           <DialogHeader>
             <DialogTitle className="text-base">删除会话</DialogTitle>
             <DialogDescription className="text-sm">

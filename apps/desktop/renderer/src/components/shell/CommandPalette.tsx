@@ -273,7 +273,7 @@ export function CommandPalette() {
 
   return (
     <Dialog open={open} onOpenChange={setCommandOpen}>
-      <DialogContent className="gap-0 overflow-hidden border-border/80 bg-[hsl(240_8%_6%)] p-0 shadow-2xl sm:max-w-md [&>button]:right-2.5 [&>button]:top-2.5">
+      <DialogContent className="gap-0 overflow-hidden border-border/80 bg-[hsl(var(--dialog-surface))] p-0 shadow-2xl sm:max-w-md [&>button]:right-2.5 [&>button]:top-2.5">
         <DialogHeader className="sr-only">
           <DialogTitle>命令面板</DialogTitle>
         </DialogHeader>
@@ -309,30 +309,37 @@ export function CommandPalette() {
               无匹配命令
             </div>
           )}
-          {filtered.map((cmd, i) => {
+          {filtered.map((cmd, i, arr) => {
             const Icon = cmd.icon;
+            const showHeader = i === 0 || arr[i - 1]?.group !== cmd.group;
             return (
-              <button
-                key={cmd.id}
-                id={`cmd-${cmd.id}`}
-                type="button"
-                role="option"
-                aria-selected={i === active}
-                className={cn(
-                  "interactive flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm",
-                  i === active
-                    ? "bg-white/[0.08] text-foreground"
-                    : "text-foreground/90 hover:bg-white/[0.04]",
+              <div key={cmd.id}>
+                {showHeader && (
+                  <div className="px-3 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+                    {cmd.group}
+                  </div>
                 )}
-                onMouseEnter={() => setActive(i)}
-                onClick={() => void cmd.run()}
-              >
-                <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate">{cmd.label}</span>
-                <span className="shrink-0 text-xs text-muted-foreground/70">
-                  {cmd.hint || cmd.group}
-                </span>
-              </button>
+                <button
+                  id={`cmd-${cmd.id}`}
+                  type="button"
+                  role="option"
+                  aria-selected={i === active}
+                  className={cn(
+                    "interactive flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm",
+                    i === active
+                      ? "bg-white/[0.08] text-foreground"
+                      : "text-foreground/90 hover:bg-white/[0.04]",
+                  )}
+                  onMouseEnter={() => setActive(i)}
+                  onClick={() => void cmd.run()}
+                >
+                  <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate">{cmd.label}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground/70">
+                    {cmd.hint}
+                  </span>
+                </button>
+              </div>
             );
           })}
         </div>

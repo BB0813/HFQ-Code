@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
   ArrowUp,
+  Copy,
   FolderOpen,
   Loader2,
   MessageSquarePlus,
@@ -25,7 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { asList, getHfq, hasHfq, messageBody, sessionModel, sessionProviderId } from "@/lib/hfq";
+import { asList, getHfq, hasHfq, messageBody, sessionModel, sessionProviderId, type SessionMessage } from "@/lib/hfq";
 import { cn, shortPath } from "@/lib/utils";
 import { useAppStore } from "@/store/app-store";
 import { ComposerSlashPalette } from "./ComposerSlashPalette";
@@ -38,6 +39,99 @@ import {
   SLASH_COMMANDS,
   skillsToCommands,
 } from "./composer-commands";
+
+/** Memoized single message block with copy button. */
+const MessageBlock = memo(function MessageBlock({ message }: { message: SessionMessage }) {
+  const role = String(message.role);
+  const text = messageBody(message);
+  const isUser = role === "user";
+  const isTool = role === "tool";
+  const isThinking =
+    role === "thinking" || Boolean((message as { thinking?: boolean }).thinking);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(async () => {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      toast.success("已复制", { duration: 1200 });
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch {
+      toast.error("复制失败");
+    }
+  }, [text]);
+
+  if (isThinking) {
+    return (
+      <ThinkingBlock key={message.id} text={text} streaming={false} defaultOpen={false} />
+    );
+  }
+  const toolName = String(
+    (message as { toolName?: string; name?: string }).toolName ||
+      (message as { name?: string }).name ||
+      "tool",
+  );
+  const phase = (message as { phase?: string }).phase;
+  const ok = (message as { ok?: boolean }).ok;
+  return (
+    <article
+      className={cn(
+        "group relative rounded-xl border border-border/50 px-3.5 py-2.5 text-sm duration-150",
+        isUser && "msg-user",
+        isTool && "msg-tool shadow-sm shadow-black/10",
+        !isUser && !isTool && "msg-agent",
+      )}
+    >
+      <div className="mb-1.5 flex items-center gap-2">
+        {isTool && (
+          <span className="flex h-5 w-5 items-center justify-center rounded-md bg-white/[0.06]">
+            <Wrench className="h-3 w-3 text-muted-foreground" />
+          </span>
+        )}
+        <span
+          className={cn(
+            "text-xs font-medium uppercase tracking-wide",
+            isUser
+              ? "text-zinc-300/90"
+              : isTool
+                ? "text-muted-foreground"
+                : "text-foreground/55",
+          )}
+        >
+          {isUser ? "You" : isTool ? toolName : "Agent"}
+        </span>
+        {isTool && phase === "running" && (
+          <Badge variant="outline" className="gap-1 font-normal">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            running
+          </Badge>
+        )}
+        {isTool && phase === "done" && ok === false && (
+          <Badge variant="destructive" className="font-normal">
+            failed
+          </Badge>
+        )}
+        <button
+          type="button"
+          className="ml-auto hidden h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          title="复制消息"
+          aria-label="复制消息内容"
+          onClick={handleCopy}
+        >
+          {copied ? (
+            <span className="text-[10px] font-medium text-success">✓</span>
+          ) : (
+            <Copy className="h-3 w-3" />
+          )}
+        </button>
+      </div>
+      <div className="selectable whitespace-pre-wrap break-words text-[14px] leading-relaxed">
+        {text || (isTool ? "（无输出）" : "")}
+      </div>
+    </article>
+  );
+});
 
 export function ChatView() {
   const messages = useAppStore((s) => s.messages);
@@ -72,15 +166,54 @@ export function ChatView() {
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const [userScrolledUp, setUserScrolledUp] = useState(false);
+  const scrolledUpRef = useRef(false);
 
   const session = sessions.find((s) => s.id === activeSessionId);
   const empty = messages.length === 0 && !streamingText && !streamingThinking;
   /** Only blocks send — composer tools stay usable while agent runs. */
   const sendLocked = running || sending;
 
+  // Smart scroll: auto-scroll only when user hasn't scrolled up.
+  // Uses IntersectionObserver on bottom anchor; visible → near bottom.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamingText, streamingThinking]);
+    if (!bottomRef.current) return;
+    scrolledUpRef.current = userScrolledUp;
+  }, [userScrolledUp]);
+
+  useEffect(() => {
+    const el = bottomRef.current;
+    if (!el) return;
+    const parent = el.parentElement?.parentElement; // viewport inside ScrollArea
+    if (!parent) return;
+    let prevVisible = true;
+
+    const ob = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry) return;
+        const visible = entry.isIntersecting;
+        if (visible !== prevVisible) {
+          prevVisible = visible;
+          setUserScrolledUp(!visible);
+        }
+      },
+      { root: parent, threshold: 0.05 },
+    );
+    ob.observe(el);
+    return () => ob.disconnect();
+  }, [bottomRef.current]);
+
+  useEffect(() => {
+    if (!userScrolledUp) {
+      // Only scroll if user is near bottom (bottomRef visible).
+      bottomRef.current?.scrollIntoView({ behavior: running ? "auto" : "smooth" });
+    }
+  }, [messages, streamingText, streamingThinking, running, userScrolledUp]);
+
+  const scrollToBottom = useCallback(() => {
+    setUserScrolledUp(false);
+    bottomRef.current?.scrollIntoView({ behavior: "auto" });
+  }, []);
 
   // Consume one-shot prefill from Changes「让智能体修」etc. — never auto-send.
   useEffect(() => {
@@ -487,71 +620,9 @@ export function ChatView() {
             </div>
           )}
 
-          {messages.map((m) => {
-            const role = String(m.role);
-            const text = messageBody(m);
-            const isUser = role === "user";
-            const isTool = role === "tool";
-            const isThinking =
-              role === "thinking" || Boolean((m as { thinking?: boolean }).thinking);
-            if (isThinking) {
-              return (
-                <ThinkingBlock key={m.id} text={text} streaming={false} defaultOpen={false} />
-              );
-            }
-            const toolName = String(
-              (m as { toolName?: string; name?: string }).toolName ||
-                (m as { name?: string }).name ||
-                "tool",
-            );
-            const phase = (m as { phase?: string }).phase;
-            const ok = (m as { ok?: boolean }).ok;
-            return (
-              <article
-                key={m.id}
-                className={cn(
-                  "rounded-xl border border-border/50 px-3.5 py-2.5 text-sm duration-150",
-                  isUser && "msg-user",
-                  isTool && "msg-tool shadow-sm shadow-black/10",
-                  !isUser && !isTool && "msg-agent",
-                )}
-              >
-                <div className="mb-1.5 flex items-center gap-2">
-                  {isTool && (
-                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-white/[0.06]">
-                      <Wrench className="h-3 w-3 text-muted-foreground" />
-                    </span>
-                  )}
-                  <span
-                    className={cn(
-                      "text-xs font-medium uppercase tracking-wide",
-                      isUser
-                        ? "text-zinc-300/90"
-                        : isTool
-                          ? "text-muted-foreground"
-                          : "text-foreground/55",
-                    )}
-                  >
-                    {isUser ? "You" : isTool ? toolName : "Agent"}
-                  </span>
-                  {isTool && phase === "running" && (
-                    <Badge variant="outline" className="gap-1 font-normal">
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      running
-                    </Badge>
-                  )}
-                  {isTool && phase === "done" && ok === false && (
-                    <Badge variant="destructive" className="font-normal">
-                      failed
-                    </Badge>
-                  )}
-                </div>
-                <div className="selectable whitespace-pre-wrap break-words text-[14px] leading-relaxed">
-                  {text || (isTool ? "（无输出）" : "")}
-                </div>
-              </article>
-            );
-          })}
+          {messages.map((m) => (
+            <MessageBlock key={m.id} message={m} />
+          ))}
           {streamingThinking && (
             <ThinkingBlock text={streamingThinking} streaming defaultOpen />
           )}
@@ -569,6 +640,15 @@ export function ChatView() {
           )}
           <div ref={bottomRef} />
         </div>
+        {userScrolledUp && running && (
+          <button
+            type="button"
+            className="interactive absolute bottom-2 left-1/2 z-10 -translate-x-1/2 rounded-full border border-border/80 bg-background/90 px-3 py-1 text-[11px] text-muted-foreground shadow-lg backdrop-blur-sm hover:text-foreground"
+            onClick={scrollToBottom}
+          >
+            ↓ 跳到底部
+          </button>
+        )}
       </ScrollArea>
 
       <div className="relative shrink-0 border-t border-border/70 bg-[hsl(var(--panel))] px-6 py-3.5">

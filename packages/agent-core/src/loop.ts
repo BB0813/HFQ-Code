@@ -313,12 +313,17 @@ export class AgentSession {
     this.info.title = next;
     this.titleLocked = true;
     this.info.updatedAt = new Date().toISOString();
+    // Keep identity keys present ("" if unknown) for list/sidebar consumers.
+    if (this.info.model == null) this.info.model = "";
+    if (this.info.providerId == null) {
+      this.info.providerId = this.provider?.id != null ? String(this.provider.id) : "";
+    }
     await this.emit({
       type: "session.meta",
       sessionId: this.info.id,
       title: next,
-      model: this.info.model,
-      providerId: this.info.providerId ?? this.provider?.id,
+      model: this.info.model || undefined,
+      providerId: this.info.providerId || this.provider?.id || undefined,
       at: this.info.updatedAt,
     });
     return { ...this.info };

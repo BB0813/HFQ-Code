@@ -12,14 +12,25 @@ import { Badge } from "@/components/ui/badge";
 import { useAppStore } from "@/store/app-store";
 
 export function PermissionDialog() {
-  const permission = useAppStore((s) => s.permission);
+  const pendingPermissions = useAppStore((s) => s.pendingPermissions);
+  const activeSessionId = useAppStore((s) => s.activeSessionId);
   const resolvePermission = useAppStore((s) => s.resolvePermission);
 
+  const permission = pendingPermissions[0] ?? null;
   const open = !!permission?.requestId;
+  const isOtherSession =
+    permission?.sessionId != null &&
+    activeSessionId != null &&
+    String(permission.sessionId) !== String(activeSessionId);
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && void resolvePermission(false)}>
-      <DialogContent className="max-w-md gap-3 border-border/80 bg-[hsl(240_8%_6%)] p-4 shadow-2xl">
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v && permission) void resolvePermission(false);
+      }}
+    >
+      <DialogContent className="max-w-md gap-3 border-border/80 bg-popover p-4 shadow-2xl">
         <DialogHeader className="space-y-2">
           <div className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-500/30 bg-amber-500/10">
@@ -37,6 +48,16 @@ export function PermissionDialog() {
               <Badge variant="outline" className="shrink-0 font-mono font-normal">
                 {permission.toolName}
               </Badge>
+            )}
+            {isOtherSession && (
+              <Badge variant="warning" className="shrink-0 font-normal">
+                其他会话
+              </Badge>
+            )}
+            {pendingPermissions.length > 1 && (
+              <span className="text-xs tabular-nums text-muted-foreground">
+                {pendingPermissions.length}
+              </span>
             )}
           </div>
         </DialogHeader>
@@ -61,7 +82,6 @@ export function PermissionDialog() {
           <Button
             variant="outline"
             size="sm"
-           
             onClick={() => void resolvePermission(false)}
           >
             拒绝
@@ -69,7 +89,6 @@ export function PermissionDialog() {
           <Button
             variant="secondary"
             size="sm"
-           
             onClick={() => void resolvePermission(true, true)}
             title="本会话内同类操作自动允许 (allow_session)"
           >
