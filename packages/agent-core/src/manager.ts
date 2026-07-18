@@ -215,7 +215,11 @@ export class SessionManager {
       const file = this.spawnAttemptsPath(dirs.sessions, parentSessionId);
       await fs.writeFile(
         file,
-        `${JSON.stringify({ version: 1, attempts: list })}\n`,
+        `${JSON.stringify({
+          version: 1,
+          parentSessionId,
+          attempts: list,
+        })}\n`,
         "utf8",
       );
     } catch {
@@ -386,15 +390,6 @@ export class SessionManager {
     const parent = this.sessions.get(params.parentSessionId);
     if (!parent) throw new Error(`unknown parent session: ${params.parentSessionId}`);
     const goal = String(params.goal ?? "").trim();
-    if (!goal) {
-      return {
-        childSessionId: "",
-        summary: "sub-agent goal required",
-        ok: false,
-        error: "goal required",
-        errorCode: "goal_required",
-      };
-    }
     const attemptId = `sa_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     const at = new Date().toISOString();
     const depth = parent.getSubagentDepth() + 1;
@@ -402,6 +397,7 @@ export class SessionManager {
     const failEarly = async (
       error: string,
       errorCode: string,
+      goalText: string = goal,
     ): Promise<{
       childSessionId: string;
       summary: string;
@@ -409,11 +405,12 @@ export class SessionManager {
       error?: string;
       errorCode?: string;
     }> => {
+      // Persist failed attempts (depth / goal_required / …) so Tasks survives cold start.
       await this.pushSpawnAttempt({
         attemptId,
         parentSessionId: params.parentSessionId,
         profile: params.profile,
-        goal,
+        goal: goalText,
         status: "failed",
         error,
         errorCode,
@@ -425,7 +422,7 @@ export class SessionManager {
         sessionId: params.parentSessionId,
         parentSessionId: params.parentSessionId,
         profile: params.profile,
-        goal,
+        goal: goalText,
         status: "failed",
         error,
         errorCode,
@@ -434,7 +431,7 @@ export class SessionManager {
       return {
         childSessionId: "",
         summary: formatSubagentSummary({
-          goal,
+          goal: goalText,
           profile: params.profile,
           childSessionId: "",
           ok: false,
@@ -445,6 +442,10 @@ export class SessionManager {
         errorCode,
       };
     };
+
+    if (!goal) {
+      return failEarly("goal required", "goal_required", "");
+    }
 
     if (depth > 2) {
       return failEarly("sub-agent depth exceeded (max 2)", "depth");

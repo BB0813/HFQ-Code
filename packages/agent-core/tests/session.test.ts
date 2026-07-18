@@ -393,6 +393,21 @@ describe("SessionManager integration", () => {
     expect(
       coldFailAttempts.some((a) => a.status === "failed" && a.errorCode === "depth"),
     ).toBe(true);
+    // attemptId always present for frontend keying (attemptId preferred over id).
+    expect(coldFailAttempts.every((a) => Boolean(a.attemptId))).toBe(true);
+
+    // goal_required also persists for Tasks failure chips after restart.
+    const noGoal = await mgr.spawnSubagent({
+      parentSessionId: parent.id,
+      goal: "   ",
+      profile: "explore",
+    });
+    expect(noGoal.ok).toBe(false);
+    expect(noGoal.errorCode).toBe("goal_required");
+    const coldGoal = await new SessionManager().listSpawnAttempts(parent.id);
+    expect(
+      coldGoal.some((a) => a.status === "failed" && a.errorCode === "goal_required"),
+    ).toBe(true);
 
     const empty = await cold.listChildren("no-such-parent");
     expect(empty).toEqual([]);

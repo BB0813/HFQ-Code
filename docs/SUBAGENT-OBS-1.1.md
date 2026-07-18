@@ -78,7 +78,7 @@ await hfq.spawnSubagent({ sessionId, goal, profile? })
 | API | 冷启动行为 |
 |-----|------------|
 | `listChildSessions` / `listChildren` | 内存 parent→children map **+** 扫 sessions JSONL（`SessionInfo.parentSessionId`）合并去重；字段含 parent/goal/profile/depth/model/providerId |
-| `listSpawnAttempts` | 内存优先；未加载时读 `%data%/sessions/<parentId>.spawn-attempts.json`（最近 50 条；含失败无 child） |
+| `listSpawnAttempts` | 内存优先；未加载时读 `%data%/sessions/<parentId>.spawn-attempts.json`（`{ version, parentSessionId, attempts[] }`，最近 50 条；含 **depth / goal_required** 等失败无 child） |
 | 子会话 transcript | 仍由 JSONL 承担；open 时从 meta 恢复 parent/goal/profile/depth 并回填 children map |
 
 损坏的 attempts 文件 → 返回 `[]`，不拖垮 list。
