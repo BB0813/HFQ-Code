@@ -33,6 +33,10 @@ export function buildSystemPrompt(opts: {
   model?: string;
   /** Active provider id (e.g. openai-compatible). */
   providerId?: string;
+  /** Coding profile system addon (Kivio-style, coding-only). */
+  profileAddon?: string;
+  /** Progressive matched skill bodies (under the index). */
+  matchedSkillsBlock?: string;
 }): string {
   const skillIndex = skillsPromptIndex(opts.skills);
   const model = opts.model?.trim();
@@ -59,12 +63,15 @@ export function buildSystemPrompt(opts: {
     "Use memory_search / memory_save for durable user or project facts across sessions (local machine only).",
     "Use network_fetch only for http/https docs or APIs the user asked for; do not scrape aggressively.",
     "If tools named mcp__<server>__<tool> appear, they are live MCP tools from connected servers; use them when relevant.",
+    "When explaining architecture, call flows, or state machines, prefer a compact mermaid diagram (flowchart TD / sequenceDiagram / stateDiagram-v2) in a fenced code block — the chat UI renders mermaid.",
     "Do not invent tool results. After tools run, continue until the user request is done or blocked on permission.",
     "Reply in the same language the user uses (Chinese or English).",
     `Workspace: ${opts.workspacePath}`,
     model ? `Active model id: ${model}${providerId ? ` · Provider: ${providerId}` : ""}` : "",
+    opts.profileAddon?.trim() ? `## Coding profile\n${opts.profileAddon.trim()}` : "",
     opts.projectRules ? `## Project rules\n${opts.projectRules}` : "",
     skillIndex ? `## Available skills\n${skillIndex}` : "",
+    opts.matchedSkillsBlock?.trim() ? opts.matchedSkillsBlock.trim() : "",
     opts.memoryBlock?.trim() ? opts.memoryBlock.trim() : "",
   ]
     .filter(Boolean)

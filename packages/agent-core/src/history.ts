@@ -45,6 +45,14 @@ export interface UiTask {
   status: string;
   detail?: string;
   at: string;
+  /** Light Goal Driver fields (optional). */
+  kind?: "goal" | "tool" | "subagent";
+  objective?: string;
+  progress?: number;
+  budget?: { maxRounds?: number; maxToolCalls?: number };
+  parentTaskId?: string;
+  blockedReason?: string;
+  acceptance?: string;
 }
 
 export interface SessionUsage {
@@ -281,6 +289,13 @@ export function buildSessionSnapshot(
           status: event.status,
           detail: event.detail,
           at: event.at,
+          kind: event.kind,
+          objective: event.objective,
+          progress: event.progress,
+          budget: event.budget,
+          parentTaskId: event.parentTaskId,
+          blockedReason: event.blockedReason,
+          acceptance: event.acceptance,
         };
         const idx = tasks.findIndex((t) => t.taskId === event.taskId);
         if (idx >= 0) tasks[idx] = next;

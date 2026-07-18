@@ -178,6 +178,16 @@ export const builtinToolDefs: ToolDefinition[] = [
           description: "user | project (default project when workspace known)",
         },
         pinned: { type: "boolean" },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional tags for retrieval",
+        },
+        links: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional linked note ids, paths, or session refs",
+        },
       },
       required: ["text"],
     },
@@ -904,6 +914,12 @@ async function memorySaveTool(workspaceRoot: string, input: Record<string, unkno
   if (!text) throw new Error("text required");
   const scopeRaw = String(input.scope ?? "project").toLowerCase();
   const scope = scopeRaw === "user" ? "user" : "project";
+  const tags = Array.isArray(input.tags)
+    ? input.tags.map((t) => String(t ?? "").trim()).filter(Boolean).slice(0, 24)
+    : undefined;
+  const links = Array.isArray(input.links)
+    ? input.links.map((l) => String(l ?? "").trim()).filter(Boolean).slice(0, 32)
+    : undefined;
   const brain = await getScopedBrain(workspaceRoot);
   const id = await brain.upsert({
     id: input.id != null ? String(input.id) : undefined,
@@ -911,8 +927,10 @@ async function memorySaveTool(workspaceRoot: string, input: Record<string, unkno
     source: input.source != null ? String(input.source) : "agent",
     scope,
     pinned: Boolean(input.pinned),
+    tags,
+    links,
   });
-  return { id, saved: true, scope, updatedAt: new Date().toISOString() };
+  return { id, saved: true, scope, tags, links, updatedAt: new Date().toISOString() };
 }
 
 async function gitDiffTool(workspaceRoot: string, input: Record<string, unknown>) {

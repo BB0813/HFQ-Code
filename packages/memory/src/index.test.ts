@@ -27,18 +27,22 @@ describe("file memory", () => {
     const id = await mem.upsert({
       text: "HFQ Code uses workspace-scoped tools and JSONL transcripts.",
       source: "user",
+      tags: ["jsonl", "workspace"],
+      links: ["docs/ARCHITECTURE.md", "sess_demo"],
     });
     expect(id).toBeTruthy();
 
     const hits = await mem.search("JSONL workspace");
     expect(hits.length).toBeGreaterThan(0);
     expect(hits[0]?.text).toMatch(/JSONL/);
+    expect(hits[0]?.links?.length).toBeGreaterThan(0);
 
     const listed = await mem.list();
     expect(listed.some((d) => d.id === id)).toBe(true);
 
     const prompt = formatMemoryForPrompt(hits);
     expect(prompt).toMatch(/Memory notes/);
+    expect(prompt).toMatch(/links:/);
 
     expect(await mem.remove(id)).toBe(true);
     expect(await mem.search("JSONL")).toHaveLength(0);

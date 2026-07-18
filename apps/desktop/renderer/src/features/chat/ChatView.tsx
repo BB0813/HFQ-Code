@@ -30,6 +30,7 @@ import { asList, getHfq, hasHfq, messageBody, sessionModel, sessionProviderId, t
 import { cn, shortPath } from "@/lib/utils";
 import { useAppStore } from "@/store/app-store";
 import { ComposerSlashPalette } from "./ComposerSlashPalette";
+import { MarkdownMessage } from "./MarkdownMessage";
 import { ThinkingBlock } from "./ThinkingBlock";
 import {
   applyComposerInsert,
@@ -126,9 +127,13 @@ const MessageBlock = memo(function MessageBlock({ message }: { message: SessionM
           )}
         </button>
       </div>
-      <div className="selectable whitespace-pre-wrap break-words text-[14px] leading-relaxed">
-        {text || (isTool ? "（无输出）" : "")}
-      </div>
+      {isUser || isTool ? (
+        <div className="selectable whitespace-pre-wrap break-words text-[14px] leading-relaxed">
+          {text || (isTool ? "（无输出）" : "")}
+        </div>
+      ) : (
+        <MarkdownMessage text={text || ""} />
+      )}
     </article>
   );
 });
@@ -149,6 +154,17 @@ export function ChatView() {
   const openWorkspace = useAppStore((s) => s.openWorkspace);
   const composerDraft = useAppStore((s) => s.composerDraft);
   const consumeComposerDraft = useAppStore((s) => s.consumeComposerDraft);
+  const tasks = useAppStore((s) => s.tasks);
+
+  const activeGoal = useMemo(
+    () =>
+      tasks.find(
+        (t) =>
+          (t.kind === "goal" || (!t.kind && t.title?.toLowerCase().startsWith("goal:"))) &&
+          t.status === "in_progress",
+      ),
+    [tasks],
+  );
 
   const [draft, setDraft] = useState("");
   const [caret, setCaret] = useState(0);
@@ -632,10 +648,8 @@ export function ChatView() {
                 Agent
                 <span className="status-dot-running status-pulse" aria-hidden />
               </div>
-              <div className="selectable whitespace-pre-wrap break-words text-[14px] leading-relaxed">
-                {streamingText}
-                <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-foreground/55 align-middle" />
-              </div>
+              <MarkdownMessage text={streamingText} />
+              <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-foreground/55 align-middle" />
             </div>
           )}
           <div ref={bottomRef} />
@@ -650,6 +664,30 @@ export function ChatView() {
           </button>
         )}
       </ScrollArea>
+
+      {/* F1 goal banner — show when an active goal exists */}
+      {activeGoal && (
+        <div className="shrink-0 border-t border-border/70 bg-workbench/[0.04] px-6 py-2">
+          <div className="mx-auto flex max-w-[760px] items-center gap-2.5">
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-workbench/15 text-[10px] text-workbench">
+              ✓
+            </span>
+            <span className="min-w-0 flex-1 truncate text-xs font-medium">
+              {activeGoal.title}
+            </span>
+            {typeof activeGoal.progress === "number" && (
+              <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                {Math.round(activeGoal.progress)}%
+              </span>
+            )}
+            {activeGoal.blockedReason && (
+              <span className="shrink-0 text-[11px] text-destructive">
+                阻塞
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="relative shrink-0 border-t border-border/70 bg-[hsl(var(--panel))] px-6 py-3.5">
         <div className="relative mx-auto max-w-[760px]">

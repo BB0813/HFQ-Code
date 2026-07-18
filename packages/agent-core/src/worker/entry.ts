@@ -135,6 +135,21 @@ async function handle(req: WorkerRequest): Promise<unknown> {
         subagentProfile: p.subagentProfile,
         maxRounds: p.maxRounds,
         maxToolCalls: p.maxToolCalls,
+        codingProfileAddon: p.codingProfileAddon,
+        codingProfileSkillIds: p.codingProfileSkillIds,
+        skillMatch: p.skillMatch,
+        titleModelRole: p.titleModelRole
+          ? {
+              provider: resolveProvider(p.titleModelRole.provider),
+              model: p.titleModelRole.model,
+            }
+          : undefined,
+        compressionModelRole: p.compressionModelRole
+          ? {
+              provider: resolveProvider(p.compressionModelRole.provider),
+              model: p.compressionModelRole.model,
+            }
+          : undefined,
       });
     }
 
@@ -150,6 +165,21 @@ async function handle(req: WorkerRequest): Promise<unknown> {
         permissionMode: p.permissionMode,
         memoryEnabled: p.memoryEnabled,
         compactMaxChars: p.compactMaxChars,
+        codingProfileAddon: p.codingProfileAddon,
+        codingProfileSkillIds: p.codingProfileSkillIds,
+        skillMatch: p.skillMatch,
+        titleModelRole: p.titleModelRole
+          ? {
+              provider: resolveProvider(p.titleModelRole.provider),
+              model: p.titleModelRole.model,
+            }
+          : undefined,
+        compressionModelRole: p.compressionModelRole
+          ? {
+              provider: resolveProvider(p.compressionModelRole.provider),
+              model: p.compressionModelRole.model,
+            }
+          : undefined,
       });
     }
 

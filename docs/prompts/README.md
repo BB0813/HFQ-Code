@@ -1,0 +1,35 @@
+# 前后端交接 Prompt 目录
+
+统筹 Agent 给**前端 Agent / 后端 Agent**下发的实现需求，**一律落盘本目录**，禁止只贴在对话里。
+
+## 规则（必须）
+
+1. **整包不拆分**：同一需求前后端共用**一份** Prompt 文件（契约与验收统一），不要拆成 `fe.md` + `be.md` 两套互相漂移的说明。
+2. **先写文件再转发**：用户说「给我 Prompt 去前端/后端 Agent」时，统筹 Agent 必须先写入本目录，再把**文件路径**交给用户；正文以文件为准。
+3. **命名**：`{track-or-topic}-{short-slug}.md`  
+   - 例：`F1-kivio-athena-handoff.md`、`F2-goal-tree-sidecar.md`  
+   - 可选日期前缀：`2026-07-19-F1-kivio-athena-handoff.md`（同一 train 多轮修订时用）
+4. **内容结构**（固定骨架，便于执行 Agent 扫读）：
+   - 用法 / 角色 / 仓库 / 产品边界
+   - 已落地（禁止重做）
+   - 本轮必须完成的缺口（FE / BE 可分节，但仍在同一文件）
+   - 数据契约
+   - 文件地图
+   - 实现原则与非目标
+   - 验收清单
+   - 交付回复格式
+5. **安全**：不得写入 API key、token、本机凭证路径中的密钥内容；可写「从 config/credentials 读取」类说明。
+6. **修订**：同一文件可追加 `## Changelog` 小节；大改行为则新开版本文件并在 README 索引表更新「当前有效」。
+
+## 索引（当前有效）
+
+| 文件 | 主题 | 状态 |
+|------|------|------|
+| [F1-kivio-athena-handoff.md](./F1-kivio-athena-handoff.md) | Track F1 收口 + 前后端联调（Kivio/Athena 采纳） | done（历史交接） |
+| [F1-integration-audit.md](./F1-integration-audit.md) | 统筹联调审计 + 本轮 FE 接缝修补记录 | done · F1 收口 |
+| [release-1.1.5.md](./release-1.1.5.md) | 发版 Agent：抬版本 1.1.5 + release:check + 打包 tag | **active · 待发版** |
+
+## 与产品文档的关系
+
+- 产品决策 / 路线图仍以 `docs/DECISIONS.md`、`docs/ROADMAP.md`、`docs/ADOPT-*.md` 为准。
+- 本目录是**可执行交接单**，不是替代架构决策；冲突时以 DECISIONS / ADOPT 文档为准，并回写修正 Prompt。

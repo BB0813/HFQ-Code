@@ -12,7 +12,7 @@ import {
 } from "@hfq/policy";
 import { toAssistantToolCalls, type ChatMessage, type ModelProvider } from "@hfq/providers";
 import type { SessionEvent, SessionInfo } from "@hfq/shared";
-import { loadSkills } from "@hfq/skills";
+import { formatMatchedSkillBodies, loadSkills, matchSkills } from "@hfq/skills";
 import { createToolHub, type ToolHub } from "@hfq/tools";
 import type { ToolDefinition } from "@hfq/shared";
 import type { ToolHandler } from "@hfq/tools";
@@ -132,6 +132,23 @@ export interface AgentSessionOptions {
     profile: SubagentProfile;
     parentSessionId: string;
   }) => Promise<{ childSessionId: string; summary: string; ok: boolean; error?: string }>;
+  /** Coding profile system addon text. */
+  codingProfileAddon?: string;
+  /** Preferred skill names from active coding profile. */
+  codingProfileSkillIds?: string[];
+  /** Progressive skill match prefs. */
+  skillMatch?: {
+    enabled?: boolean;
+    maxBodies?: number;
+    maxBodyChars?: number;
+  };
+  /**
+   * Optional title model role (Kivio-style). When set, first-message title may use this
+   * provider/model; otherwise heuristic title remains.
+   */
+  titleModelRole?: { provider?: ModelProvider; model?: string };
+  /** Optional compression model role for future summarizer path (reserved). */
+  compressionModelRole?: { provider?: ModelProvider; model?: string };
 }
 
 export class AgentSession {
@@ -163,6 +180,8 @@ export class AgentSession {
   /** Per-turn overrides (e.g. elevated /goal budgets). Cleared after each send. */
   private turnMaxRounds: number | null = null;
   private turnMaxToolCalls: number | null = null;
+  /** Latest user text for progressive skill match (cleared after rebuild). */
+  private pendingSkillQuery: string | null = null;
   private static readonly EVENT_LOG_MAX = 500;
 
   constructor(private readonly opts: AgentSessionOptions) {
@@ -491,6 +510,25 @@ export class AgentSession {
     if (this.opts.subagentProfile) {
       memoryBlock = `${memoryBlock ? `${memoryBlock}\n\n` : ""}## Sub-agent\nProfile: ${this.opts.subagentProfile}. Stay focused on the assigned goal; parent will receive your final summary.`;
     }
+
+    let matchedSkillsBlock = "";
+    const skillMatch = this.opts.skillMatch;
+    const matchEnabled = skillMatch?.enabled !== false;
+    if (matchEnabled && this.pendingSkillQuery?.trim()) {
+      try {
+        const matches = matchSkills(this.pendingSkillQuery, skills, {
+          limit: skillMatch?.maxBodies ?? 2,
+          preferNames: this.opts.codingProfileSkillIds,
+        });
+        matchedSkillsBlock = formatMatchedSkillBodies(
+          matches,
+          skillMatch?.maxBodyChars ?? 6_000,
+        );
+      } catch {
+        matchedSkillsBlock = "";
+      }
+    }
+
     this.systemPrompt = buildSystemPrompt({
       workspacePath: this.opts.workspacePath,
       projectRules,
@@ -498,6 +536,8 @@ export class AgentSession {
       memoryBlock,
       model: this.model,
       providerId: this.provider?.id,
+      profileAddon: this.opts.codingProfileAddon,
+      matchedSkillsBlock,
     });
     // Keep chat history system message in sync for subsequent model calls.
     if (this.messages.length > 0 && this.messages[0]?.role === "system") {
@@ -715,12 +755,19 @@ export class AgentSession {
         if (this.uiTerminal.length > 80) this.uiTerminal.length = 80;
         break;
       case "task.updated": {
-        const next = {
+        const next: UiTask = {
           taskId: event.taskId,
           title: event.title,
           status: event.status,
           detail: event.detail,
           at: event.at,
+          kind: event.kind,
+          objective: event.objective,
+          progress: event.progress,
+          budget: event.budget,
+          parentTaskId: event.parentTaskId,
+          blockedReason: event.blockedReason,
+          acceptance: event.acceptance,
         };
         const idx = this.uiTasks.findIndex((t) => t.taskId === event.taskId);
         if (idx >= 0) this.uiTasks[idx] = next;
@@ -833,6 +880,19 @@ export class AgentSession {
       modelContent = formatCompactUserContent(parsed.body);
     }
 
+    // Progressive skill match on this turn's user text (rebuild system before model call).
+    this.pendingSkillQuery =
+      parsed.kind === "goal"
+        ? parsed.body
+        : parsed.kind === "compact"
+          ? parsed.body || displayText
+          : displayText;
+    try {
+      await this.rebuildSystemPrompt();
+    } catch {
+      /* keep previous system prompt */
+    }
+
     this.messages.push({ role: "user", content: modelContent });
     await this.emit({
       type: "message.completed",
@@ -851,6 +911,10 @@ export class AgentSession {
         title: `goal: ${parsed.body.slice(0, 80)}`,
         status: "in_progress",
         detail: `long-run · up to ${GOAL_MAX_ROUNDS} rounds / ${GOAL_MAX_TOOL_CALLS} tools`,
+        kind: "goal",
+        objective: parsed.body,
+        progress: 0,
+        budget: { maxRounds: GOAL_MAX_ROUNDS, maxToolCalls: GOAL_MAX_TOOL_CALLS },
         at: new Date().toISOString(),
       });
     }
@@ -861,7 +925,32 @@ export class AgentSession {
         parsed.kind === "goal"
           ? parsed.body
           : displayText.replace(/^\/\w+\s*/i, "").trim() || displayText;
-      const short = titleSource.replace(/\s+/g, " ").trim().slice(0, 48);
+      let short = titleSource.replace(/\s+/g, " ").trim().slice(0, 48);
+      // Optional title model role (cheap LLM); fall back to heuristic on any failure.
+      const titleRole = this.opts.titleModelRole;
+      if (titleRole?.provider && titleRole.model && titleSource.trim()) {
+        try {
+          const res = await titleRole.provider.chat({
+            model: titleRole.model,
+            messages: [
+              {
+                role: "system",
+                content:
+                  "Return a short session title (max 48 chars). No quotes. Same language as the user text.",
+              },
+              { role: "user", content: titleSource.slice(0, 500) },
+            ],
+            tools: [],
+          });
+          const candidate = String(res?.message ?? "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 48);
+          if (candidate) short = candidate;
+        } catch {
+          /* heuristic short already set */
+        }
+      }
       if (short) {
         this.info.title = short;
         this.titleLocked = true;
@@ -888,6 +977,11 @@ export class AgentSession {
             title: `goal: ${parsed.body.slice(0, 80)}`,
             status: "cancelled",
             detail: "user_stop",
+            kind: "goal",
+            objective: parsed.body,
+            progress: 0,
+            budget: { maxRounds: GOAL_MAX_ROUNDS, maxToolCalls: GOAL_MAX_TOOL_CALLS },
+            blockedReason: "user_stop",
             at: new Date().toISOString(),
           });
         }
@@ -908,6 +1002,10 @@ export class AgentSession {
           title: `goal: ${parsed.body.slice(0, 80)}`,
           status: "completed",
           detail: `goal turn finished · rounds≤${GOAL_MAX_ROUNDS} tools≤${GOAL_MAX_TOOL_CALLS}`,
+          kind: "goal",
+          objective: parsed.body,
+          progress: 100,
+          budget: { maxRounds: GOAL_MAX_ROUNDS, maxToolCalls: GOAL_MAX_TOOL_CALLS },
           at: new Date().toISOString(),
         });
       }
@@ -928,6 +1026,11 @@ export class AgentSession {
             title: `goal: ${parsed.body.slice(0, 80)}`,
             status: "cancelled",
             detail: "user_stop",
+            kind: "goal",
+            objective: parsed.body,
+            progress: 0,
+            budget: { maxRounds: GOAL_MAX_ROUNDS, maxToolCalls: GOAL_MAX_TOOL_CALLS },
+            blockedReason: "user_stop",
             at: new Date().toISOString(),
           });
         }
@@ -949,6 +1052,11 @@ export class AgentSession {
           title: `goal: ${parsed.body.slice(0, 80)}`,
           status: "failed",
           detail: error.slice(0, 200),
+          kind: "goal",
+          objective: parsed.body,
+          progress: 0,
+          budget: { maxRounds: GOAL_MAX_ROUNDS, maxToolCalls: GOAL_MAX_TOOL_CALLS },
+          blockedReason: error.slice(0, 200),
           at: new Date().toISOString(),
         });
       }

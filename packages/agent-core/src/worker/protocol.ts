@@ -54,6 +54,16 @@ export interface WorkerCreateParams {
   subagentProfile?: SubagentProfile;
   maxRounds?: number;
   maxToolCalls?: number;
+  codingProfileAddon?: string;
+  codingProfileSkillIds?: string[];
+  skillMatch?: {
+    enabled?: boolean;
+    maxBodies?: number;
+    maxBodyChars?: number;
+  };
+  /** Title role as serializable provider spec + model. */
+  titleModelRole?: { provider?: WorkerProviderSpec; model?: string };
+  compressionModelRole?: { provider?: WorkerProviderSpec; model?: string };
 }
 
 export interface WorkerOpenParams {
@@ -65,6 +75,15 @@ export interface WorkerOpenParams {
   permissionMode?: PermissionMode;
   memoryEnabled?: boolean;
   compactMaxChars?: number;
+  codingProfileAddon?: string;
+  codingProfileSkillIds?: string[];
+  skillMatch?: {
+    enabled?: boolean;
+    maxBodies?: number;
+    maxBodyChars?: number;
+  };
+  titleModelRole?: { provider?: WorkerProviderSpec; model?: string };
+  compressionModelRole?: { provider?: WorkerProviderSpec; model?: string };
 }
 
 export interface WorkerSendParams {

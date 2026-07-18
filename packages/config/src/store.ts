@@ -4,6 +4,7 @@ import {
   AppConfigSchema,
   McpServerConfigSchema,
   defaultAppConfig,
+  defaultCodingProfiles,
   normalizeProviderConfig,
   type AppConfig,
   type McpServerConfig,
@@ -86,6 +87,16 @@ export async function loadAppConfig(configPath: string): Promise<AppConfig> {
     // Do NOT force-inject mock on load — user may have deleted all channels.
     let cfg = reconcileActiveSelection(AppConfigSchema.parse(parsed));
     cfg = migratePermissionModePrefs(cfg, parsed);
+    // Seed built-in coding profiles once when missing/empty (additive; user can clear later by replacing list).
+    if (!cfg.prefs?.codingProfiles?.length) {
+      cfg = {
+        ...cfg,
+        prefs: {
+          ...cfg.prefs,
+          codingProfiles: defaultCodingProfiles(),
+        },
+      };
+    }
     const credPath = credentialsPathFor(configPath);
     let creds = await loadCredentialsFile(credPath);
 
@@ -279,6 +290,32 @@ export function withPrefs(
         if (s === "powershell" || s === "pwsh" || s === "cmd") return s;
         return "";
       })(),
+      codingProfiles:
+        patch.codingProfiles !== undefined
+          ? patch.codingProfiles
+          : (cfg.prefs?.codingProfiles ?? []),
+      activeCodingProfileId:
+        patch.activeCodingProfileId !== undefined
+          ? String(patch.activeCodingProfileId ?? "")
+          : (cfg.prefs?.activeCodingProfileId ?? ""),
+      modelRoles:
+        patch.modelRoles !== undefined
+          ? {
+              title: patch.modelRoles.title ?? cfg.prefs?.modelRoles?.title,
+              compression:
+                patch.modelRoles.compression ?? cfg.prefs?.modelRoles?.compression,
+            }
+          : (cfg.prefs?.modelRoles ?? {}),
+      skillMatch: {
+        enabled:
+          patch.skillMatch?.enabled ?? cfg.prefs?.skillMatch?.enabled ?? true,
+        maxBodies:
+          patch.skillMatch?.maxBodies ?? cfg.prefs?.skillMatch?.maxBodies ?? 2,
+        maxBodyChars:
+          patch.skillMatch?.maxBodyChars ??
+          cfg.prefs?.skillMatch?.maxBodyChars ??
+          6_000,
+      },
     },
   };
 }

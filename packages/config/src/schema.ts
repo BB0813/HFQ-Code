@@ -46,6 +46,126 @@ export const PermissionModeSchema = z.enum([
 
 export type PermissionMode = z.infer<typeof PermissionModeSchema>;
 
+/** Optional provider+model override for non-chat roles (title / compression). */
+export const ModelRoleRefSchema = z.object({
+  providerId: z.string().optional(),
+  model: z.string().optional(),
+});
+
+export type ModelRoleRef = z.infer<typeof ModelRoleRefSchema>;
+
+/**
+ * Coding profile (Kivio-style assistants, coding-only).
+ * Empty providerId/model → use global active channel.
+ */
+export const CodingProfileSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  icon: z.string().optional(),
+  /** Appended to system prompt for this profile. */
+  systemAddon: z.string().optional(),
+  /** Soft skill preference for progressive inject. */
+  skillIds: z.array(z.string()).default([]),
+  permissionMode: PermissionModeSchema.optional(),
+  providerId: z.string().optional(),
+  model: z.string().optional(),
+  builtIn: z.boolean().default(false),
+  enabled: z.boolean().default(true),
+});
+
+export type CodingProfile = z.infer<typeof CodingProfileSchema>;
+
+export const ModelRolesSchema = z.object({
+  title: ModelRoleRefSchema.optional(),
+  compression: ModelRoleRefSchema.optional(),
+});
+
+export type ModelRoles = z.infer<typeof ModelRolesSchema>;
+
+export const SkillMatchPrefsSchema = z.object({
+  enabled: z.boolean().default(true),
+  /** Max full skill bodies injected under the index. */
+  maxBodies: z.number().int().min(0).max(8).default(2),
+  maxBodyChars: z.number().int().min(500).max(40_000).default(6_000),
+});
+
+export type SkillMatchPrefs = z.infer<typeof SkillMatchPrefsSchema>;
+
+/** Built-in coding profiles (seeded when prefs.codingProfiles is empty). */
+export function defaultCodingProfiles(): CodingProfile[] {
+  return [
+    {
+      id: "profile_refactor",
+      name: "Refactor",
+      description: "Small focused refactors; preserve behavior; explain diffs.",
+      icon: "🔧",
+      systemAddon:
+        "Profile: Refactor. Prefer minimal, reviewable edits. Match project style. Do not rewrite unrelated code. After changes, summarize what moved and why.",
+      skillIds: ["diagram"],
+      builtIn: true,
+      enabled: true,
+    },
+    {
+      id: "profile_debug",
+      name: "Debug",
+      description: "Reproduce, isolate root cause, fix with evidence.",
+      icon: "🐛",
+      systemAddon:
+        "Profile: Debug. Gather evidence before changing code. Prefer read/grep/shell diagnostics first. State root cause, then apply the smallest fix. Do not paper over symptoms.",
+      skillIds: [],
+      builtIn: true,
+      enabled: true,
+    },
+    {
+      id: "profile_review",
+      name: "Review",
+      description: "Code review: risks, tests, design notes; plan-friendly.",
+      icon: "👀",
+      systemAddon:
+        "Profile: Review. Default to analysis over edits unless asked to fix. Call out bugs, security, missing tests, and API risks. Prefer structured findings with severity.",
+      skillIds: ["diagram"],
+      permissionMode: "plan",
+      builtIn: true,
+      enabled: true,
+    },
+    {
+      id: "profile_docs",
+      name: "Docs",
+      description: "README, ADRs, API notes, changelogs.",
+      icon: "📄",
+      systemAddon:
+        "Profile: Docs. Write concise, accurate project docs. Prefer existing tone. Flag unknowns instead of inventing APIs. Use tables sparingly when comparison helps.",
+      skillIds: ["diagram"],
+      builtIn: true,
+      enabled: true,
+    },
+    {
+      id: "profile_frontend",
+      name: "Frontend",
+      description: "UI components, layout, interaction polish.",
+      icon: "🎨",
+      systemAddon:
+        "Profile: Frontend. Follow the repo's UI stack and design tokens. Avoid generic AI aesthetics. Prefer accessible, responsive components that match surrounding code.",
+      skillIds: ["diagram"],
+      builtIn: true,
+      enabled: true,
+    },
+    {
+      id: "profile_research",
+      name: "Research",
+      description: "Codebase / docs research; cite paths; avoid silent edits.",
+      icon: "🔍",
+      systemAddon:
+        "Profile: Research. Prioritize read-only exploration. Cite file paths and evidence. Separate facts from inference. Only edit when the user asks for implementation.",
+      skillIds: ["diagram"],
+      permissionMode: "confirm_before_change",
+      builtIn: true,
+      enabled: true,
+    },
+  ];
+}
+
 export const UiPrefsSchema = z.object({
   /** dark is the product default; light is a soft inversion. */
   theme: z.enum(["dark", "light"]).default("dark"),
@@ -90,6 +210,21 @@ export const UiPrefsSchema = z.object({
    * Empty = auto (prefer powershell → pwsh → cmd).
    */
   terminalShell: z.enum(["", "powershell", "pwsh", "cmd"]).default(""),
+  /**
+   * Coding profiles (Kivio-style assistants, coding-only).
+   * Empty array is allowed; runtime may seed defaults for UI.
+   */
+  codingProfiles: z.array(CodingProfileSchema).default([]),
+  /** Active coding profile id; empty = none. */
+  activeCodingProfileId: z.string().default(""),
+  /** Optional model roles for title / compression (fallback = active chat model). */
+  modelRoles: ModelRolesSchema.default({}),
+  /** Progressive skill match / body inject prefs. */
+  skillMatch: SkillMatchPrefsSchema.default({
+    enabled: true,
+    maxBodies: 2,
+    maxBodyChars: 6_000,
+  }),
 });
 
 export type UiPrefs = z.infer<typeof UiPrefsSchema>;
@@ -122,6 +257,10 @@ export const AppConfigSchema = z.object({
     updateSource: "ghproxy",
     updateProxyBase: "https://ghproxy.com/",
     terminalShell: "",
+    codingProfiles: [],
+    activeCodingProfileId: "",
+    modelRoles: {},
+    skillMatch: { enabled: true, maxBodies: 2, maxBodyChars: 6_000 },
   }),
 });
 
@@ -147,6 +286,10 @@ export function defaultAppConfig(): AppConfig {
       updateSource: "ghproxy",
       updateProxyBase: "https://ghproxy.com/",
       terminalShell: "",
+      codingProfiles: defaultCodingProfiles(),
+      activeCodingProfileId: "",
+      modelRoles: {},
+      skillMatch: { enabled: true, maxBodies: 2, maxBodyChars: 6_000 },
     },
     providers: [
       {

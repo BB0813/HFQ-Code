@@ -17,6 +17,7 @@ import {
   type SessionChange,
   type SessionInfo,
   type SessionMessage,
+  type UiTask,
   type WorkspaceInfo,
 } from "@/lib/hfq";
 
@@ -42,6 +43,8 @@ interface AppState {
   permissionMode: string;
   planMode: boolean;
   statusLine: string;
+  /** F1 goal driver tasks for active session (from snapshot / task.updated). */
+  tasks: UiTask[];
   /** Prefill for Chat composer (e.g. Changes「让智能体修」); consumed once by ChatView. */
   composerDraft: string | null;
 
@@ -386,6 +389,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   permissionMode: "confirm_before_change",
   planMode: false,
   statusLine: "Starting…",
+  tasks: [],
   composerDraft: null,
 
   consumeBootRoute: () => {
@@ -578,6 +582,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       running: false,
       messages: [],
       changes: [],
+      tasks: [],
       pendingPermissions: [],
       permissionMode: "confirm_before_change",
       planMode: false,
@@ -641,6 +646,29 @@ export const useAppStore = create<AppState>((set, get) => ({
         identity.status ||
         String(info?.status ?? (running ? "running" : "idle"));
 
+      // Normalize F1 goal tasks from snapshot (authoritative for this session).
+      const snapTasks = asList<UiTask>(snap.tasks ?? (snap as Record<string, unknown>).tasks, [
+        "tasks",
+        "items",
+      ])
+        .map((t) => ({
+          ...t,
+          taskId: String(t.taskId ?? (t as { id?: string }).id ?? "").trim(),
+          title: String(t.title ?? t.objective ?? "").trim(),
+          status: String(t.status ?? "pending"),
+          kind: t.kind != null ? String(t.kind) : undefined,
+          progress:
+            t.progress != null && Number.isFinite(Number(t.progress))
+              ? Math.max(0, Math.min(100, Number(t.progress)))
+              : undefined,
+          updatedAt: t.updatedAt
+            ? String(t.updatedAt)
+            : (t as { at?: string }).at
+              ? String((t as { at?: string }).at)
+              : undefined,
+        }))
+        .filter((t) => t.taskId && t.title);
+
       set((s) => ({
         messages,
         changes,
@@ -649,6 +677,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         planMode: Boolean(plan),
         streamingThinking: "",
         streamingThinkingId: null,
+        // Always replace — empty snapshot must not keep previous session's goals.
+        tasks: snapTasks,
         // open/snapshot is authoritative for model + subagent identity.
         sessions: patchSessionFields(s.sessions, sessionId, {
           status: nextStatus,
@@ -1160,6 +1190,44 @@ export const useAppStore = create<AppState>((set, get) => ({
           (p) => p.requestId !== resolvedId,
         ),
       }));
+      return;
+    }
+
+    // F1 task.updated — upsert by taskId.
+    if (type === "task.updated") {
+      const task = ev as Record<string, unknown>;
+      const taskId = String(task.taskId ?? task.id ?? "");
+      if (!taskId) {
+        // Schedule full refresh from snapshot on next selectSession.
+        void get().refreshSessions();
+        return;
+      }
+      set((s) => {
+        const idx = s.tasks.findIndex((t) => t.taskId === taskId);
+        const partial: UiTask = {
+          taskId,
+          title: String(task.title ?? task.objective ?? taskId).slice(0, 120),
+          status: String(task.status ?? "in_progress"),
+          // Do not default missing kind to "goal" — tool tasks would pollute Goals list.
+          kind: task.kind != null ? String(task.kind) : undefined,
+          detail: task.detail ? String(task.detail) : undefined,
+          objective: task.objective ? String(task.objective) : undefined,
+          progress:
+            task.progress != null && Number.isFinite(Number(task.progress))
+              ? Math.max(0, Math.min(100, Number(task.progress)))
+              : undefined,
+          budget: task.budget as UiTask["budget"] | undefined,
+          parentTaskId: task.parentTaskId ? String(task.parentTaskId) : undefined,
+          blockedReason: task.blockedReason ? String(task.blockedReason) : undefined,
+          acceptance: task.acceptance ? String(task.acceptance) : undefined,
+          updatedAt: String(task.at ?? task.updatedAt ?? new Date().toISOString()),
+        };
+        const next =
+          idx >= 0
+            ? s.tasks.map((t, i) => (i === idx ? { ...t, ...partial } : t))
+            : [...s.tasks, partial];
+        return { tasks: next };
+      });
       return;
     }
 

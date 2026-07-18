@@ -64,6 +64,33 @@ describe("buildSessionSnapshot", () => {
         at: "2026-01-01T00:00:03.000Z",
       },
       {
+        type: "task.updated",
+        sessionId: "s1",
+        taskId: "g1",
+        title: "goal: fix login timeout",
+        status: "in_progress",
+        detail: "long-run",
+        kind: "goal",
+        objective: "fix login timeout",
+        progress: 0,
+        budget: { maxRounds: 40, maxToolCalls: 80 },
+        at: "2026-01-01T00:00:03.200Z",
+      },
+      {
+        type: "task.updated",
+        sessionId: "s1",
+        taskId: "g1",
+        title: "goal: fix login timeout",
+        status: "failed",
+        detail: "network down",
+        kind: "goal",
+        objective: "fix login timeout",
+        progress: 0,
+        budget: { maxRounds: 40, maxToolCalls: 80 },
+        blockedReason: "network down",
+        at: "2026-01-01T00:00:03.400Z",
+      },
+      {
         type: "thinking.completed",
         sessionId: "s1",
         messageId: "m-think",
@@ -114,7 +141,15 @@ describe("buildSessionSnapshot", () => {
     expect(snap.changes[0]?.path).toBe("a.txt");
     expect(snap.changes[0]?.after).toBe("hello");
     expect(snap.terminal[0]?.command).toBe("echo hi");
-    expect(snap.tasks[0]?.status).toBe("completed");
+    const shellTask = snap.tasks.find((t) => t.taskId === "c1");
+    expect(shellTask?.status).toBe("completed");
+    const goalTask = snap.tasks.find((t) => t.taskId === "g1");
+    expect(goalTask?.kind).toBe("goal");
+    expect(goalTask?.status).toBe("failed");
+    expect(goalTask?.objective).toBe("fix login timeout");
+    expect(goalTask?.progress).toBe(0);
+    expect(goalTask?.budget?.maxRounds).toBe(40);
+    expect(goalTask?.blockedReason).toBe("network down");
     expect(snap.chatMessages.some((m) => m.role === "user")).toBe(true);
     const assistantWithTools = snap.chatMessages.find(
       (m) => m.role === "assistant" && Array.isArray(m.tool_calls) && m.tool_calls.length > 0,

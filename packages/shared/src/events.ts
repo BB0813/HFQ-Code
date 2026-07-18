@@ -137,6 +137,19 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
     title: z.string(),
     status: z.enum(["pending", "in_progress", "completed", "cancelled", "failed"]),
     detail: z.string().optional(),
+    /** Light Goal Driver fields (Athena-inspired; optional / additive). */
+    kind: z.enum(["goal", "tool", "subagent"]).optional(),
+    objective: z.string().optional(),
+    progress: z.number().min(0).max(100).optional(),
+    budget: z
+      .object({
+        maxRounds: z.number().int().optional(),
+        maxToolCalls: z.number().int().optional(),
+      })
+      .optional(),
+    parentTaskId: z.string().optional(),
+    blockedReason: z.string().optional(),
+    acceptance: z.string().optional(),
     at: z.string(),
   }),
   z.object({

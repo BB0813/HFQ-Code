@@ -37,6 +37,9 @@ Last updated: 2026-07-19 · **1.1.4** abort isolation + permission queue + live 
 
 | Owner | Work | Notes |
 |-------|------|--------|
+| **Product** | **Track F — Adopt Kivio/Athena patterns** | Canonical: [ADOPT-KIVIO-ATHENA.md](./ADOPT-KIVIO-ATHENA.md) · DECISIONS Q8 |
+| **F1** | Chat mermaid · Coding Profiles · model roles · skill progressive match · goal fields · memory links · bundled `diagram` | 1.1.x patch train |
+| **F2** | Goal tree sidecar · Memory FTS · pdf/docx skills · optional panel prefs | 1.2+ |
 | **Product** | **1.1.4** abort isolation + permission queue + live list access modes + Chat/route/CSS polish | **Shipped** (`v1.1.4`) |
 | **Product** | **1.1.3** session identity + spawn cold-start + README zh | **Shipped** (`v1.1.3`) |
 | **Product** | **1.1.2** full installer = 1.1.1 backend + Settings/Tasks/Changes/Models UI | **Shipped** (`v1.1.2`) |
@@ -196,10 +199,26 @@ Release channel: GitHub Releases + multi-source check + optional in-app download
 
 ---
 
+## Track F — Adopt Kivio + Athena (coding patterns)
+
+Canonical: **[ADOPT-KIVIO-ATHENA.md](./ADOPT-KIVIO-ATHENA.md)**.
+
+| ID | Work | Notes |
+|----|------|--------|
+| F1-0 | Decision + roadmap hooks | ✅ docs |
+| F1-1 | Chat GFM + mermaid + fenced code | renderer `MarkdownMessage` |
+| F1-2 | Coding Profiles schema + Settings + session systemAddon | `prefs.codingProfiles` |
+| F1-3 | Model roles title / compression | `prefs.modelRoles` (fallback active) |
+| F1-4 | Skill progressive match + body inject | `@hfq/skills` matcher + loop |
+| F1-5 | Goal driver fields on `task.updated` | shared + history + loop |
+| F1-6 | Memory `links` + prompt surface | `@hfq/memory` + tools |
+| F1-7 | Bundled `diagram` skill | `skills/bundled/diagram` |
+| F2-* | Goal tree sidecar · FTS · doc skills · panel prefs | after F1 |
+
 ## Track E — Stretch (1.3+)
 
 - Memory embeddings / hybrid retrieval  
-- Python sidecar behind stable IPC (DECISIONS Q1)  
+- Python sidecar behind a stable IPC (DECISIONS Q1)  
 - Advanced MCP (OAuth, streamable HTTP)  
 - Usage CSV export / cost by model-day — **CSV export + desktop Usage UI shipped** ([USAGE-CSV-1.3.md](./USAGE-CSV-1.3.md)); cost-by-model UI later  
 - ClawHub **publish** from HFQ (out of scope until install path is solid)  

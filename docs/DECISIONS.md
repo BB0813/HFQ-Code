@@ -59,6 +59,23 @@ Post-1.0.5 execution plan: **[ROADMAP.md](./ROADMAP.md)** · 中文总览 **[项
 
 **2026-07-15 product note:** UI/UX **architecture migration is pulled forward** (R1 module split of renderer before large 1.1 page work). See Track C in ROADMAP and [UI-REDESIGN.md](./UI-REDESIGN.md).
 
+## Q8 — Adopt Kivio + Athena patterns (2026-07-19)
+
+**Choice: capability patterns only; keep coding-agent positioning.**
+
+Canonical plan: **[ADOPT-KIVIO-ATHENA.md](./ADOPT-KIVIO-ATHENA.md)**.
+
+| Adopt | From | HFQ form |
+|-------|------|----------|
+| Assistant matrix | Kivio | **Coding Profiles** (not general chat personas) |
+| Chat mermaid / rich code | Kivio | MarkdownMessage in Chat |
+| Model role split | Kivio | `prefs.modelRoles` title / compression |
+| Skill progressive inject | Kivio | rank + top-K skill bodies |
+| Goal Driver fields | Athena | light fields on `task.updated` / Tasks |
+| Notes + links | Athena CogNet | Memory `links` (file brain first) |
+
+**Do not adopt as product core:** Lens/OCR translate, email, Obsidian-first UX, free-form multi-panel default replacing Layout A, IM gateway.
+
 ## UI layout (2026-07-15) — **frozen: Layout A**
 
 Selected: **A · Cursor Agent 中枢** — activity bar + session sidebar + center chat + right drawer (changes / terminal / tasks). See [LAYOUT-PROPOSALS.md](./LAYOUT-PROPOSALS.md).

@@ -17,6 +17,9 @@ export interface MemoryHit {
   updatedAt?: string;
   scope?: MemoryScope;
   pinned?: boolean;
+  tags?: string[];
+  /** Linked note ids / paths / session refs (Athena CogNet-inspired). */
+  links?: string[];
 }
 
 export interface MemoryDoc {
@@ -28,6 +31,8 @@ export interface MemoryDoc {
   tags?: string[];
   scope?: MemoryScope;
   pinned?: boolean;
+  /** Linked note ids / workspace-relative paths / session ids. */
+  links?: string[];
 }
 
 export interface MemoryBrain {
@@ -38,6 +43,7 @@ export interface MemoryBrain {
     tags?: string[];
     scope?: MemoryScope;
     pinned?: boolean;
+    links?: string[];
   }): Promise<string>;
   search(query: string, limit?: number, opts?: { scope?: MemoryScope | "all" }): Promise<MemoryHit[]>;
   list(limit?: number, opts?: { scope?: MemoryScope | "all" }): Promise<MemoryDoc[]>;
@@ -157,11 +163,17 @@ export function createFileMemory(opts: {
 
       const id = doc.id?.trim() || randomUUID();
       const idx = store.docs.findIndex((d) => d.id === id);
+      const links = Array.isArray(doc.links)
+        ? doc.links.map((l) => String(l || "").trim()).filter(Boolean).slice(0, 32)
+        : idx >= 0
+          ? store.docs[idx]!.links
+          : undefined;
       const next: MemoryDoc = {
         id,
         text: text.slice(0, 8_000),
         source: doc.source,
         tags: doc.tags,
+        links: links?.length ? links : undefined,
         scope: doc.scope ?? defaultScope,
         pinned: Boolean(doc.pinned),
         createdAt: idx >= 0 ? store.docs[idx]!.createdAt : now,
@@ -186,15 +198,28 @@ export function createFileMemory(opts: {
       const scope = searchOpts?.scope ?? "all";
       if (scope !== "all") docs = docs.filter((d) => (d.scope ?? defaultScope) === scope);
       const ranked = docs
-        .map((d) => ({
-          id: d.id,
-          text: d.text,
-          source: d.source,
-          updatedAt: d.updatedAt,
-          scope: d.scope ?? defaultScope,
-          pinned: d.pinned,
-          score: scoreDoc(query, d, docs),
-        }))
+        .map((d) => {
+          let score = scoreDoc(query, d, docs);
+          // Light boost when query hits tags or link targets.
+          const qLow = query.trim().toLowerCase();
+          if (qLow && d.tags?.some((t) => t.toLowerCase().includes(qLow) || qLow.includes(t.toLowerCase()))) {
+            score += 1.2;
+          }
+          if (qLow && d.links?.some((l) => l.toLowerCase().includes(qLow))) {
+            score += 0.8;
+          }
+          return {
+            id: d.id,
+            text: d.text,
+            source: d.source,
+            updatedAt: d.updatedAt,
+            scope: d.scope ?? defaultScope,
+            pinned: d.pinned,
+            tags: d.tags,
+            links: d.links,
+            score,
+          };
+        })
         .filter((h) => h.score > 0)
         .sort((a, b) => b.score - a.score)
         .slice(0, Math.max(1, Math.min(limit, 50)));
@@ -269,6 +294,7 @@ export function createScopedMemory(opts: {
           text: d.text,
           source: d.source ?? "legacy",
           tags: d.tags,
+          links: d.links,
           scope: "user",
           pinned: d.pinned,
         });
@@ -352,7 +378,9 @@ export function formatMemoryForPrompt(hits: MemoryHit[], maxChars = 2_000): stri
   const lines = hits.map((h, i) => {
     const src = h.source ? ` (${h.source})` : "";
     const sc = h.scope ? ` [${h.scope}]` : "";
-    return `${i + 1}. ${h.text.slice(0, 400)}${src}${sc}`;
+    const tags = h.tags?.length ? ` tags:${h.tags.slice(0, 6).join(",")}` : "";
+    const links = h.links?.length ? ` links:${h.links.slice(0, 4).join(",")}` : "";
+    return `${i + 1}. ${h.text.slice(0, 400)}${src}${sc}${tags}${links}`;
   });
   let body = lines.join("\n");
   if (body.length > maxChars) body = `${body.slice(0, maxChars)}\n…`;

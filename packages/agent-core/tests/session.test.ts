@@ -345,6 +345,36 @@ describe("SessionManager integration", () => {
       true,
     );
 
+    // F1 Goal Driver fields on task.updated (live stream).
+    const inProg = goalTasks.find(
+      (e) => e.type === "task.updated" && e.status === "in_progress",
+    );
+    expect(inProg && "kind" in inProg ? inProg.kind : undefined).toBe("goal");
+    expect(inProg && "objective" in inProg ? inProg.objective : "").toMatch(/list the workspace/i);
+    expect(inProg && "progress" in inProg ? inProg.progress : undefined).toBe(0);
+    expect(
+      inProg && "budget" in inProg && inProg.budget
+        ? Number(inProg.budget.maxRounds) > 0
+        : false,
+    ).toBe(true);
+
+    const done = goalTasks.find((e) => e.type === "task.updated" && e.status === "completed");
+    expect(done && "kind" in done ? done.kind : undefined).toBe("goal");
+    expect(done && "progress" in done ? done.progress : undefined).toBe(100);
+    expect(done && "objective" in done ? done.objective : "").toMatch(/list the workspace/i);
+
+    // Snapshot rebuild preserves goal driver fields (Tasks cold open).
+    const snap = mgr.getSnapshot(session.id);
+    expect(snap).toBeTruthy();
+    const goalSnap = snap!.tasks.find(
+      (t) => t.kind === "goal" || String(t.title || "").startsWith("goal:"),
+    );
+    expect(goalSnap).toBeTruthy();
+    expect(goalSnap!.status).toBe("completed");
+    expect(goalSnap!.objective).toMatch(/list the workspace/i);
+    expect(goalSnap!.progress).toBe(100);
+    expect(goalSnap!.budget?.maxRounds).toBeGreaterThan(0);
+
     const userMsg = events.find(
       (e) => e.type === "message.completed" && e.role === "user",
     );

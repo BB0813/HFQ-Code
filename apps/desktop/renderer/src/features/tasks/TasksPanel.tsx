@@ -7,6 +7,7 @@ import {
   Plus,
   RefreshCw,
   ExternalLink,
+  Target,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -24,6 +25,7 @@ import {
   type SessionInfo,
   type SpawnAttempt,
 } from "@/lib/hfq";
+import { type UiTask } from "@/lib/hfq";
 import { useAppStore } from "@/store/app-store";
 import { cn, formatRelativeTime } from "@/lib/utils";
 
@@ -88,9 +90,18 @@ export function TasksPanel({ compact = false }: { compact?: boolean }) {
   /** B3-2: local parent stack for「返回父会话」. */
   const [parentStack, setParentStack] = useState<string[]>([]);
 
+  const tasks = useAppStore((s) => s.tasks);
+
   const activeSession = useMemo(
     () => sessions.find((s) => s.id === activeSessionId) ?? null,
     [sessions, activeSessionId],
+  );
+  const goalTasks = useMemo(
+    () =>
+      tasks.filter(
+        (t) => t.kind === "goal" || (!t.kind && t.title?.toLowerCase().startsWith("goal:")),
+      ),
+    [tasks],
   );
 
   // Prefer explicit navigation stack (open from Tasks); fall back to session.parentSessionId
@@ -420,6 +431,74 @@ export function TasksPanel({ compact = false }: { compact?: boolean }) {
           ) : (
             <>
               {error && <ErrorBanner message={error} onRetry={() => void refresh()} />}
+
+              {/* F1 · goal tasks */}
+              <SectionHeader title="目标任务" count={goalTasks.length} />
+              {goalTasks.length === 0 ? (
+                <p className="mb-3 px-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                  暂无目标任务，可在 Chat 输入{" "}
+                  <code className="rounded bg-white/[0.06] px-1 py-0.5 font-mono text-[10px]">
+                    /goal …
+                  </code>
+                </p>
+              ) : (
+                  <div className="mb-3 flex flex-col gap-1.5">
+                    {goalTasks.map((t) => (
+                      <div
+                        key={t.taskId}
+                        className="rounded-md border border-border/70 bg-card/40 px-2.5 py-2 text-xs"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <Target className="h-3.5 w-3.5 shrink-0 text-workbench" />
+                          <span className="min-w-0 flex-1 truncate font-medium">
+                            {t.title}
+                          </span>
+                          <Badge
+                            variant={statusVariant(t.status)}
+                            className="shrink-0 font-normal capitalize"
+                          >
+                            {t.status}
+                          </Badge>
+                        </div>
+                        {typeof t.progress === "number" && (
+                          <div className="mt-1.5 flex items-center gap-2">
+                            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-border">
+                              <div
+                                className="h-full rounded-full bg-workbench transition-all duration-300"
+                                style={{ width: `${Math.min(100, t.progress)}%` }}
+                              />
+                            </div>
+                            <span className="tabular-nums text-muted-foreground">
+                              {Math.round(t.progress)}%
+                            </span>
+                          </div>
+                        )}
+                        {t.objective && (
+                          <details className="mt-1">
+                            <summary className="cursor-pointer text-[11px] text-muted-foreground hover:text-foreground">
+                              目标详情
+                            </summary>
+                            <p className="mt-1 selectable whitespace-pre-wrap leading-relaxed text-muted-foreground">
+                              {t.objective}
+                            </p>
+                          </details>
+                        )}
+                        {t.blockedReason && (
+                          <div className="mt-1 rounded border border-destructive/30 bg-destructive/5 px-1.5 py-1 text-destructive">
+                            阻塞：{t.blockedReason}
+                          </div>
+                        )}
+                        {t.budget && (
+                          <div className="mt-1 text-[10px] text-muted-foreground">
+                            {t.budget.maxRounds != null && `最多 ${t.budget.maxRounds} 轮`}
+                            {t.budget.maxRounds != null && t.budget.maxToolCalls != null && " · "}
+                            {t.budget.maxToolCalls != null && `最多 ${t.budget.maxToolCalls} 次工具调用`}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+              )}
 
               {/* B3-1 · root node: current session goal */}
               <SectionHeader title="当前会话" count={1} />

@@ -40,6 +40,13 @@ export function SettingsPage() {
   const [proxyUrl, setProxyUrl] = useState("");
   const [memoryEnabled, setMemoryEnabled] = useState(true);
   const [planModeDefault, setPlanModeDefault] = useState(false);
+  const [codingProfiles, setCodingProfiles] = useState<
+    Array<{ id: string; name: string; description?: string; icon?: string; enabled?: boolean }>
+  >([]);
+  const [activeCodingProfileId, setActiveCodingProfileId] = useState("");
+  const [skillMatchEnabled, setSkillMatchEnabled] = useState(true);
+  const [titleModel, setTitleModel] = useState("");
+  const [compressionModel, setCompressionModel] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -80,6 +87,30 @@ export function SettingsPage() {
         if (typeof prefs.terminalShell === "string" && prefs.terminalShell) {
           setTerminalShell(String(prefs.terminalShell));
         }
+        if (Array.isArray(prefs.codingProfiles)) {
+          setCodingProfiles(
+            prefs.codingProfiles.map((p) => ({
+              id: String((p as { id?: string }).id || ""),
+              name: String((p as { name?: string }).name || ""),
+              description: (p as { description?: string }).description,
+              icon: (p as { icon?: string }).icon,
+              enabled: (p as { enabled?: boolean }).enabled !== false,
+            })),
+          );
+        }
+        if (typeof prefs.activeCodingProfileId === "string") {
+          setActiveCodingProfileId(prefs.activeCodingProfileId);
+        }
+        if (prefs.skillMatch && typeof prefs.skillMatch === "object") {
+          const sm = prefs.skillMatch as { enabled?: boolean };
+          if (typeof sm.enabled === "boolean") setSkillMatchEnabled(sm.enabled);
+        }
+        const roles = (prefs.modelRoles || {}) as {
+          title?: { model?: string };
+          compression?: { model?: string };
+        };
+        if (roles.title?.model) setTitleModel(String(roles.title.model));
+        if (roles.compression?.model) setCompressionModel(String(roles.compression.model));
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -101,10 +132,20 @@ export function SettingsPage() {
         memoryEnabled,
         planModeDefault,
         terminalShell: terminalShell === "auto" ? "" : terminalShell,
+        activeCodingProfileId,
+        skillMatch: { enabled: skillMatchEnabled },
+        modelRoles: {
+          title: titleModel.trim() ? { model: titleModel.trim() } : null,
+          compression: compressionModel.trim() ? { model: compressionModel.trim() } : null,
+        },
       });
       setSaved(true);
       setError(null);
-      toast.success("设置已保存");
+      toast.success(
+        activeCodingProfileId
+          ? "设置已保存 · Coding Profile 对新会话生效"
+          : "设置已保存",
+      );
       window.setTimeout(() => setSaved(false), 2000);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -194,6 +235,10 @@ export function SettingsPage() {
                 <span className="text-muted-foreground">默认计划模式</span>
                 <Switch checked={planModeDefault} onCheckedChange={setPlanModeDefault} />
               </label>
+              <label className="flex cursor-pointer items-center justify-between gap-3 text-xs">
+                <span className="text-muted-foreground">技能渐进匹配</span>
+                <Switch checked={skillMatchEnabled} onCheckedChange={setSkillMatchEnabled} />
+              </label>
               <div className="flex items-center justify-between gap-3 text-xs">
                 <span className="shrink-0 text-muted-foreground">代理 URL</span>
                 <Input
@@ -203,6 +248,77 @@ export function SettingsPage() {
                   className="h-8 w-64 max-w-[60%] text-xs"
                 />
               </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/70 bg-card/70 shadow-none">
+            <CardHeader className="p-3.5 pb-1.5">
+              <CardTitle className="text-sm">Coding Profiles</CardTitle>
+              <CardDescription>
+                编程角色预设（Kivio 风格，仅 coding）。新会话会注入 system addon / 技能偏好。
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2 p-3.5 pt-1.5">
+              <div className="flex flex-wrap gap-1.5">
+                <ChipButton
+                  active={!activeCodingProfileId}
+                  onClick={() => setActiveCodingProfileId("")}
+                >
+                  无
+                </ChipButton>
+                {codingProfiles
+                  .filter((p) => p.enabled !== false)
+                  .map((p) => (
+                    <ChipButton
+                      key={p.id}
+                      active={activeCodingProfileId === p.id}
+                      onClick={() => setActiveCodingProfileId(p.id)}
+                      title={p.description || p.name}
+                    >
+                      {p.icon ? `${p.icon} ` : ""}
+                      {p.name}
+                    </ChipButton>
+                  ))}
+              </div>
+              {activeCodingProfileId && (
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  {codingProfiles.find((p) => p.id === activeCodingProfileId)?.description ||
+                    "已选择配置，创建新会话后生效。"}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/70 bg-card/70 shadow-none">
+            <CardHeader className="p-3.5 pb-1.5">
+              <CardTitle className="text-sm">模型角色</CardTitle>
+              <CardDescription>
+                标题 / 压缩可指定更便宜的 model id（空 = 跟随主对话；仅填 model 时用当前
+                activeProviderId）。压缩角色本版仅保存配置，不驱动 summarizer。
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2 p-3.5 pt-1.5">
+              <div className="flex items-center justify-between gap-3 text-xs">
+                <span className="shrink-0 text-muted-foreground">标题模型</span>
+                <Input
+                  value={titleModel}
+                  onChange={(e) => setTitleModel(e.target.value)}
+                  placeholder="可选 model id"
+                  className="h-8 w-64 max-w-[60%] font-mono text-xs"
+                />
+              </div>
+              <div className="flex items-center justify-between gap-3 text-xs">
+                <span className="shrink-0 text-muted-foreground">压缩模型</span>
+                <Input
+                  value={compressionModel}
+                  onChange={(e) => setCompressionModel(e.target.value)}
+                  placeholder="可选 · 预留未生效"
+                  className="h-8 w-64 max-w-[60%] font-mono text-xs"
+                />
+              </div>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                压缩模型：当前版本仅持久化 prefs，不会改变 compact 行为。
+              </p>
             </CardContent>
           </Card>
 

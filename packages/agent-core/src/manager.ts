@@ -42,6 +42,17 @@ export interface CreateSessionParams {
   goal?: string;
   maxRounds?: number;
   maxToolCalls?: number;
+  /** Coding profile system addon (Kivio-style). */
+  codingProfileAddon?: string;
+  codingProfileSkillIds?: string[];
+  skillMatch?: {
+    enabled?: boolean;
+    maxBodies?: number;
+    maxBodyChars?: number;
+  };
+  /** Optional title model role (live provider + model id). */
+  titleModelRole?: { provider?: ModelProvider; model?: string };
+  compressionModelRole?: { provider?: ModelProvider; model?: string };
 }
 
 /** Parent-tree spawn attempt for Tasks observability (B3). */
@@ -68,6 +79,15 @@ export interface OpenSessionParams {
   permissionMode?: PermissionMode;
   memoryEnabled?: boolean;
   compactMaxChars?: number;
+  codingProfileAddon?: string;
+  codingProfileSkillIds?: string[];
+  skillMatch?: {
+    enabled?: boolean;
+    maxBodies?: number;
+    maxBodyChars?: number;
+  };
+  titleModelRole?: { provider?: ModelProvider; model?: string };
+  compressionModelRole?: { provider?: ModelProvider; model?: string };
 }
 
 export interface SessionManagerOptions {
@@ -360,6 +380,11 @@ export class SessionManager {
       goal: params.goal,
       maxRounds: params.maxRounds,
       maxToolCalls: params.maxToolCalls,
+      codingProfileAddon: params.codingProfileAddon,
+      codingProfileSkillIds: params.codingProfileSkillIds,
+      skillMatch: params.skillMatch,
+      titleModelRole: params.titleModelRole,
+      compressionModelRole: params.compressionModelRole,
       onSpawnSubagent: async ({ goal, profile, parentSessionId }) => {
         return this.spawnSubagent({
           parentSessionId,
@@ -737,6 +762,11 @@ export class SessionManager {
       permissionMode: params.permissionMode,
       memoryEnabled: params.memoryEnabled ?? this.opts.memoryEnabled,
       compactMaxChars: params.compactMaxChars ?? this.opts.compactMaxChars,
+      codingProfileAddon: params.codingProfileAddon,
+      codingProfileSkillIds: params.codingProfileSkillIds,
+      skillMatch: params.skillMatch,
+      titleModelRole: params.titleModelRole,
+      compressionModelRole: params.compressionModelRole,
       onSpawnSubagent: async ({ goal, profile, parentSessionId }) => {
         return this.spawnSubagent({
           parentSessionId,

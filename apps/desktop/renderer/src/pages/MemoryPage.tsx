@@ -30,6 +30,8 @@ interface MemoryItem {
   text?: string;
   updatedAt?: string;
   at?: string;
+  tags?: string[];
+  links?: string[];
   [key: string]: unknown;
 }
 
@@ -169,6 +171,32 @@ export function MemoryPage() {
                 <div className="selectable whitespace-pre-wrap leading-relaxed text-muted-foreground">
                   {m.content || m.text || "—"}
                 </div>
+                {Array.isArray(m.tags) && m.tags.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {m.tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="inline-flex rounded border border-border/60 bg-muted/40 px-1 py-px font-mono text-[10px] text-muted-foreground"
+                      >
+                        #{tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {Array.isArray(m.links) && m.links.length > 0 && (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {m.links.map((link) => (
+                      <span
+                        key={link}
+                        className="inline-flex rounded border border-border/60 bg-accent/20 px-1 py-px font-mono text-[10px] text-muted-foreground"
+                        title={link}
+                      >
+                        🔗 {link.slice(0, 32)}
+                        {link.length > 32 ? "…" : ""}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}

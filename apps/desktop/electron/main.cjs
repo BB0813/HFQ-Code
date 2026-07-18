@@ -313,14 +313,76 @@ function bundledSkillsDir() {
 async function sessionPrefs() {
   let memoryEnabled = true;
   let compactMaxChars = 48_000;
+  let codingProfileAddon = "";
+  let codingProfileSkillIds = [];
+  let skillMatch = { enabled: true, maxBodies: 2, maxBodyChars: 6_000 };
+  let titleModelRole;
+  let compressionModelRole;
+  let permissionModeFromProfile;
   try {
     const cfg = await readConfig();
     memoryEnabled = cfg.prefs?.memoryEnabled !== false;
     compactMaxChars = cfg.prefs?.compactMaxChars || 48_000;
+    skillMatch = {
+      enabled: cfg.prefs?.skillMatch?.enabled !== false,
+      maxBodies: cfg.prefs?.skillMatch?.maxBodies ?? 2,
+      maxBodyChars: cfg.prefs?.skillMatch?.maxBodyChars ?? 6_000,
+    };
+    const profiles = Array.isArray(cfg.prefs?.codingProfiles) ? cfg.prefs.codingProfiles : [];
+    const activeId = String(cfg.prefs?.activeCodingProfileId || "").trim();
+    const profile = activeId ? profiles.find((p) => p && p.id === activeId && p.enabled !== false) : null;
+    if (profile) {
+      codingProfileAddon = String(profile.systemAddon || "").trim();
+      codingProfileSkillIds = Array.isArray(profile.skillIds)
+        ? profile.skillIds.map((s) => String(s || "").trim()).filter(Boolean)
+        : [];
+      // Only apply when profile explicitly sets a legal access mode (never invent YOLO).
+      const PROFILE_MODES = new Set([
+        "confirm_before_change",
+        "auto_edit",
+        "plan",
+        "full_access",
+      ]);
+      if (PROFILE_MODES.has(profile.permissionMode)) {
+        permissionModeFromProfile = profile.permissionMode;
+      }
+    }
+    const { providersMod } = await loadModules();
+    const resolveRole = (role) => {
+      if (!role || typeof role !== "object") return undefined;
+      const model = String(role.model || "").trim();
+      const providerId = String(role.providerId || cfg.activeProviderId || "").trim();
+      if (!model || !providerId) return undefined;
+      const pcfg = (cfg.providers || []).find((p) => p.id === providerId);
+      if (!pcfg) return undefined;
+      try {
+        const providerSpec = {
+          id: pcfg.id,
+          kind: pcfg.kind,
+          baseURL: pcfg.baseURL,
+          apiKey: pcfg.apiKey,
+        };
+        const provider = providersMod.createProviderFromConfig(providerSpec);
+        return { provider, providerSpec, model };
+      } catch {
+        return undefined;
+      }
+    };
+    titleModelRole = resolveRole(cfg.prefs?.modelRoles?.title);
+    compressionModelRole = resolveRole(cfg.prefs?.modelRoles?.compression);
   } catch {
     /* defaults */
   }
-  return { memoryEnabled, compactMaxChars };
+  return {
+    memoryEnabled,
+    compactMaxChars,
+    codingProfileAddon,
+    codingProfileSkillIds,
+    skillMatch,
+    titleModelRole,
+    compressionModelRole,
+    permissionModeFromProfile,
+  };
 }
 
 /**
@@ -2092,17 +2154,20 @@ function registerIpc() {
     workspacePath = ws;
 
     const resolved = await resolveActiveProvider();
+    const prefs = await sessionPrefs();
     const MODES = new Set(["confirm_before_change", "auto_edit", "plan", "full_access"]);
     let permissionMode = MODES.has(payload.permissionMode)
       ? payload.permissionMode
       : null;
     let planMode = payload.planMode == null ? null : Boolean(payload.planMode);
-    let memoryEnabled;
-    let compactMaxChars;
+    let memoryEnabled = prefs.memoryEnabled;
+    let compactMaxChars = prefs.compactMaxChars;
     try {
       const cfg = await readConfig();
       if (!permissionMode) {
-        const prefMode = cfg.prefs?.permissionMode;
+        // Coding profile may override default access mode when creating a session.
+        const fromProfile = prefs.permissionModeFromProfile;
+        const prefMode = fromProfile || cfg.prefs?.permissionMode;
         if (MODES.has(prefMode)) permissionMode = prefMode;
         else if (cfg.prefs?.planModeDefault) permissionMode = "plan";
         else permissionMode = "confirm_before_change";
@@ -2127,11 +2192,38 @@ function registerIpc() {
       permissionMode,
       memoryEnabled,
       compactMaxChars,
+      codingProfileAddon: prefs.codingProfileAddon,
+      codingProfileSkillIds: prefs.codingProfileSkillIds,
+      skillMatch: prefs.skillMatch,
     };
     const info =
       backend.kind === "worker"
-        ? await backend.host.create({ ...createParams, provider: resolved.providerSpec })
-        : await backend.mgr.create({ ...createParams, provider: resolved.provider });
+        ? await backend.host.create({
+            ...createParams,
+            provider: resolved.providerSpec,
+            titleModelRole: prefs.titleModelRole
+              ? { provider: prefs.titleModelRole.providerSpec, model: prefs.titleModelRole.model }
+              : undefined,
+            compressionModelRole: prefs.compressionModelRole
+              ? {
+                  provider: prefs.compressionModelRole.providerSpec,
+                  model: prefs.compressionModelRole.model,
+                }
+              : undefined,
+          })
+        : await backend.mgr.create({
+            ...createParams,
+            provider: resolved.provider,
+            titleModelRole: prefs.titleModelRole
+              ? { provider: prefs.titleModelRole.provider, model: prefs.titleModelRole.model }
+              : undefined,
+            compressionModelRole: prefs.compressionModelRole
+              ? {
+                  provider: prefs.compressionModelRole.provider,
+                  model: prefs.compressionModelRole.model,
+                }
+              : undefined,
+          });
     activeSessionId = info.id;
     let liveMode = permissionMode;
     let livePlan = Boolean(planMode);
@@ -2197,10 +2289,14 @@ function registerIpc() {
     const MODES = new Set(["confirm_before_change", "auto_edit", "plan", "full_access"]);
     let permissionMode = MODES.has(payload.permissionMode) ? payload.permissionMode : null;
     let planMode = payload.planMode == null ? undefined : Boolean(payload.planMode);
+    const prefs = await sessionPrefs();
     try {
       const cfg = await readConfig();
       if (!permissionMode) {
-        const prefMode = cfg.prefs?.permissionMode;
+        // Align with session:create: explicit payload > active profile > prefs.
+        // Profile only applies when it set a legal permissionMode (sessionPrefs validates).
+        const fromProfile = prefs.permissionModeFromProfile;
+        const prefMode = fromProfile || cfg.prefs?.permissionMode;
         if (MODES.has(prefMode)) permissionMode = prefMode;
         else if (cfg.prefs?.planModeDefault) permissionMode = "plan";
       }
@@ -2214,16 +2310,39 @@ function registerIpc() {
       model: openModel,
       planMode,
       permissionMode: permissionMode || undefined,
+      memoryEnabled: prefs.memoryEnabled,
+      compactMaxChars: prefs.compactMaxChars,
+      codingProfileAddon: prefs.codingProfileAddon,
+      codingProfileSkillIds: prefs.codingProfileSkillIds,
+      skillMatch: prefs.skillMatch,
     };
     const snap =
       backend.kind === "worker"
         ? await backend.host.open({
             ...openParams,
             provider: openProviderSpec || (resolved && resolved.providerSpec),
+            titleModelRole: prefs.titleModelRole
+              ? { provider: prefs.titleModelRole.providerSpec, model: prefs.titleModelRole.model }
+              : undefined,
+            compressionModelRole: prefs.compressionModelRole
+              ? {
+                  provider: prefs.compressionModelRole.providerSpec,
+                  model: prefs.compressionModelRole.model,
+                }
+              : undefined,
           })
         : await backend.mgr.open({
             ...openParams,
             provider: openProvider || (resolved && resolved.provider),
+            titleModelRole: prefs.titleModelRole
+              ? { provider: prefs.titleModelRole.provider, model: prefs.titleModelRole.model }
+              : undefined,
+            compressionModelRole: prefs.compressionModelRole
+              ? {
+                  provider: prefs.compressionModelRole.provider,
+                  model: prefs.compressionModelRole.model,
+                }
+              : undefined,
           });
     activeSessionId = snap.info.id;
     if (snap.info.workspacePath) {
@@ -2520,6 +2639,46 @@ function registerIpc() {
       if (s === "" || s === "powershell" || s === "pwsh" || s === "cmd") {
         patch.terminalShell = s;
       }
+    }
+    if (typeof payload.activeCodingProfileId === "string") {
+      patch.activeCodingProfileId = payload.activeCodingProfileId.trim();
+    }
+    if (Array.isArray(payload.codingProfiles)) {
+      patch.codingProfiles = payload.codingProfiles;
+    }
+    if (payload.modelRoles && typeof payload.modelRoles === "object") {
+      const roles = {};
+      for (const key of ["title", "compression"]) {
+        const r = payload.modelRoles[key];
+        if (r && typeof r === "object") {
+          roles[key] = {
+            providerId: r.providerId != null ? String(r.providerId) : undefined,
+            model: r.model != null ? String(r.model) : undefined,
+          };
+        } else if (r === null) {
+          roles[key] = undefined;
+        }
+      }
+      patch.modelRoles = {
+        ...(cfg.prefs?.modelRoles || {}),
+        ...roles,
+      };
+    }
+    if (payload.skillMatch && typeof payload.skillMatch === "object") {
+      patch.skillMatch = {
+        enabled:
+          typeof payload.skillMatch.enabled === "boolean"
+            ? payload.skillMatch.enabled
+            : cfg.prefs?.skillMatch?.enabled,
+        maxBodies:
+          payload.skillMatch.maxBodies != null
+            ? Number(payload.skillMatch.maxBodies)
+            : cfg.prefs?.skillMatch?.maxBodies,
+        maxBodyChars:
+          payload.skillMatch.maxBodyChars != null
+            ? Number(payload.skillMatch.maxBodyChars)
+            : cfg.prefs?.skillMatch?.maxBodyChars,
+      };
     }
     const next = configMod.withPrefs(cfg, patch);
     await writeConfig(next);

@@ -123,7 +123,8 @@ export interface SessionSnapshot {
   session?: SessionInfo;
   messages?: SessionMessage[];
   changes?: SessionChange[];
-  tasks?: unknown[];
+  /** F1 goal/tool tasks (UiTask); may be absent on older backends. */
+  tasks?: UiTask[];
   terminal?: unknown[];
   usage?: { inputTokens?: number; outputTokens?: number };
   state?: Record<string, unknown>;
@@ -168,6 +169,23 @@ export interface WorkspaceDirEntry {
   type: "dir" | "file" | "symlink" | "other" | string;
   size?: number;
   mtimeMs?: number;
+}
+
+/** F1 Goal Driver task (from snapshot.tasks / task.updated events). */
+export interface UiTask {
+  taskId: string;
+  title: string;
+  status: "pending" | "in_progress" | "completed" | "cancelled" | "failed" | string;
+  kind?: "goal" | "tool" | "subagent" | string;
+  detail?: string;
+  objective?: string;
+  progress?: number;
+  budget?: { maxRounds?: number; maxToolCalls?: number };
+  parentTaskId?: string;
+  blockedReason?: string;
+  acceptance?: string;
+  updatedAt?: string;
+  [key: string]: unknown;
 }
 
 export interface GitStatusEntry {
