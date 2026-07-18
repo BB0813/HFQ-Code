@@ -192,9 +192,9 @@ export interface GitLogEntry {
 }
 
 export interface SpawnAttempt {
-  id?: string;
-  /** Backend may use attemptId. */
+  /** Backend primary key (bc5f42b+); fall back to id for compat. */
   attemptId?: string;
+  id?: string;
   sessionId?: string;
   parentSessionId?: string;
   goal?: string;
@@ -387,6 +387,23 @@ export interface HfqApi {
   onSessionEvent: (handler: (data: SessionEvent) => void) => () => void;
   onWorkspaceChanged: (handler: (data: WorkspaceInfo) => void) => () => void;
   onUpdateAvailable: (handler: (data: unknown) => void) => () => void;
+}
+
+// ---------- identity helpers (F4) ----------
+
+/** Safe read of session.model; backend guarantees key exists but may be "" for old transcripts. */
+export function sessionModel(s: { model?: string | null } | null | undefined): string {
+  return String(s?.model ?? "").trim();
+}
+
+/** Safe read of session.providerId. */
+export function sessionProviderId(s: { providerId?: string | null } | null | undefined): string {
+  return String(s?.providerId ?? "").trim();
+}
+
+/** True when session has no model AND no providerId bound (old transcript or empty state). */
+export function sessionUnbound(s: { model?: string | null; providerId?: string | null } | null | undefined): boolean {
+  return !sessionModel(s) && !sessionProviderId(s);
 }
 
 declare global {

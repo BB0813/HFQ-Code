@@ -25,7 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { asList, getHfq, hasHfq, messageBody } from "@/lib/hfq";
+import { asList, getHfq, hasHfq, messageBody, sessionModel, sessionProviderId } from "@/lib/hfq";
 import { cn, shortPath } from "@/lib/utils";
 import { useAppStore } from "@/store/app-store";
 import { ComposerSlashPalette } from "./ComposerSlashPalette";
@@ -381,15 +381,13 @@ export function ChatView() {
               </p>
               <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
                 {(() => {
-                  const sessionModel = session?.model
-                    ? String(session.model).trim()
-                    : "";
+                  const sessModel = sessionModel(session);
                   const globalModel = info?.activeModel
                     ? String(info.activeModel).trim()
                     : "";
-                  const model = sessionModel || globalModel;
+                  const model = sessModel || globalModel;
                   const provider =
-                    (session?.providerId && String(session.providerId).trim()) ||
+                    sessionProviderId(session) ||
                     (info?.activeProviderId &&
                       String(info.activeProviderId).trim()) ||
                     "";
@@ -400,8 +398,8 @@ export function ChatView() {
                           variant="secondary"
                           className="font-mono font-normal"
                           title={
-                            sessionModel && globalModel && sessionModel !== globalModel
-                              ? `本会话: ${sessionModel}\n全局: ${globalModel}`
+                            sessModel && globalModel && sessModel !== globalModel
+                              ? `本会话: ${sessModel}\n全局: ${globalModel}`
                               : model
                           }
                         >

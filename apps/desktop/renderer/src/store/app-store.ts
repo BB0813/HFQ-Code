@@ -8,6 +8,8 @@ import {
   messageText,
   normalizeSnapshot,
   normalizeWorkspace,
+  sessionModel,
+  sessionProviderId,
   type AppInfo,
   type AppPaths,
   type PermissionDecision,
@@ -482,11 +484,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       const tb = Date.parse(b.updatedAt ?? b.createdAt ?? "") || 0;
       return tb - ta;
     });
-    // Preserve model/provider + subagent meta when list omits them.
+    // Always write model/providerId (even "") so identity is never null/undefined.
+    // backend commit edb991f guarantees keys exist; "" means unbound.
     const prevById = new Map(get().sessions.map((s) => [s.id, s]));
-    const sessions = listed.map((s) =>
-      mergeSessionListItem(prevById.get(s.id), s),
-    );
+    const sessions = listed.map((s) => {
+      const merged = mergeSessionListItem(prevById.get(s.id), s);
+      return {
+        ...merged,
+        model: sessionModel(merged),
+        providerId: sessionProviderId(merged),
+      };
+    });
     set({ sessions });
   },
 

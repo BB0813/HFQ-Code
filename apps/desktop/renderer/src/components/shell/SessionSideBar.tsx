@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn, formatRelativeTime, shortPath } from "@/lib/utils";
+import { sessionModel } from "@/lib/hfq";
 import { useAppStore } from "@/store/app-store";
 
 export function SessionSideBar() {
@@ -203,7 +204,9 @@ export function SessionSideBar() {
                   <div className="mt-1 text-xs text-muted-foreground">
                     {formatRelativeTime(s.updatedAt ?? s.createdAt)}
                     {s.status ? ` · ${s.status}` : ""}
-                    {s.model ? ` · ${String(s.model).slice(0, 18)}` : ""}
+                    {sessionModel(s)
+                      ? ` · ${sessionModel(s).slice(0, 18)}`
+                      : ""}
                     {isChild && s.parentSessionId
                       ? ` · ↳ ${String(s.parentSessionId).slice(0, 6)}`
                       : ""}

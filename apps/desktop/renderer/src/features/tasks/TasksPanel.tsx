@@ -19,6 +19,8 @@ import {
   asList,
   getHfq,
   hasHfq,
+  sessionModel,
+  sessionProviderId,
   type SessionInfo,
   type SpawnAttempt,
 } from "@/lib/hfq";
@@ -53,8 +55,8 @@ function errorCodeLabel(code?: string | null): string | null {
 
 function attemptKey(a: SpawnAttempt, i: number): string {
   return String(
-    a.id ??
-      a.attemptId ??
+    a.attemptId ??
+      (a as Record<string, unknown>).id ??
       `${a.childSessionId ?? ""}-${a.at ?? a.createdAt ?? a.updatedAt ?? i}`,
   );
 }
@@ -124,8 +126,8 @@ export function TasksPanel({ compact = false }: { compact?: boolean }) {
         "items",
         "children",
       ]);
-      // Cold start / memory-only listChildren: fall back to listSessions fields
-      // when backend children map is empty but SessionInfo.parentSessionId is set.
+      // Cold-start fallback: backend now merges disk JSONL, but keep defensive
+      // fallback to listSessions parentSessionId for older backends.
       if (nextChildren.length === 0) {
         const fromList = sessions.filter(
           (s) =>
@@ -135,7 +137,7 @@ export function TasksPanel({ compact = false }: { compact?: boolean }) {
         );
         if (fromList.length) nextChildren = fromList;
       } else {
-        // Merge any richer meta already known in store.
+        // Merge richer meta from store (model/providerId may be "" in list)
         const byId = new Map(sessions.map((s) => [s.id, s]));
         nextChildren = nextChildren.map((ch) => {
           const prev = byId.get(ch.id);
@@ -149,8 +151,9 @@ export function TasksPanel({ compact = false }: { compact?: boolean }) {
             subagentProfile: ch.subagentProfile || prev.subagentProfile,
             subagentDepth:
               ch.subagentDepth != null ? ch.subagentDepth : prev.subagentDepth,
-            model: ch.model || prev.model,
-            providerId: ch.providerId || prev.providerId,
+            // Always use string-normalized identity; "" means unbound.
+            model: sessionModel(ch) || sessionModel(prev),
+            providerId: sessionProviderId(ch) || sessionProviderId(prev),
           };
         });
       }
@@ -461,8 +464,10 @@ export function TasksPanel({ compact = false }: { compact?: boolean }) {
                     {failedAttempts.map((a, i) => {
                       const code = errorCodeLabel(a.errorCode) || a.errorCode;
                       const detail = String(a.error || a.status || "failed");
+                      const goalLabel = a.goal || "（无目标）";
                       const blob = [
-                        a.goal ? `goal: ${a.goal}` : null,
+                        `goal: ${goalLabel}`,
+                        a.attemptId ? `attemptId: ${a.attemptId}` : null,
                         code ? `code: ${a.errorCode || code}` : null,
                         `error: ${detail}`,
                         a.childSessionId
@@ -480,7 +485,7 @@ export function TasksPanel({ compact = false }: { compact?: boolean }) {
                           <div className="flex items-start gap-1">
                             <div className="min-w-0 flex-1">
                               <div className="font-medium">
-                                {a.goal || "spawn"}
+                                {a.goal || "（无目标）"}
                               </div>
                               <div className="mt-0.5 flex flex-wrap items-center gap-1">
                                 {code && (
@@ -588,6 +593,9 @@ export function TasksPanel({ compact = false }: { compact?: boolean }) {
                             ? `depth ${c.subagentDepth} · `
                             : ""}
                           {formatRelativeTime(c.updatedAt ?? c.createdAt)}
+                          {sessionModel(c)
+                            ? ` · ${sessionModel(c).slice(0, 16)}`
+                            : ""}
                         </div>
                         <div className="mt-0.5 font-mono text-[10px] text-muted-foreground/80">
                           {c.id}

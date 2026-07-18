@@ -10,6 +10,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { shortPath } from "@/lib/utils";
+import { sessionModel } from "@/lib/hfq";
 import { useAppStore } from "@/store/app-store";
 import {
   isWorkbenchRoute,
@@ -47,7 +48,7 @@ export function AppHeader() {
   const sessionTitle = session?.title || session?.goal || "新会话";
   // Prefer live session model (post open rebind / setActive hot-swap) over global.
   // Never invent mock-hfq when both are empty (empty providers fail-closed).
-  const rawSessionModel = session?.model ? String(session.model).trim() : "";
+  const rawSessionModel = sessionModel(session);
   const rawGlobalModel = info?.activeModel ? String(info.activeModel).trim() : "";
   const displayModel = rawSessionModel || rawGlobalModel;
   const globalModel = rawGlobalModel;

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { shortPath } from "@/lib/utils";
 import { useAppStore } from "@/store/app-store";
 import { useUiStore } from "@/store/ui-store";
-import { getHfq, hasHfq, type GitStatus } from "@/lib/hfq";
+import { getHfq, hasHfq, sessionModel, type GitStatus } from "@/lib/hfq";
 
 export function StatusBar() {
   const navigate = useNavigate();
@@ -17,12 +17,12 @@ export function StatusBar() {
   const [git, setGit] = useState<GitStatus | null>(null);
 
   const session = sessions.find((s) => s.id === activeSessionId);
-  const sessionModel = session?.model ? String(session.model).trim() : "";
+  const sessModel = sessionModel(session);
   const globalModel = info?.activeModel ? String(info.activeModel).trim() : "";
   // Prefer bound session model (open rebind / hot-swap); fall back to global; never invent mock-hfq.
-  const displayModel = sessionModel || globalModel;
+  const displayModel = sessModel || globalModel;
   const modelMismatch = Boolean(
-    sessionModel && globalModel && sessionModel !== globalModel,
+    sessModel && globalModel && sessModel !== globalModel,
   );
 
   useEffect(() => {
@@ -104,7 +104,7 @@ export function StatusBar() {
           }
           title={
             modelMismatch
-              ? `本会话: ${sessionModel}\n全局默认: ${globalModel}\n点击打开模型页`
+              ? `本会话: ${sessModel}\n全局默认: ${globalModel}\n点击打开模型页`
               : displayModel
                 ? `${displayModel} · 模型设置`
                 : "未配置模型 · 点击打开模型页"
