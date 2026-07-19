@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.1.7 — 2026-07-20
+
+### Backend / config
+
+- **`prefs.updatePolicy`**: `autoCheck` (default true), `autoDownload` (default false), `checkIntervalHours` (1–168, default 24); `silentInstall` + `silentInstallAcceptedAt` **storage-only** until 1.1.8.
+- **Background auto-download (L1)**: after update check finds a newer version and `autoDownload` is on, download installer under updates sandbox — never auto-install.
+- **`getUpdateDownloadStatus`**: extended with `status` (incl. **ready**), `availableVersion`, `currentVersion`, `autoDownloadEnabled`, etc.
+- Install path unchanged: confirm + `shell.openPath` (NSIS wizard).
+
+### Desktop UI
+
+- Settings update card: idle / checking / downloading / **ready** / failed / up_to_date; **安装更新** when ready.
+- Switch: 有更新时后台自动下载; silent-install control disabled as **1.1.8 预置**.
+
+### Docs
+
+- `docs/UPDATE-L1-L3.md` · DECISIONS Q9 · FRONTEND-IPC updatePolicy · `docs/RELEASE-1.1.7.md` · prompts 1.1.7 / 1.1.8
+
+---
+
 ## 1.1.6 — 2026-07-20
 
 ### Backend

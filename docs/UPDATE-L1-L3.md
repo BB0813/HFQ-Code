@@ -1,9 +1,9 @@
 # HFQ Code · 应用内更新阶梯（L0 → L3）
 
-> 状态：**产品已锁定** — **最迟 1.1.8 交付完整 L3**  
-> 基线：1.1.6 shipped（D3：检查 / 手动下载 / 确认后 `shell.openPath` 打开安装包）  
-> 相关：`docs/UPDATE-D3.md` · `docs/PACKAGING.md` · `docs/DECISIONS.md` Q9  
-> 实现交接：`docs/prompts/1.1.7-handoff.md`（L1+L2）· `docs/prompts/1.1.8-l3-handoff.md`（L3）
+> 状态：**L1+L2 shipped in 1.1.7** · **最迟 1.1.8 交付完整 L3**  
+> 基线：1.1.7（L1 后台下载 + L2 就绪一键确认安装）；1.1.6 = D3 手动路径  
+> 相关：`docs/UPDATE-D3.md` · `docs/PACKAGING.md` · `docs/DECISIONS.md` Q9 · `docs/RELEASE-1.1.7.md`  
+> 实现交接：`docs/prompts/1.1.7-handoff.md`（L1+L2 · done）· `docs/prompts/1.1.8-l3-handoff.md`（L3）
 
 ---
 
