@@ -1,6 +1,7 @@
 export * from "./loop.js";
 export * from "./context.js";
 export * from "./compact.js";
+export * from "./goals-store.js";
 export * from "./paths.js";
 export * from "./manager.js";
 export * from "./history.js";

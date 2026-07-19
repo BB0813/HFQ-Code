@@ -109,7 +109,7 @@ export function MemoryPage() {
           description={
             q.trim()
               ? "换个关键词试试，或清空搜索查看全部"
-              : "Agent 在启用记忆后会写入可检索条目"
+              : "Agent 可通过 memory_save 工具写入条目；点「添加」手动保存"
           }
           action={
             q.trim() ? (

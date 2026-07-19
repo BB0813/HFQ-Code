@@ -57,13 +57,21 @@ See [DECISIONS.md](./DECISIONS.md) Q2/Q3 and [ARCHITECTURE.md](./ARCHITECTURE.md
 7. **Memory links** — optional `links[]` on notes; surface in search/prompt  
 8. **Bundled `diagram` skill** — mermaid-first architecture diagrams for coding sessions  
 
-### Track F2 — 1.2+
+### Track F2 — start in **1.1.6**, finish 1.2+
+
+**1.1.6 (first slice)** — see [prompts/1.1.6-full-train.md](./prompts/1.1.6-full-train.md):
 
 - Goal parent/children persistence (sidecar like spawn-attempts)  
-- Memory FTS5 dual-write (keep JSON export)  
-- pdf/docx/xlsx read skills (workspace/safe-copy path, no Pyodide requirement if Node path works)  
+- compression model role actually drives context compact (LLM summary + heuristic fallback)  
+- pdf/docx read path via `read_document` tool + bundled skill (Node path, no Pyodide)  
+- UI polish completing F1 surfaces  
+
+**1.2+ remainder:**
+
+- Memory FTS5 dual-write (keep JSON export) if not finished in 1.1.6  
 - Optional dockable drawer composition prefs  
 - Advanced compact circuit-breaker UI  
+
 
 ## Config shapes (additive, backward compatible)
 

@@ -15,6 +15,7 @@ import {
   type AgentSessionOptions,
   type PermissionHandler,
 } from "./loop.js";
+import { deleteGoalsSidecar, upsertGoalFromEvent } from "./goals-store.js";
 import { ensureDataDirs } from "./paths.js";
 import {
   defaultBudget,
@@ -396,6 +397,9 @@ export class SessionManager {
         });
       },
       onEvent: async (event) => {
+        if (event.type === "task.updated") {
+          void upsertGoalFromEvent(event);
+        }
         await this.opts.onEvent?.(event);
       },
       onPermission,
@@ -778,6 +782,9 @@ export class SessionManager {
         });
       },
       onEvent: async (event) => {
+        if (event.type === "task.updated") {
+          void upsertGoalFromEvent(event);
+        }
         await this.opts.onEvent?.(event);
       },
       onPermission,
@@ -911,6 +918,9 @@ export class SessionManager {
         /* ignore other disk errors — transcript already handled */
       }
     }
+
+    // Remove goals sidecar (1.1.6 Goal tree cold-start).
+    await deleteGoalsSidecar(id);
 
     return { ok: true, removedFile, wasLive: Boolean(live) };
   }

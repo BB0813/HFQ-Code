@@ -190,22 +190,30 @@ DPAPI is transparent on config save/load (Windows). Detail: [DPAPI-1.2.md](./DPA
 |---------|--------|
 | `prefs.codingProfiles[]` | `{ id, name, description?, icon?, systemAddon?, skillIds?, permissionMode?, providerId?, model?, builtIn?, enabled? }` |
 | `prefs.activeCodingProfileId` | `string` (`""` = none). **New sessions** pick up active profile; not a hot-swap for a running turn. |
-| `prefs.modelRoles` | `{ title?: { providerId?, model? } \| null, compression?: { providerId?, model? } \| null }` — empty model = follow chat model; compression is **stored only** in current build |
+| `prefs.modelRoles` | `{ title?: { providerId?, model? } \| null, compression?: { providerId?, model? } \| null }` — empty = follow chat model; **compression drives LLM compact** when set (fail → heuristic) |
 | `prefs.skillMatch` | `{ enabled?: boolean, maxBodies?: number, maxBodyChars?: number }` defaults `{ true, 2, 6000 }` |
+| `prefs.compactMaxChars` | number 8000–200000 (default 48000); injected on create/open |
 | `snapshot.tasks` / `task.updated` | `UiTask`: `taskId, title, status, detail?, kind?, objective?, progress?, budget?, parentTaskId?, blockedReason?, acceptance?, at` |
-| `/goal …` | Emits `kind:"goal"` with `objective` / `progress` / `budget`; completed → `progress:100`; stop/fail → `blockedReason` |
+| `/goal …` | Emits `kind:"goal"` + objective/progress/budget; **sidecar** `%data%/sessions/<id>.goals.json` for cold open; delete unlinks it |
+| `read_document` | Agent tool (not IPC): workspace path → text/docx/pdf extract; path escape rejected |
 
 ```js
 // task.updated (goal driver)
 // { type:"task.updated", sessionId, taskId, title:"goal: …", status, kind:"goal",
 //   objective, progress, budget:{ maxRounds, maxToolCalls }, blockedReason?, at }
 
-// setPrefs F1
+// setPrefs F1 / 1.1.6
 await hfq.setPrefs({
   activeCodingProfileId: "debug",
   skillMatch: { enabled: true },
-  modelRoles: { title: { model: "cheap-title-model" }, compression: null },
+  compactMaxChars: 48000,
+  modelRoles: {
+    title: { model: "cheap-title-model" },
+    compression: { model: "cheap-summary-model" }, // empty = heuristic only
+  },
 });
+// LLM compact observability: system message / message.completed text includes
+// "[context compacted · llm]" when compression model summarized older turns.
 ```
 
 ---

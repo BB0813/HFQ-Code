@@ -8,6 +8,28 @@ type Segment =
 
 const FENCE_RE = /```([^\n`]*)\n([\s\S]*?)```/g;
 
+/** Module-level mermaid init (once). Avoid re-initialize on every block. */
+let mermaidReady: Promise<typeof import("mermaid").default> | null = null;
+
+async function getMermaid() {
+  if (!mermaidReady) {
+    mermaidReady = import("mermaid").then((mod) => {
+      const mermaid = mod.default;
+      const dark =
+        typeof document !== "undefined" &&
+        document.documentElement.classList.contains("dark");
+      mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: "strict",
+        theme: dark ? "dark" : "default",
+        fontFamily: "ui-sans-serif, system-ui, sans-serif",
+      });
+      return mermaid;
+    });
+  }
+  return mermaidReady;
+}
+
 /** Lightweight fenced-code splitter (no full markdown dependency). */
 export function splitMarkdownSegments(source: string): Segment[] {
   const text = String(source ?? "");
@@ -29,6 +51,21 @@ export function splitMarkdownSegments(source: string): Segment[] {
     segments.push({ kind: "text", text: text.slice(last) });
   }
   return segments.length ? segments : [{ kind: "text", text }];
+}
+
+/**
+ * While streaming, unclosed ``` fences are treated as plain text so mermaid
+ * does not re-render on every incomplete delta.
+ */
+export function splitMarkdownSegmentsStreaming(source: string): Segment[] {
+  const text = String(source ?? "");
+  if (!text) return [];
+  const opens = (text.match(/```/g) || []).length;
+  if (opens % 2 === 1) {
+    // Odd fence count → last fence still open: do not parse as code/mermaid yet.
+    return [{ kind: "text", text }];
+  }
+  return splitMarkdownSegments(text);
 }
 
 function InlineText({ text }: { text: string }) {
@@ -106,13 +143,7 @@ function MermaidBlock({ code }: { code: string }) {
     let cancelled = false;
     void (async () => {
       try {
-        const mermaid = (await import("mermaid")).default;
-        mermaid.initialize({
-          startOnLoad: false,
-          securityLevel: "strict",
-          theme: "dark",
-          fontFamily: "ui-sans-serif, system-ui, sans-serif",
-        });
+        const mermaid = await getMermaid();
         const id = `hfq-mmd-${reactId}-${Math.random().toString(36).slice(2, 8)}`;
         const { svg: rendered } = await mermaid.render(id, code);
         if (!cancelled) {
@@ -160,11 +191,16 @@ function MermaidBlock({ code }: { code: string }) {
 export const MarkdownMessage = memo(function MarkdownMessage({
   text,
   className,
+  streaming = false,
 }: {
   text: string;
   className?: string;
+  /** When true, unclosed fences stay plain text (stream-safe). */
+  streaming?: boolean;
 }) {
-  const segments = splitMarkdownSegments(text);
+  const segments = streaming
+    ? splitMarkdownSegmentsStreaming(text)
+    : splitMarkdownSegments(text);
   return (
     <div className={cn("selectable text-[14px] leading-relaxed", className)}>
       {segments.map((seg, i) => {
@@ -175,7 +211,8 @@ export const MarkdownMessage = memo(function MarkdownMessage({
             </div>
           );
         }
-        if (seg.lang === "mermaid") {
+        // During stream, never run mermaid (even closed fences) — final message will.
+        if (seg.lang === "mermaid" && !streaming) {
           return <MermaidBlock key={i} code={seg.code} />;
         }
         return <CodeBlock key={i} lang={seg.lang} code={seg.code} />;

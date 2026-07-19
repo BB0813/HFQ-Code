@@ -110,7 +110,7 @@ function ShellChrome() {
         {workbench && sidebarOpen && (
           <>
             <div
-              className="dock-pane dock-split shrink-0 border-r"
+              className="dock-split shrink-0"
               style={{ width: sidebarWidth }}
             >
               <SessionSideBar />
@@ -125,7 +125,7 @@ function ShellChrome() {
             />
           </>
         )}
-        <div className="flex min-w-0 flex-1 flex-col bg-[hsl(var(--panel-elevated))]">
+        <div className="flex min-w-0 flex-1 flex-col surface-3">
           <AppHeader />
           <main id="main-content" className="dock-pane-body min-h-0 flex-1" tabIndex={-1}>
             <ErrorBoundary label="main">

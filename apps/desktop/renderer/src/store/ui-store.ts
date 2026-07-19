@@ -117,6 +117,8 @@ interface UiState {
   sidebarWidth: number;
   /** Right inspector drawer width (Layout A). */
   drawerWidth: number;
+  /** Active coding profile display name (Header chip); null = none. */
+  codingProfileName: string | null;
   setActivity: (id: ActivityId) => void;
   setDrawerOpen: (open: boolean) => void;
   setDrawerTab: (tab: DrawerTab) => void;
@@ -127,6 +129,8 @@ interface UiState {
   setTheme: (theme: "dark" | "light") => void;
   setSidebarWidth: (width: number) => void;
   setDrawerWidth: (width: number) => void;
+  /** Hot-update Header chip after Settings save / config load. */
+  setCodingProfileName: (name: string | null) => void;
   /** Sync chrome when route changes (auto hide drawer on secondary pages). */
   syncRoute: (path: string) => void;
 }
@@ -146,6 +150,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   drawerPinned: false,
   commandOpen: false,
   theme: "dark",
+  codingProfileName: null,
   sidebarWidth: clamp(
     typeof persisted.sidebarWidth === "number"
       ? persisted.sidebarWidth
@@ -190,6 +195,10 @@ export const useUiStore = create<UiState>((set, get) => ({
     saveLayout({ sidebarOpen: next });
   },
   setCommandOpen: (open) => set({ commandOpen: open }),
+  setCodingProfileName: (name) => {
+    const next = name && String(name).trim() ? String(name).trim() : null;
+    set({ codingProfileName: next });
+  },
   setTheme: (theme) => {
     document.documentElement.classList.toggle("dark", theme === "dark");
     set({ theme });

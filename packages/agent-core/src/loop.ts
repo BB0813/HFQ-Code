@@ -18,7 +18,7 @@ import type { ToolDefinition } from "@hfq/shared";
 import type { ToolHandler } from "@hfq/tools";
 import { JsonlTranscript } from "@hfq/transcript";
 import { createScopedMemory, formatMemoryForPrompt } from "@hfq/memory";
-import { compactChatMessages } from "./compact.js";
+import { compactChatMessagesMaybeLlm } from "./compact.js";
 import { buildSystemPrompt, loadProjectRules } from "./context.js";
 
 /**
@@ -64,6 +64,10 @@ import {
   GOAL_MAX_TOOL_CALLS,
   parseUserSlash,
 } from "./slash.js";
+import {
+  loadGoalsFromDisk,
+  mergeTasksWithGoals,
+} from "./goals-store.js";
 import { ensureDataDirs } from "./paths.js";
 import { redactJsonValue } from "./redact.js";
 import {
@@ -570,7 +574,13 @@ export class AgentSession {
       this.uiMessages = snap.messages;
       this.uiChanges = snap.changes;
       this.uiTerminal = snap.terminal;
-      this.uiTasks = snap.tasks;
+      // Merge JSONL tasks with goals sidecar (cold-start survival for /goal fields).
+      try {
+        const diskGoals = await loadGoalsFromDisk(this.info.id);
+        this.uiTasks = mergeTasksWithGoals(snap.tasks, diskGoals);
+      } catch {
+        this.uiTasks = snap.tasks;
+      }
       this.usage = { ...snap.usage };
       this.eventLog = events
         .filter((ev) => ev.type !== "message.delta")
@@ -1094,11 +1104,28 @@ export class AgentSession {
       this.assertNotAborted();
       this.refreshTools();
       // Soft-compact long histories so multi-turn sessions stay within model budgets.
-      const packed = compactChatMessages(this.messages, {
+      // Optional compression model summarizes dropped head turns; failures fall back to heuristic.
+      const compression = this.opts.compressionModelRole;
+      const packed = await compactChatMessagesMaybeLlm(this.messages, {
         maxChars: this.opts.compactMaxChars,
+        compression:
+          compression?.provider && compression.model
+            ? { provider: compression.provider, model: compression.model }
+            : undefined,
       });
       if (packed.compacted) {
         this.messages = packed.messages;
+        // Surface observability for UI when LLM path ran (system note already in messages).
+        if (packed.mode === "llm") {
+          await this.emit({
+            type: "message.completed",
+            sessionId: this.info.id,
+            messageId: randomUUID(),
+            role: "system",
+            text: `[context compacted · llm] older turns summarized (${packed.beforeChars}→${packed.afterChars} chars)`,
+            at: new Date().toISOString(),
+          });
+        }
       }
       const streamMessageId = randomUUID();
       let streamedAny = false;

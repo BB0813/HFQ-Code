@@ -392,6 +392,40 @@ describe("SessionManager integration", () => {
     expect(after.some((e) => e.type === "session.failed")).toBe(false);
   });
 
+  it("persists goals sidecar and restores on cold open; delete unlinks it", async () => {
+    const ws = await makeWorkspace();
+    const mgr = new SessionManager();
+    const session = await mgr.create({ workspacePath: ws, title: "goals-sidecar" });
+    await mgr.send(session.id, "/goal list the workspace and summarize");
+
+    const { ensureDataDirs } = await import("../src/paths.js");
+    const { goalsSidecarPath, loadGoalsFromDisk } = await import("../src/goals-store.js");
+    const dirs = await ensureDataDirs();
+    const sidecar = goalsSidecarPath(dirs.sessions, session.id);
+    // Allow async void upsert to flush.
+    await new Promise((r) => setTimeout(r, 50));
+    const raw = await fs.readFile(sidecar, "utf8");
+    const parsed = JSON.parse(raw) as { version?: number; goals?: unknown[] };
+    expect(parsed.version).toBe(1);
+    expect(Array.isArray(parsed.goals) && parsed.goals.length > 0).toBe(true);
+    const diskGoals = await loadGoalsFromDisk(session.id);
+    expect(diskGoals.some((g) => g.kind === "goal" && /list the workspace/i.test(g.objective || g.title))).toBe(
+      true,
+    );
+
+    // Cold open merges sidecar into snapshot.tasks.
+    const cold = new SessionManager();
+    const snap = await cold.open({ sessionId: session.id, workspacePath: ws });
+    const goal = snap.tasks.find(
+      (t) => t.kind === "goal" || String(t.title || "").startsWith("goal:"),
+    );
+    expect(goal).toBeTruthy();
+    expect(goal!.objective || goal!.title).toMatch(/list the workspace/i);
+
+    await cold.delete(session.id);
+    await expect(fs.readFile(sidecar, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("deletes a session from memory and disk", async () => {
     const ws = await makeWorkspace();
     const mgr = new SessionManager();

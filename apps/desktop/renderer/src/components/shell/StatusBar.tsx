@@ -64,7 +64,7 @@ export function StatusBar() {
   }, [workspace?.path]);
 
   return (
-    <footer className="flex h-7 shrink-0 items-center gap-2.5 border-t border-border/80 bg-[hsl(var(--statusbar))] px-2.5 text-xs text-muted-foreground">
+    <footer className="flex h-6 shrink-0 items-center gap-2 border-t border-border/40 bg-[hsl(var(--statusbar))] px-2 text-[11px] text-muted-foreground">
       <button
         type="button"
         className="cursor-pointer font-medium text-foreground/85 transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"

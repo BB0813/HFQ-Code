@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import {
   Check,
   Command,
@@ -6,8 +7,10 @@ import {
   Square,
   FolderOpen,
   Shield,
+  UserCheck,
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { getHfq, hasHfq } from "@/lib/hfq";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -52,6 +55,8 @@ export function AppHeader() {
   const drawerOpen = useUiStore((s) => s.drawerOpen);
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
   const setCommandOpen = useUiStore((s) => s.setCommandOpen);
+  const profileName = useUiStore((s) => s.codingProfileName);
+  const setCodingProfileName = useUiStore((s) => s.setCodingProfileName);
 
   const session = sessions.find((s) => s.id === activeSessionId);
   const sessionTitle = session?.title || session?.goal || "新会话";
@@ -64,6 +69,34 @@ export function AppHeader() {
   const modelMismatch = Boolean(
     rawSessionModel && globalModel && rawSessionModel !== globalModel,
   );
+
+  // Seed coding profile chip from config (Settings save hot-updates via ui-store).
+  useEffect(() => {
+    if (!hasHfq()) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const cfg = await getHfq().getConfig();
+        if (cancelled) return;
+        const prefs = (cfg as { prefs?: Record<string, unknown> })?.prefs ?? {};
+        const activeId = String(prefs.activeCodingProfileId ?? "").trim();
+        if (!activeId) {
+          setCodingProfileName(null);
+          return;
+        }
+        const profiles = (
+          Array.isArray(prefs.codingProfiles) ? prefs.codingProfiles : []
+        ) as Array<{ id: string; name: string }>;
+        const active = profiles.find((p) => p.id === activeId);
+        setCodingProfileName(active?.name ?? null);
+      } catch {
+        /* optional */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [setCodingProfileName]);
   const title = workbench && path === "chat" ? sessionTitle : pageTitle(path);
   const wsLabel = workspace?.path
     ? shortPath(String(workspace.path), 48)
@@ -71,7 +104,7 @@ export function AppHeader() {
   const modeMeta = permissionModeMeta(permissionMode);
 
   return (
-    <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border/80 bg-[hsl(var(--panel))] px-3.5">
+    <header className="flex h-11 shrink-0 items-center gap-3 border-b border-border/40 bg-[hsl(var(--surface-3))] px-3">
       <div className="flex min-w-0 flex-1 items-center gap-2.5">
         {workbench && (
           <Button
@@ -123,6 +156,18 @@ export function AppHeader() {
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5">
+        {profileName && workbench && (
+          <button
+            type="button"
+            className="mr-1 hidden h-7 items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-2 text-[11px] text-muted-foreground hover:bg-muted/60 sm:inline-flex"
+            title="当前编码档案 · 点击打开设置"
+            onClick={() => navigate("/settings")}
+          >
+            <UserCheck className="h-3 w-3" />
+            {profileName}
+          </button>
+        )}
+
         {workbench && activeSessionId && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

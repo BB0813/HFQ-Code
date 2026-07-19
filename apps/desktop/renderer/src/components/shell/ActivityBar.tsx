@@ -132,7 +132,7 @@ export function ActivityBar() {
   };
 
   return (
-    <aside className="flex w-12 shrink-0 flex-col items-center border-r border-sidebar-border bg-[hsl(var(--activitybar))] py-2.5">
+    <aside className="flex w-11 shrink-0 flex-col items-center bg-[hsl(var(--activitybar))] py-2">
       <Tooltip>
         <TooltipTrigger asChild>
           <button

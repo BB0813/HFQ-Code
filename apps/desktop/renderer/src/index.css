@@ -15,7 +15,6 @@
     --secondary: 210 40% 96%;
     --secondary-foreground: 222 47% 11%;
     --muted: 210 40% 96%;
-    /* slate-600-ish for WCAG muted text on light */
     --muted-foreground: 215 16% 35%;
     --accent: 210 40% 96%;
     --accent-foreground: 222 47% 11%;
@@ -25,27 +24,29 @@
     --success-foreground: 0 0% 100%;
     --warning: 38 92% 40%;
     --warning-foreground: 0 0% 100%;
-    /* warm workbench accent (multi-agent hub, not brand copy) */
     --workbench: 24 92% 48%;
     --workbench-foreground: 0 0% 100%;
     --border: 214 32% 88%;
     --input: 214 32% 88%;
     --ring: 222 47% 20%;
     --radius: 0.5rem;
+    /* Surface hierarchy: base → panel → elevated */
+    --surface-1: 210 40% 98%;
+    --surface-2: 214 32% 94%;
+    --surface-3: 0 0% 100%;
     --sidebar: 210 40% 98%;
     --sidebar-foreground: 222 47% 11%;
     --sidebar-border: 214 32% 88%;
     --sidebar-accent: 210 40% 94%;
     --panel: 210 40% 98%;
     --panel-elevated: 0 0% 100%;
-    /* IDE chrome rails — darker in dark, light in light */
     --statusbar: 215 25% 22%;
     --activitybar: 215 25% 22%;
     --dialog-surface: 0 0% 100%;
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .dark {
-    /* zinc multi-agent coding workbench — dock grammar, warm active accent */
     --background: 240 6% 5%;
     --foreground: 210 20% 97%;
     --card: 240 6% 7.5%;
@@ -57,7 +58,6 @@
     --secondary: 240 5% 13%;
     --secondary-foreground: 210 20% 96%;
     --muted: 240 5% 12%;
-    /* readable secondary (~zinc-400) */
     --muted-foreground: 240 5% 68%;
     --accent: 240 5% 14%;
     --accent-foreground: 210 20% 96%;
@@ -67,13 +67,15 @@
     --success-foreground: 144 80% 8%;
     --warning: 38 92% 54%;
     --warning-foreground: 30 80% 8%;
-    /* soft orange active (tab underline / rail / capability tags) */
     --workbench: 24 95% 58%;
     --workbench-foreground: 24 90% 8%;
-    /* clearer pane edges for multi-column dock */
     --border: 240 5% 18%;
     --input: 240 5% 15%;
     --ring: 240 5% 74%;
+    /* Surface hierarchy: darkest → mid → elevated */
+    --surface-1: 240 6% 5%;
+    --surface-2: 240 6% 7%;
+    --surface-3: 240 6% 9%;
     --sidebar: 240 8% 4%;
     --sidebar-foreground: 240 5% 90%;
     --sidebar-border: 240 6% 11%;
@@ -83,6 +85,7 @@
     --statusbar: 240 9% 3%;
     --activitybar: 240 9% 3%;
     --dialog-surface: 240 8% 6%;
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   * {
@@ -141,7 +144,9 @@
     outline: none;
   }
   :focus-visible {
-    outline: none;
+    /* Default safety net for elements without interactive class. */
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
   }
 
   /* xterm host fill */
@@ -156,9 +161,25 @@
 }
 
 @layer components {
+  /* ---------- Surface hierarchy: 3 levels by background contrast, not border ---------- */
+  .surface-1 {
+    background: hsl(var(--surface-1));
+  }
+  .surface-2 {
+    background: hsl(var(--surface-2));
+  }
+  .surface-3 {
+    background: hsl(var(--surface-3));
+  }
+  .surface-inset {
+    background: hsl(var(--surface-1));
+    border: 1px solid hsl(var(--border) / 0.5);
+  }
+
   /* Shared interactive affordance — IDE clickable chrome */
   .interactive {
-    @apply cursor-pointer transition-colors duration-150;
+    @apply cursor-pointer transition-colors duration-200;
+    transition-timing-function: var(--ease-out-expo);
   }
   .interactive:focus-visible {
     @apply ring-2 ring-ring ring-offset-1 ring-offset-background;
@@ -166,7 +187,8 @@
 
   /* Soft surface used by empty states / cards */
   .surface-card {
-    @apply rounded-xl border border-border bg-card shadow-sm;
+    @apply rounded-xl bg-card;
+    box-shadow: 0 0 0 1px hsl(var(--border) / 0.6);
   }
 
   .surface-panel {
@@ -177,21 +199,53 @@
     background: hsl(var(--panel-elevated));
   }
 
-  /* Athena-like dock panel chrome */
+  /* Dock panel chrome — border-light, use surface-2/surface-3 contrast */
   .dock-pane {
-    @apply flex h-full min-h-0 flex-col border-border/80 bg-[hsl(var(--panel))];
+    @apply flex h-full min-h-0 flex-col;
+    background: hsl(var(--surface-2));
   }
   .dock-pane-header {
-    @apply flex h-11 shrink-0 items-center gap-2 border-b border-border/80 px-3;
+    @apply flex h-11 shrink-0 items-center gap-2 px-3;
+    background: hsl(var(--surface-2));
+    border-bottom: 1px solid hsl(var(--border) / 0.5);
   }
   .dock-pane-title {
-    @apply text-sm font-semibold tracking-tight text-foreground/95;
+    @apply text-sm font-semibold tracking-tight text-foreground/90;
   }
   .dock-pane-body {
     @apply min-h-0 flex-1 overflow-hidden;
+    background: hsl(var(--surface-1));
   }
   .dock-split {
-    @apply border-border/90;
+    border-left: 1px solid hsl(var(--border) / 0.5);
+  }
+
+  /* Chat message role rails — workbench for agent, no border bloat */
+  .msg-user {
+    margin-left: 1.5rem;
+    background: hsl(var(--accent) / 0.5);
+    border-left: 2px solid hsl(var(--muted-foreground) / 0.3);
+  }
+  .msg-agent {
+    margin-right: 1.5rem;
+    background: hsl(var(--surface-3));
+    border-left: 2px solid hsl(var(--workbench) / 0.4);
+  }
+  .msg-tool {
+    background: hsl(var(--muted));
+    font-family: inherit;
+    font-size: 0.875rem;
+    border-left: 2px solid hsl(var(--warning) / 0.5);
+  }
+  .msg-thinking {
+    margin-right: 2.5rem;
+    border-left: 2px solid hsl(var(--workbench) / 0.3);
+    background: hsl(var(--workbench) / 0.04);
+  }
+  .msg-error {
+    @apply text-destructive;
+    border: 1px solid hsl(var(--destructive) / 0.3);
+    background: hsl(var(--destructive) / 0.08);
   }
 
   /* Subtle status pulse for running agent (respects reduced-motion) */
@@ -203,12 +257,13 @@
     @apply inline-block h-2 w-2 shrink-0 rounded-full;
   }
   .status-dot-running {
-    @apply status-dot bg-success;
-    box-shadow: 0 0 0 2px hsl(var(--success) / 0.18);
+    @apply status-dot;
+    background: hsl(var(--workbench));
+    box-shadow: 0 0 0 2px hsl(var(--workbench) / 0.25);
   }
   .status-dot-idle {
     @apply status-dot bg-muted-foreground;
-    opacity: 0.4;
+    opacity: 0.35;
   }
   .status-dot-warn {
     @apply status-dot;
@@ -220,57 +275,50 @@
     @apply animate-pulse rounded-md bg-muted;
   }
 
-  /* Chat message role rails */
-  .msg-user {
-    @apply ml-8 border-l-2 border-l-zinc-400 bg-muted/40;
-  }
-  .msg-agent {
-    @apply mr-6 border-l-2 border-l-transparent bg-card;
-  }
-  .msg-tool {
-    @apply border-l-2 border-l-amber-500 bg-muted font-mono text-sm;
-  }
-  .msg-thinking {
-    @apply mr-10 border-l-2 border-l-workbench/50 bg-workbench/[0.04];
-  }
-  .msg-error {
-    @apply border border-destructive bg-destructive/10 text-destructive;
-  }
-
-  /* Composer shell — multi-row (textarea + optional chips + tool bar) */
+  /* Composer shell — elevated card, no border when focused */
   .composer-shell {
-    @apply overflow-hidden rounded-xl border bg-card shadow-lg ring-1 transition-colors duration-150;
+    @apply overflow-hidden rounded-xl bg-card shadow-lg ring-1 transition-all duration-200;
+    transition-timing-function: var(--ease-out-expo);
+    box-shadow: 0 4px 24px hsl(var(--surface-1) / 0.3);
+    ring-color: hsl(var(--border) / 0.5);
   }
   .composer-shell-focused {
-    @apply border-zinc-400 ring-zinc-400/20;
+    ring-color: hsl(var(--workbench) / 0.3);
+    box-shadow: 0 4px 32px hsl(var(--workbench) / 0.08);
   }
   .composer-shell-idle {
-    @apply border-border ring-transparent;
+    ring-color: hsl(var(--border) / 0.3);
   }
 
-  /* Empty-state hint chips — visible hover feedback */
+  /* Hint chips */
   .hint-chip {
-    @apply interactive rounded-lg border border-border bg-muted/40 px-3.5 py-2.5 text-left text-sm text-muted-foreground hover:border-foreground/25 hover:bg-muted hover:text-foreground;
+    @apply interactive rounded-lg bg-muted/50 px-3.5 py-2.5 text-left text-sm text-muted-foreground hover:bg-accent hover:text-foreground;
+    border: 1px solid transparent;
+  }
+  .hint-chip:hover {
+    border-color: hsl(var(--border) / 0.6);
   }
 
-  /* Section label in side panels */
+  /* Section label */
   .section-label {
     @apply text-xs font-medium uppercase tracking-wider text-muted-foreground;
   }
 
-  /* Rail active indicator — warm workbench accent */
+  /* Rail active indicator */
   .rail-active-bar {
     @apply absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r;
     background: hsl(var(--workbench));
     box-shadow: 0 0 8px hsl(var(--workbench) / 0.45);
   }
 
-  /* Metric tiles (skills / MCP / models summary strip) */
+  /* Metric tiles */
   .metric-strip {
     @apply mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4;
   }
   .metric-tile {
-    @apply rounded-lg border border-border/70 bg-card/80 px-3.5 py-3 shadow-none;
+    @apply rounded-lg px-3.5 py-3;
+    background: hsl(var(--surface-2));
+    border: 1px solid hsl(var(--border) / 0.4);
   }
   .metric-tile-label {
     @apply text-xs font-medium text-muted-foreground;
@@ -279,16 +327,22 @@
     @apply mt-1 text-xl font-semibold tabular-nums tracking-tight text-foreground;
   }
 
-  /* Capability / extension-style cards (multi-agent tools hub) */
+  /* Capability cards */
   .capability-card {
-    @apply rounded-xl border border-border/70 bg-card/80 shadow-none transition-colors duration-150;
+    @apply rounded-xl transition-colors duration-200;
+    transition-timing-function: var(--ease-out-expo);
+    background: hsl(var(--surface-2));
+    border: 1px solid hsl(var(--border) / 0.4);
   }
   .capability-card:hover {
-    border-color: hsl(var(--border) / 0.95);
-    background: hsl(var(--card) / 0.95);
+    border-color: hsl(var(--border) / 0.7);
+    background: hsl(var(--surface-3));
   }
   .capability-tag {
-    @apply inline-flex items-center rounded-md border border-workbench/25 bg-workbench/10 px-1.5 py-0.5 text-[11px] font-medium leading-none text-workbench;
+    @apply inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium leading-none;
+    background: hsl(var(--workbench) / 0.1);
+    color: hsl(var(--workbench));
+    border: 1px solid hsl(var(--workbench) / 0.25);
   }
   .tab-underline-active {
     @apply relative text-foreground;
@@ -312,7 +366,15 @@
   }
 }
 
-/* prefers-reduced-motion — kill decorative motion only */
+/* Message fade-in animation — 200ms ease-out, not blocking */
+@keyframes message-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-message-in {
+  animation: message-in 200ms var(--ease-out-expo) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

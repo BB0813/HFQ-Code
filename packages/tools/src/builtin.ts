@@ -26,6 +26,23 @@ export const builtinToolDefs: ToolDefinition[] = [
     },
   },
   {
+    name: "read_document",
+    description:
+      "Read a workspace document as plain text. Supports text files, .docx (OOXML extract), and best-effort .pdf text. Prefer this over shell for pdf/docx/表格. Path must stay inside the workspace.",
+    risk: "low",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Workspace-relative path" },
+        maxChars: {
+          type: "number",
+          description: "Max characters of extracted text (default 50000)",
+        },
+      },
+      required: ["path"],
+    },
+  },
+  {
     name: "list_dir",
     description: "List directory entries under the workspace",
     risk: "low",
@@ -281,6 +298,257 @@ async function readFileTool(workspaceRoot: string, input: Record<string, unknown
     truncated: buf.length > maxBytes,
     bytes: buf.length,
   };
+}
+
+const TEXT_DOC_EXT = new Set([
+  ".md",
+  ".txt",
+  ".json",
+  ".jsonl",
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".css",
+  ".html",
+  ".htm",
+  ".xml",
+  ".yml",
+  ".yaml",
+  ".toml",
+  ".ini",
+  ".csv",
+  ".tsv",
+  ".log",
+  ".py",
+  ".rs",
+  ".go",
+  ".java",
+  ".kt",
+  ".swift",
+  ".rb",
+  ".php",
+  ".sql",
+  ".sh",
+  ".ps1",
+  ".bat",
+  ".cmd",
+  ".gitignore",
+  ".env",
+  ".svg",
+]);
+
+function stripXmlTags(xml: string): string {
+  return xml
+    .replace(/<w:tab\b[^/]*\/>/gi, "\t")
+    .replace(/<w:br\b[^/]*\/>/gi, "\n")
+    .replace(/<\/w:p>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** Minimal ZIP local-file reader (store + deflate) for docx/xlsx OOXML. */
+async function readZipEntry(buf: Buffer, entryName: string): Promise<Buffer | null> {
+  const zlib = await import("node:zlib");
+  const { promisify } = await import("node:util");
+  const inflateRaw = promisify(zlib.inflateRaw);
+  let offset = 0;
+  const target = entryName.replace(/^\/+/, "");
+  while (offset + 30 <= buf.length) {
+    if (buf.readUInt32LE(offset) !== 0x04034b50) break;
+    const method = buf.readUInt16LE(offset + 8);
+    const compSize = buf.readUInt32LE(offset + 18);
+    const uncompSize = buf.readUInt32LE(offset + 22);
+    const nameLen = buf.readUInt16LE(offset + 26);
+    const extraLen = buf.readUInt16LE(offset + 28);
+    const nameStart = offset + 30;
+    const name = buf.subarray(nameStart, nameStart + nameLen).toString("utf8");
+    const dataStart = nameStart + nameLen + extraLen;
+    const dataEnd = dataStart + compSize;
+    if (dataEnd > buf.length) break;
+    if (name === target || name.endsWith("/" + target)) {
+      const payload = buf.subarray(dataStart, dataEnd);
+      if (method === 0) return Buffer.from(payload);
+      if (method === 8) {
+        const out = await inflateRaw(payload);
+        return Buffer.isBuffer(out) ? out : Buffer.from(out);
+      }
+      return null;
+    }
+    offset = dataEnd;
+    // Skip data descriptor if present is hard without flags; local headers usually enough for docx.
+    void uncompSize;
+  }
+  return null;
+}
+
+function extractPdfText(buf: Buffer, maxChars: number): { text: string; ok: boolean; warning?: string } {
+  const raw = buf.toString("latin1");
+  const chunks: string[] = [];
+  // Very small pure-JS extractor: pull printable runs from parentheses in content streams.
+  const re = /\((?:\\.|[^\\)])*\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(raw)) !== null) {
+    let s = m[0].slice(1, -1);
+    s = s
+      .replace(/\\n/g, "\n")
+      .replace(/\\r/g, "\r")
+      .replace(/\\t/g, "\t")
+      .replace(/\\\(/g, "(")
+      .replace(/\\\)/g, ")")
+      .replace(/\\\\/g, "\\")
+      .replace(/\\(\d{1,3})/g, (_, oct: string) =>
+        String.fromCharCode(parseInt(oct, 8) & 0xff),
+      );
+    // Keep mostly printable.
+    s = s.replace(/[^\x09\x0a\x0d\x20-\x7e\u00a0-\uffff]/g, "");
+    if (s.trim()) chunks.push(s);
+    if (chunks.join("").length > maxChars * 2) break;
+  }
+  let text = chunks.join(" ").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  if (!text) {
+    return {
+      text: "",
+      ok: false,
+      warning: "Could not extract text from this PDF (may be scanned/image-only or compressed streams).",
+    };
+  }
+  const truncated = text.length > maxChars;
+  if (truncated) text = text.slice(0, maxChars);
+  return { text, ok: true, warning: truncated ? "truncated" : undefined };
+}
+
+async function readDocumentTool(workspaceRoot: string, input: Record<string, unknown>) {
+  const rel = String(input.path ?? "").trim();
+  if (!rel) throw new Error("path required");
+  const maxChars = Math.min(
+    Math.max(Number(input.maxChars ?? 50_000) || 50_000, 1_000),
+    200_000,
+  );
+  // Path escape rejected by resolveWorkspacePath.
+  const full = resolveWorkspacePath(workspaceRoot, rel);
+  const ext = path.extname(full).toLowerCase();
+  const base = path.basename(full).toLowerCase();
+
+  if (ext === ".docx") {
+    const buf = await fs.readFile(full);
+    const xmlBuf = await readZipEntry(buf, "word/document.xml");
+    if (!xmlBuf) {
+      return {
+        ok: false,
+        path: rel,
+        format: "docx",
+        error: "Invalid or unsupported docx (missing word/document.xml)",
+      };
+    }
+    let text = stripXmlTags(xmlBuf.toString("utf8"));
+    const truncated = text.length > maxChars;
+    if (truncated) text = text.slice(0, maxChars);
+    return {
+      ok: true,
+      path: rel,
+      format: "docx",
+      content: text,
+      chars: text.length,
+      truncated,
+    };
+  }
+
+  if (ext === ".pdf") {
+    const buf = await fs.readFile(full);
+    const extracted = extractPdfText(buf, maxChars);
+    if (!extracted.ok) {
+      return {
+        ok: false,
+        path: rel,
+        format: "pdf",
+        error: extracted.warning || "pdf text extraction failed",
+      };
+    }
+    return {
+      ok: true,
+      path: rel,
+      format: "pdf",
+      content: extracted.text,
+      chars: extracted.text.length,
+      truncated: Boolean(extracted.warning),
+      warning: extracted.warning,
+    };
+  }
+
+  if (ext === ".xlsx" || ext === ".xls") {
+    return {
+      ok: false,
+      path: rel,
+      format: ext.slice(1),
+      error:
+        "xlsx/xls preview not supported in this build; export CSV or open as text. (unsupported spreadsheet)",
+    };
+  }
+
+  // Text / unknown: try UTF-8 read (same as read_file spirit).
+  if (TEXT_DOC_EXT.has(ext) || !ext || base === "dockerfile" || base === "makefile") {
+    const buf = await fs.readFile(full);
+    let content = buf.toString("utf8");
+    // Reject obvious binary.
+    if (content.includes("\u0000")) {
+      return {
+        ok: false,
+        path: rel,
+        format: ext.slice(1) || "bin",
+        error: "Binary file; use a specialized reader",
+      };
+    }
+    const truncated = content.length > maxChars;
+    if (truncated) content = content.slice(0, maxChars);
+    return {
+      ok: true,
+      path: rel,
+      format: ext.slice(1) || "text",
+      content,
+      chars: content.length,
+      truncated,
+    };
+  }
+
+  // Fallback attempt UTF-8 for unknown extensions.
+  try {
+    const buf = await fs.readFile(full);
+    let content = buf.toString("utf8");
+    if (content.includes("\u0000")) {
+      return {
+        ok: false,
+        path: rel,
+        format: ext.slice(1) || "unknown",
+        error: `Unsupported document type "${ext || "unknown"}" (binary)`,
+      };
+    }
+    const truncated = content.length > maxChars;
+    if (truncated) content = content.slice(0, maxChars);
+    return {
+      ok: true,
+      path: rel,
+      format: ext.slice(1) || "text",
+      content,
+      chars: content.length,
+      truncated,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      path: rel,
+      format: ext.slice(1) || "unknown",
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 async function listDirTool(workspaceRoot: string, input: Record<string, unknown>) {
@@ -952,6 +1220,7 @@ async function spawnSubagentTool(_workspaceRoot: string, _input: Record<string, 
 
 export const builtinHandlers: Record<string, ToolHandler> = {
   read_file: readFileTool,
+  read_document: readDocumentTool,
   list_dir: listDirTool,
   write_file: writeFileTool,
   grep: grepTool,

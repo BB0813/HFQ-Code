@@ -2,7 +2,7 @@
 
 Status: **active plan**  
 Baseline: product **1.1.5** (`v1.1.5`) · 2026-07-19  
-Last updated: 2026-07-19 · **1.1.5** (F1) Coding Profiles + mermaid + skill match + goal fields + memory links + diagram skill
+Last updated: 2026-07-19 · **1.1.6 full train in progress** — compression LLM compact · goal sidecar · document read · UI polish · (memory index optional)
 
 ## Positioning (frozen)
 
@@ -33,13 +33,14 @@ Last updated: 2026-07-19 · **1.1.5** (F1) Coding Profiles + mermaid + skill mat
 | Thinking / reasoning stream | **Backend shipped** · ThinkingBlock UI present — polish optional |
 | React shell (Q6) | **Shipped** (1.0.10+) — pages under `apps/desktop/renderer` |
 
-### Next train (post-1.1.4)
+### Next train (post-1.1.5)
 
 | Owner | Work | Notes |
 |-------|------|--------|
+| **Product** | **1.1.6 full train** | compression role drives compact · goal tree sidecar · read_document · compactMaxChars UI · UI polish · memory index optional — [prompts/1.1.6-full-train.md](./prompts/1.1.6-full-train.md) |
 | **Product** | **Track F — Adopt Kivio/Athena patterns** | Canonical: [ADOPT-KIVIO-ATHENA.md](./ADOPT-KIVIO-ATHENA.md) · DECISIONS Q8 |
-| **F1** | Chat mermaid · Coding Profiles · model roles · skill progressive match · goal fields · memory links · bundled `diagram` | 1.1.x patch train |
-| **F2** | Goal tree sidecar · Memory FTS · pdf/docx skills · optional panel prefs | 1.2+ |
+| **F1** | Chat mermaid · Coding Profiles · model roles · skill progressive match · goal fields · memory links · bundled `diagram` | **Shipped in 1.1.5** |
+| **F2** | Goal tree sidecar · Memory FTS · pdf/docx skills · panel prefs | **partial in 1.1.6** · remainder 1.2+ |
 | **Product** | **1.1.5 F1** Coding Profiles · mermaid · skill match · goal fields · memory links · diagram skill | **Shipped** (`v1.1.5`) |
 | **Product** | **1.1.4** abort isolation + permission queue + live list access modes + Chat/route/CSS polish | **Shipped** (`v1.1.4`) |
 | **Product** | **1.1.3** session identity + spawn cold-start + README zh | **Shipped** (`v1.1.3`) |
@@ -214,7 +215,11 @@ Canonical: **[ADOPT-KIVIO-ATHENA.md](./ADOPT-KIVIO-ATHENA.md)**.
 | F1-5 | Goal driver fields on `task.updated` | shared + history + loop |
 | F1-6 | Memory `links` + prompt surface | `@hfq/memory` + tools |
 | F1-7 | Bundled `diagram` skill | `skills/bundled/diagram` |
-| F2-* | Goal tree sidecar · FTS · doc skills · panel prefs | after F1 |
+| F2-1 | Goal tree sidecar (`*.goals.json`) | **1.1.6** |
+| F2-2 | compression model drives compact | **1.1.6** |
+| F2-3 | `read_document` + document-read skill | **1.1.6** |
+| F2-4 | Memory inverted-index / optional FTS | **1.1.6 optional** · full FTS 1.2 |
+| F2-5 | Dockable panel prefs · advanced compact UI | 1.2+ |
 
 ## Track E — Stretch (1.3+)
 

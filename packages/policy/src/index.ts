@@ -52,6 +52,7 @@ export function defaultPolicyConfig(): PolicyConfig {
     },
     rules: [
       { toolName: "read_file", decision: "allow" },
+      { toolName: "read_document", decision: "allow" },
       { toolName: "list_dir", decision: "allow" },
       { toolName: "grep", decision: "allow" },
       { toolName: "git_status", decision: "allow" },
@@ -150,6 +151,7 @@ export function defaultPolicyMatrix(sessionAllows: Iterable<string> = []): Polic
   for (const name of sessionAllows) cfg.sessionAllows.add(name);
   const catalog: Array<{ toolName: string; risk: ToolRisk; note?: string }> = [
     { toolName: "read_file", risk: "low", note: "读取工作区内文件" },
+    { toolName: "read_document", risk: "low", note: "读取文档（文本/docx/尽力 pdf）" },
     { toolName: "list_dir", risk: "low", note: "列出目录" },
     { toolName: "grep", risk: "low", note: "工作区内正则搜索" },
     { toolName: "git_status", risk: "low", note: "只读 git 状态 / 最近提交（不改仓库）" },

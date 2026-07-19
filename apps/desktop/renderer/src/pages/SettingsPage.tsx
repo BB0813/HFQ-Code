@@ -23,6 +23,12 @@ import { useAppStore } from "@/store/app-store";
 import { useUiStore } from "@/store/ui-store";
 import { PageScaffold } from "./PageScaffold";
 
+function clampCompactChars(raw: string): number {
+  const n = parseInt(raw, 10);
+  if (isNaN(n)) return 48000;
+  return Math.min(200000, Math.max(8000, n));
+}
+
 function humanizeInstallError(msg: string): string {
   if (/no installer file|download first|尚未下载安装包/i.test(msg)) {
     return "尚未下载安装包，请先点「下载更新」";
@@ -47,6 +53,7 @@ export function SettingsPage() {
   const [skillMatchEnabled, setSkillMatchEnabled] = useState(true);
   const [titleModel, setTitleModel] = useState("");
   const [compressionModel, setCompressionModel] = useState("");
+  const [compactMaxChars, setCompactMaxChars] = useState("48000");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -101,6 +108,20 @@ export function SettingsPage() {
         if (typeof prefs.activeCodingProfileId === "string") {
           setActiveCodingProfileId(prefs.activeCodingProfileId);
         }
+        // Keep Header chip in sync when opening Settings (1.1.6).
+        {
+          const activeId =
+            typeof prefs.activeCodingProfileId === "string"
+              ? prefs.activeCodingProfileId.trim()
+              : "";
+          const profiles = Array.isArray(prefs.codingProfiles)
+            ? (prefs.codingProfiles as Array<{ id?: string; name?: string }>)
+            : [];
+          const name = activeId
+            ? profiles.find((p) => String(p.id || "") === activeId)?.name ?? null
+            : null;
+          useUiStore.getState().setCodingProfileName(name ? String(name) : null);
+        }
         if (prefs.skillMatch && typeof prefs.skillMatch === "object") {
           const sm = prefs.skillMatch as { enabled?: boolean };
           if (typeof sm.enabled === "boolean") setSkillMatchEnabled(sm.enabled);
@@ -111,6 +132,9 @@ export function SettingsPage() {
         };
         if (roles.title?.model) setTitleModel(String(roles.title.model));
         if (roles.compression?.model) setCompressionModel(String(roles.compression.model));
+        if (typeof prefs.compactMaxChars === "number") {
+          setCompactMaxChars(String(Math.round(prefs.compactMaxChars)));
+        }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -134,11 +158,17 @@ export function SettingsPage() {
         terminalShell: terminalShell === "auto" ? "" : terminalShell,
         activeCodingProfileId,
         skillMatch: { enabled: skillMatchEnabled },
+        compactMaxChars: clampCompactChars(compactMaxChars),
         modelRoles: {
           title: titleModel.trim() ? { model: titleModel.trim() } : null,
           compression: compressionModel.trim() ? { model: compressionModel.trim() } : null,
         },
       });
+      // Hot-update Header coding-profile chip (1.1.6).
+      const activeName = activeCodingProfileId
+        ? codingProfiles.find((p) => p.id === activeCodingProfileId)?.name ?? null
+        : null;
+      useUiStore.getState().setCodingProfileName(activeName);
       setSaved(true);
       setError(null);
       toast.success(
@@ -294,7 +324,7 @@ export function SettingsPage() {
               <CardTitle className="text-sm">模型角色</CardTitle>
               <CardDescription>
                 标题 / 压缩可指定更便宜的 model id（空 = 跟随主对话；仅填 model 时用当前
-                activeProviderId）。压缩角色本版仅保存配置，不驱动 summarizer。
+                activeProviderId）。
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-2 p-3.5 pt-1.5">
@@ -312,13 +342,26 @@ export function SettingsPage() {
                 <Input
                   value={compressionModel}
                   onChange={(e) => setCompressionModel(e.target.value)}
-                  placeholder="可选 · 预留未生效"
+                  placeholder="可选 model id"
                   className="h-8 w-64 max-w-[60%] font-mono text-xs"
                 />
               </div>
               <p className="text-[11px] leading-relaxed text-muted-foreground">
-                压缩模型：当前版本仅持久化 prefs，不会改变 compact 行为。
+                配置后长上下文 compact 时尝试用该模型做 LLM 摘要；失败回退启发式。空 = 仅启发式。
               </p>
+              <div className="flex items-center justify-between gap-3 text-xs pt-1">
+                <span className="shrink-0 text-muted-foreground">Compact 触发阈值</span>
+                <Input
+                  value={compactMaxChars}
+                  onChange={(e) => {
+                    const v = e.target.value.replace(/\D/g, "").slice(0, 8);
+                    setCompactMaxChars(v);
+                  }}
+                  placeholder="48000"
+                  className="h-8 w-32 font-mono text-xs"
+                />
+                <span className="text-[11px] text-muted-foreground">字符（8000–200000）</span>
+              </div>
             </CardContent>
           </Card>
 

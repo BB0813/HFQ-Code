@@ -148,7 +148,12 @@ export function PermissionsPage() {
                   {JSON.stringify(matrix, null, 2)}
                 </pre>
               ) : (
-                <EmptyState icon={Shield} title="无策略数据" className="py-8" />
+                <EmptyState
+                  icon={Shield}
+                  title="无策略数据"
+                  description="使用模型后，Agent 权限矩阵会在此显示。可在 Settings 调整默认权限模式。"
+                  className="py-8"
+                />
               )}
             </CardContent>
           </Card>

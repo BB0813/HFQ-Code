@@ -27,7 +27,12 @@
 |------|------|------|
 | [F1-kivio-athena-handoff.md](./F1-kivio-athena-handoff.md) | Track F1 收口 + 前后端联调（Kivio/Athena 采纳） | done（历史交接） |
 | [F1-integration-audit.md](./F1-integration-audit.md) | 统筹联调审计 + 本轮 FE 接缝修补记录 | done · F1 收口 |
-| [release-1.1.5.md](./release-1.1.5.md) | 发版 Agent：抬版本 1.1.5 + release:check + 打包 tag | **active · 待发版** |
+| [release-1.1.5.md](./release-1.1.5.md) | 发版 Agent：抬版本 1.1.5 + release:check + 打包 tag | done（1.1.5 shipped） |
+| [1.1.6-ui-polish.md](./1.1.6-ui-polish.md) | 1.1.6 UI 子切片（并入 full train） | subsumed |
+| [1.1.6-full-train.md](./1.1.6-full-train.md) | 1.1.6 范围说明（产品切片） | reference |
+| [1.1.6-handoff.md](./1.1.6-handoff.md) | 1.1.6 前后端整包实现 Prompt | done · 已实现 |
+| [1.1.6-integration-audit.md](./1.1.6-integration-audit.md) | 1.1.6 统筹联调审计 + 孤儿 goal FE 修补 | done · 收口 |
+| [release-1.1.6.md](./release-1.1.6.md) | **发版 Agent：抬版本 1.1.6 + release:check + 打包 tag** | **active · 待发版** |
 
 ## 与产品文档的关系
 

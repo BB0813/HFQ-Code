@@ -30,6 +30,7 @@ describe("tool hub builtins", () => {
     expect(names).toEqual(
       expect.arrayContaining([
         "read_file",
+        "read_document",
         "list_dir",
         "write_file",
         "grep",
@@ -42,6 +43,7 @@ describe("tool hub builtins", () => {
       ]),
     );
     expect(hub.riskOf("read_file")).toBe("low");
+    expect(hub.riskOf("read_document")).toBe("low");
     expect(hub.riskOf("grep")).toBe("low");
     expect(hub.riskOf("git_status")).toBe("low");
     expect(hub.riskOf("memory_search")).toBe("low");
@@ -49,6 +51,62 @@ describe("tool hub builtins", () => {
     expect(hub.riskOf("apply_patch")).toBe("medium");
     expect(hub.riskOf("network_fetch")).toBe("medium");
     expect(hub.riskOf("shell")).toBe("high");
+  });
+
+  it("read_document reads text and docx; rejects path escape", async () => {
+    const zlib = await import("node:zlib");
+    const { promisify } = await import("node:util");
+    const deflateRaw = promisify(zlib.deflateRaw);
+
+    const ws = await makeWorkspace();
+    await fs.writeFile(path.join(ws, "readme.md"), "# hello document\nline2\n", "utf8");
+
+    // Minimal store-method ZIP with word/document.xml (docx-like).
+    const xml = Buffer.from(
+      '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Hello DOCX body</w:t></w:r></w:p></w:body></w:document>',
+      "utf8",
+    );
+    const name = Buffer.from("word/document.xml", "utf8");
+    const local = Buffer.alloc(30 + name.length + xml.length);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4); // version
+    local.writeUInt16LE(0, 6); // flags
+    local.writeUInt16LE(0, 8); // method store
+    local.writeUInt16LE(0, 10);
+    local.writeUInt16LE(0, 12);
+    local.writeUInt32LE(0, 14); // crc
+    local.writeUInt32LE(xml.length, 18);
+    local.writeUInt32LE(xml.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    local.writeUInt16LE(0, 28);
+    name.copy(local, 30);
+    xml.copy(local, 30 + name.length);
+    // central directory + EOCD (not required by our simple reader, but makes a valid-ish file)
+    const docxPath = path.join(ws, "sample.docx");
+    await fs.writeFile(docxPath, local);
+
+    const hub = createToolHub();
+    const textRes = (await hub.execute("read_document", ws, { path: "readme.md" })) as {
+      ok?: boolean;
+      content?: string;
+    };
+    expect(textRes.ok).toBe(true);
+    expect(textRes.content).toMatch(/hello document/i);
+
+    const docxRes = (await hub.execute("read_document", ws, { path: "sample.docx" })) as {
+      ok?: boolean;
+      content?: string;
+      format?: string;
+    };
+    expect(docxRes.ok).toBe(true);
+    expect(docxRes.format).toBe("docx");
+    expect(docxRes.content).toMatch(/Hello DOCX body/);
+
+    await expect(
+      hub.execute("read_document", ws, { path: "../outside.txt" }),
+    ).rejects.toThrow(/escape|outside|workspace/i);
+
+    void deflateRaw; // keep import used if store-only path above
   });
 
   it("network_fetch rejects non-http schemes and credentials", async () => {

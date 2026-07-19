@@ -55,6 +55,52 @@ function errorCodeLabel(code?: string | null): string | null {
   return code;
 }
 
+/** Goal task card (F1) — reused for top-level and child goals. */
+function GoalCard({ task: t, compact, sub }: { task: UiTask; compact?: boolean; sub?: boolean }) {
+  return (
+    <div className="rounded-md border border-border/70 bg-card/40 px-2.5 py-2 text-xs">
+      <div className="flex items-center gap-1.5">
+        <Target className="h-3.5 w-3.5 shrink-0 text-workbench" />
+        <span className="min-w-0 flex-1 truncate font-medium">
+          {t.objective || t.title}
+        </span>
+        <Badge variant={statusVariant(t.status)} className="shrink-0 font-normal capitalize">
+          {t.status}
+        </Badge>
+      </div>
+      {typeof t.progress === "number" && (
+        <div className="mt-1.5 flex items-center gap-2">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-border">
+            <div
+              className="h-full rounded-full bg-workbench transition-all duration-300"
+              style={{ width: `${Math.min(100, t.progress)}%` }}
+            />
+          </div>
+          <span className="tabular-nums text-muted-foreground">{Math.round(t.progress)}%</span>
+        </div>
+      )}
+      {!compact && t.objective && sub && (
+        <p className="mt-1 selectable whitespace-pre-wrap text-[11px] leading-relaxed text-muted-foreground">
+          {t.objective}
+        </p>
+      )}
+      {t.blockedReason && (
+        <div className="mt-1 rounded border border-destructive/30 bg-destructive/5 px-1.5 py-1 text-destructive">
+          阻塞：{t.blockedReason}
+        </div>
+      )}
+      {t.budget && (
+        <div className="mt-1 text-[10px] text-muted-foreground">
+          {t.budget.maxRounds != null && `最多 ${t.budget.maxRounds} 轮`}
+          {t.budget.maxRounds != null && t.budget.maxToolCalls != null && " · "}
+          {t.budget.maxToolCalls != null && `最多 ${t.budget.maxToolCalls} 次工具调用`}
+        </div>
+      )}
+      {sub && <div className="mt-1 text-[10px] font-mono text-muted-foreground/60">子任务</div>}
+    </div>
+  );
+}
+
 function attemptKey(a: SpawnAttempt, i: number): string {
   return String(
     a.attemptId ??
@@ -103,6 +149,23 @@ export function TasksPanel({ compact = false }: { compact?: boolean }) {
       ),
     [tasks],
   );
+  // Top-level: no parent, or parent missing (orphan still visible).
+  const topGoals = useMemo(() => {
+    const ids = new Set(goalTasks.map((t) => t.taskId));
+    return goalTasks.filter((t) => !t.parentTaskId || !ids.has(t.parentTaskId));
+  }, [goalTasks]);
+  const childGoalsByParent = useMemo(() => {
+    const ids = new Set(goalTasks.map((t) => t.taskId));
+    const map = new Map<string, typeof goalTasks>();
+    for (const t of goalTasks) {
+      if (t.parentTaskId && ids.has(t.parentTaskId)) {
+        const list = map.get(t.parentTaskId) ?? [];
+        list.push(t);
+        map.set(t.parentTaskId, list);
+      }
+    }
+    return map;
+  }, [goalTasks]);
 
   // Prefer explicit navigation stack (open from Tasks); fall back to session.parentSessionId
   // so return works after sidebar switch / cold open of a child.
@@ -442,62 +505,20 @@ export function TasksPanel({ compact = false }: { compact?: boolean }) {
                   </code>
                 </p>
               ) : (
-                  <div className="mb-3 flex flex-col gap-1.5">
-                    {goalTasks.map((t) => (
-                      <div
-                        key={t.taskId}
-                        className="rounded-md border border-border/70 bg-card/40 px-2.5 py-2 text-xs"
-                      >
-                        <div className="flex items-center gap-1.5">
-                          <Target className="h-3.5 w-3.5 shrink-0 text-workbench" />
-                          <span className="min-w-0 flex-1 truncate font-medium">
-                            {t.title}
-                          </span>
-                          <Badge
-                            variant={statusVariant(t.status)}
-                            className="shrink-0 font-normal capitalize"
-                          >
-                            {t.status}
-                          </Badge>
+                <div className="mb-3 flex flex-col gap-1.5">
+                  {topGoals.map((t) => (
+                    <div key={t.taskId}>
+                      <GoalCard task={t} compact={compact} />
+                      {childGoalsByParent.has(t.taskId) && (
+                        <div className="ml-4 mt-1 flex flex-col gap-1 border-l border-border/50 pl-3">
+                          {childGoalsByParent.get(t.taskId)!.map((child) => (
+                            <GoalCard key={child.taskId} task={child} compact={compact} sub />
+                          ))}
                         </div>
-                        {typeof t.progress === "number" && (
-                          <div className="mt-1.5 flex items-center gap-2">
-                            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-border">
-                              <div
-                                className="h-full rounded-full bg-workbench transition-all duration-300"
-                                style={{ width: `${Math.min(100, t.progress)}%` }}
-                              />
-                            </div>
-                            <span className="tabular-nums text-muted-foreground">
-                              {Math.round(t.progress)}%
-                            </span>
-                          </div>
-                        )}
-                        {t.objective && (
-                          <details className="mt-1">
-                            <summary className="cursor-pointer text-[11px] text-muted-foreground hover:text-foreground">
-                              目标详情
-                            </summary>
-                            <p className="mt-1 selectable whitespace-pre-wrap leading-relaxed text-muted-foreground">
-                              {t.objective}
-                            </p>
-                          </details>
-                        )}
-                        {t.blockedReason && (
-                          <div className="mt-1 rounded border border-destructive/30 bg-destructive/5 px-1.5 py-1 text-destructive">
-                            阻塞：{t.blockedReason}
-                          </div>
-                        )}
-                        {t.budget && (
-                          <div className="mt-1 text-[10px] text-muted-foreground">
-                            {t.budget.maxRounds != null && `最多 ${t.budget.maxRounds} 轮`}
-                            {t.budget.maxRounds != null && t.budget.maxToolCalls != null && " · "}
-                            {t.budget.maxToolCalls != null && `最多 ${t.budget.maxToolCalls} 次工具调用`}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
               )}
 
               {/* B3-1 · root node: current session goal */}
@@ -629,68 +650,106 @@ export function TasksPanel({ compact = false }: { compact?: boolean }) {
                   className="py-8"
                 />
               ) : (
-                <div className="flex flex-col gap-1 border-l border-border/60 pl-2">
-                  {children.map((c) => {
-                    const title = c.title || c.goal || c.id;
-                    const isOpening = openingId === c.id;
+                <>
+                  {/* Group by status: running first, then idle/completed, then failed */}
+                  {(["running", "idle", "completed", "failed"] as const).map((g) => {
+                    const group = children.filter(
+                      (c) => String(c.status ?? "").toLowerCase() === g,
+                    );
+                    if (!group.length) return null;
                     return (
-                      <div
-                        key={c.id}
-                        className="rounded-md border border-border/70 bg-card/40 px-2.5 py-2 text-xs"
-                      >
-                        <div className="flex items-center gap-1">
-                          <span className="min-w-0 flex-1 truncate font-medium">
-                            {title}
-                          </span>
-                          {c.status && (
-                            <Badge
-                              variant={statusVariant(c.status)}
-                              className="font-normal capitalize"
-                            >
-                              {c.status}
-                            </Badge>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 gap-1 px-2 text-[11px]"
-                            disabled={isOpening}
-                            title="打开子会话 transcript"
-                            onClick={() => void openChild(c.id)}
-                          >
-                            {isOpening ? (
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : (
-                              <ExternalLink className="h-3 w-3" />
-                            )}
-                            打开
-                          </Button>
-                        </div>
-                        <div className="mt-0.5 text-xs text-muted-foreground">
-                          {c.subagentProfile ? `${c.subagentProfile} · ` : ""}
-                          {typeof c.subagentDepth === "number"
-                            ? `depth ${c.subagentDepth} · `
-                            : ""}
-                          {formatRelativeTime(c.updatedAt ?? c.createdAt)}
-                          {sessionModel(c)
-                            ? ` · ${sessionModel(c).slice(0, 16)}`
-                            : ""}
-                        </div>
-                        <div className="mt-0.5 font-mono text-[10px] text-muted-foreground/80">
-                          {c.id}
-                          {c.parentSessionId
-                            ? ` · parent ${String(c.parentSessionId).slice(0, 8)}…`
-                            : ""}
-                        </div>
-                        {!compact && c.goal && (
-                          <div className="mt-1 selectable text-xs text-muted-foreground">
-                            {c.goal}
+                      <div key={g} className="mb-2">
+                        {children.length > 3 && (
+                          <div className="mb-1 px-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
+                            {g === "running" && "进行中"}
+                            {g === "idle" && "空闲"}
+                            {g === "completed" && "已完成"}
+                            {g === "failed" && "失败"}
                           </div>
                         )}
+                        <div
+                          className={`flex flex-col gap-1 ${
+                            g === "failed"
+                              ? "border-l border-destructive/30 pl-2"
+                              : "border-l border-border/60 pl-2"
+                          }`}
+                        >
+                          {group.map((c) => {
+                            const title = c.title || c.goal || c.id;
+                            const isOpening = openingId === c.id;
+                            return (
+                              <div
+                                key={c.id}
+                                className="rounded-md border border-border/70 bg-card/40 px-2.5 py-2 text-xs"
+                              >
+                                <div className="flex items-center gap-1">
+                                  {g === "running" && (
+                                    <span className="status-dot-running status-pulse shrink-0" />
+                                  )}
+                                  <span className="min-w-0 flex-1 truncate font-medium">
+                                    {title}
+                                  </span>
+                                  {c.status && (
+                                    <Badge
+                                      variant={statusVariant(c.status)}
+                                      className="font-normal capitalize"
+                                    >
+                                      {c.status}
+                                    </Badge>
+                                  )}
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 gap-1 px-2 text-[11px]"
+                                    disabled={isOpening}
+                                    title="打开子会话 transcript"
+                                    onClick={() => void openChild(c.id)}
+                                  >
+                                    {isOpening ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      <ExternalLink className="h-3 w-3" />
+                                    )}
+                                    打开
+                                  </Button>
+                                </div>
+                                <div className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+                                  {c.subagentProfile && (
+                                    <span className="rounded border border-border/50 px-1 font-mono text-[10px] uppercase">
+                                      {c.subagentProfile}
+                                    </span>
+                                  )}
+                                  {typeof c.subagentDepth === "number" && (
+                                    <span className="font-mono text-[10px] opacity-70">
+                                      d{c.subagentDepth}
+                                    </span>
+                                  )}
+                                  <span>{formatRelativeTime(c.updatedAt ?? c.createdAt)}</span>
+                                  {sessionModel(c) && (
+                                    <span className="font-mono text-[10px] opacity-70">
+                                      {sessionModel(c).slice(0, 16)}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="mt-0.5 font-mono text-[10px] text-muted-foreground/80">
+                                  {c.id.slice(0, 12)}…
+                                  {c.parentSessionId
+                                    ? ` · ↳ ${String(c.parentSessionId).slice(0, 6)}…`
+                                    : ""}
+                                </div>
+                                {!compact && c.goal && (
+                                  <div className="mt-1 selectable text-xs text-muted-foreground">
+                                    {c.goal}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                     );
                   })}
-                </div>
+                </>
               )}
             </>
           )}

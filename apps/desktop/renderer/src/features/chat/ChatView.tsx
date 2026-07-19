@@ -78,9 +78,9 @@ const MessageBlock = memo(function MessageBlock({ message }: { message: SessionM
   return (
     <article
       className={cn(
-        "group relative rounded-xl border border-border/50 px-3.5 py-2.5 text-sm duration-150",
+        "group relative animate-message-in rounded-lg px-3.5 py-2.5 text-sm",
         isUser && "msg-user",
-        isTool && "msg-tool shadow-sm shadow-black/10",
+        isTool && "msg-tool",
         !isUser && !isTool && "msg-agent",
       )}
     >
@@ -648,7 +648,7 @@ export function ChatView() {
                 Agent
                 <span className="status-dot-running status-pulse" aria-hidden />
               </div>
-              <MarkdownMessage text={streamingText} />
+              <MarkdownMessage text={streamingText} streaming />
               <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-foreground/55 align-middle" />
             </div>
           )}
@@ -673,7 +673,7 @@ export function ChatView() {
               ✓
             </span>
             <span className="min-w-0 flex-1 truncate text-xs font-medium">
-              {activeGoal.title}
+              {(activeGoal.objective || activeGoal.title || "").replace(/\s+/g, " ").trim()}
             </span>
             {typeof activeGoal.progress === "number" && (
               <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
