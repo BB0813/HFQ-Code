@@ -1,11 +1,19 @@
 import { useEffect, useState } from "react";
-import { Check, Loader2 } from "lucide-react";
+import { AlertTriangle, Check, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   ChipButton,
   ErrorBanner,
@@ -68,6 +76,11 @@ export function SettingsPage() {
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [checkIntervalHours, setCheckIntervalHours] = useState(24);
+  // 1.1.8 L3
+  const running = useAppStore((s) => s.running);
+  const [silentConfirmOpen, setSilentConfirmOpen] = useState(false);
+  const [pendingSilentValue, setPendingSilentValue] = useState(false);
+  const [silentInstallAcceptedAt, setSilentInstallAcceptedAt] = useState<string | null>(null);
 
   useEffect(() => {
     if (!hasHfq()) {
@@ -179,6 +192,7 @@ export function SettingsPage() {
           autoCheck,
           autoDownload,
           silentInstall,
+          silentInstallAcceptedAt: silentInstall ? (silentInstallAcceptedAt ?? new Date().toISOString()) : null,
           checkIntervalHours: Math.min(168, Math.max(1, Math.round(checkIntervalHours))),
         },
         modelRoles: {
@@ -462,15 +476,22 @@ export function SettingsPage() {
                 <span className="text-muted-foreground">有更新时后台自动下载</span>
                 <Switch checked={autoDownload} onCheckedChange={setAutoDownload} />
               </label>
-              <label className="flex cursor-pointer items-center justify-between gap-3 text-xs opacity-50">
-                <span className="text-muted-foreground">自动安装（1.1.8 预置）</span>
+              <label className="flex cursor-pointer items-center justify-between gap-3 text-xs">
+                <span className="text-muted-foreground">下载完成后自动安装更新</span>
                 <Switch
                   checked={silentInstall}
                   onCheckedChange={(v) => {
-                    setSilentInstall(v);
-                    toast.message("自动安装将在 1.1.8 版本生效");
+                    if (v && !silentInstallAcceptedAt) {
+                      // First-time opt-in: show confirmation
+                      setPendingSilentValue(true);
+                      setSilentConfirmOpen(true);
+                    } else if (!v) {
+                      setSilentInstall(false);
+                      setSilentInstallAcceptedAt(null);
+                    } else {
+                      setSilentInstall(true);
+                    }
                   }}
-                  disabled
                 />
               </label>
 
@@ -537,50 +558,90 @@ export function SettingsPage() {
                   检查更新
                 </Button>
                 {updateStatus === "ready" ? (
-                  <Button
-                    size="sm"
-                    variant="default"
-                    disabled={!!diagBusy}
-                    onClick={async () => {
-                      setDiagBusy("install");
-                      setUpdateError(null);
-                      let off: (() => void) | undefined;
-                      try {
-                        off = getHfq().onUpdateDownload?.((st) => {
-                          const s = st as UpdateDownloadStatus;
-                          if (s?.status === "downloading" && s?.percent != null) {
-                            setDlPercent(s.percent);
-                            toast.message(`正在下载安装包… ${Math.round(s.percent)}%`, { id: "upd-dl" });
+                  <>
+                    <Button
+                      size="sm"
+                      variant="default"
+                      disabled={!!diagBusy}
+                      onClick={async () => {
+                        if (running) {
+                          const ok = window.confirm(
+                            "Agent 正在运行，安装将停止当前任务并退出应用。确定继续？",
+                          );
+                          if (!ok) return;
+                        }
+                        setDiagBusy("install");
+                        setUpdateError(null);
+                        let off: (() => void) | undefined;
+                        try {
+                          off = getHfq().onUpdateDownload?.((st) => {
+                            const s = st as UpdateDownloadStatus;
+                            if (s?.status === "downloading" && s?.percent != null) {
+                              setDlPercent(s.percent);
+                              toast.message(`正在下载安装包… ${Math.round(s.percent)}%`, { id: "upd-dl" });
+                            }
+                            if (s?.status === "failed") {
+                              toast.error(String(s.error || "自动下载失败"), { id: "upd-dl" });
+                            }
+                          });
+                          const mode = silentInstall ? "silent" : "ui";
+                          const r = (await getHfq().installUpdate({ mode } as Record<string, unknown>)) as InstallUpdateResult;
+                          if (r?.cancelled) {
+                            toast.message("已取消安装");
+                          } else if (r?.ok === false) {
+                            const msg = humanizeInstallError(String(r.error || "安装失败"));
+                            setUpdateError(msg);
+                            toast.error(msg);
+                          } else if (r?.quitSuggested) {
+                            toast.success(silentInstall ? "安装完成，应用将自动重启" : "安装程序已打开，完成后可关闭本窗口");
+                          } else {
+                            toast.success("安装程序已打开");
                           }
-                          if (s?.status === "failed") {
-                            toast.error(String(s.error || "自动下载失败"), { id: "upd-dl" });
-                          }
-                        });
-                        const r = (await getHfq().installUpdate({})) as InstallUpdateResult;
-                        if (r?.cancelled) {
-                          toast.message("已取消安装");
-                        } else if (r?.ok === false) {
-                          const msg = humanizeInstallError(String(r.error || "安装失败"));
+                        } catch (e) {
+                          const msg = humanizeInstallError(e instanceof Error ? e.message : String(e));
                           setUpdateError(msg);
                           toast.error(msg);
-                        } else if (r?.quitSuggested) {
-                          toast.success("安装程序已打开，完成后可关闭本窗口");
-                        } else {
-                          toast.success("安装程序已打开");
+                        } finally {
+                          off?.();
+                          setDiagBusy(null);
                         }
-                      } catch (e) {
-                        const msg = humanizeInstallError(e instanceof Error ? e.message : String(e));
-                        setUpdateError(msg);
-                        toast.error(msg);
-                      } finally {
-                        off?.();
-                        setDiagBusy(null);
-                      }
-                    }}
-                  >
-                    {diagBusy === "install" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                    安装更新
-                  </Button>
+                      }}
+                    >
+                      {diagBusy === "install" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                      {silentInstall ? "安装并重启" : "安装更新"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!!diagBusy}
+                      onClick={async () => {
+                        if (running) {
+                          const ok = window.confirm(
+                            "Agent 正在运行，安装将停止当前任务并退出应用。确定继续？",
+                          );
+                          if (!ok) return;
+                        }
+                        setDiagBusy("install");
+                        setUpdateError(null);
+                        try {
+                          const r = (await getHfq().installUpdate({})) as InstallUpdateResult;
+                          if (r?.cancelled) {
+                            toast.message("已取消安装");
+                          } else if (r?.ok === false) {
+                            toast.error(humanizeInstallError(String(r.error || "安装失败")));
+                          } else {
+                            toast.success("安装程序已打开，完成后可关闭本窗口");
+                          }
+                        } catch (e) {
+                          toast.error(humanizeInstallError(e instanceof Error ? e.message : String(e)));
+                        } finally {
+                          setDiagBusy(null);
+                        }
+                      }}
+                    >
+                      打开安装向导
+                    </Button>
+                  </>
                 ) : (
                   <Button
                     size="sm"
@@ -650,9 +711,55 @@ export function SettingsPage() {
               </div>
               <p className="text-[11px] leading-relaxed text-muted-foreground">
                 安装包发布者 HFQ-ClodBreeze（自签）；首次可能触发 SmartScreen。{autoCheck ? `每 ${checkIntervalHours}h 后台检查。` : ""}
+                {silentInstall && " · 自动安装已启用"}
               </p>
             </CardContent>
           </Card>
+
+          {/* 1.1.8 L3 silentInstall first-time confirmation */}
+          <Dialog open={silentConfirmOpen} onOpenChange={setSilentConfirmOpen}>
+            <DialogContent className="max-w-md">
+              <DialogHeader className="flex-row items-center gap-3 space-y-0">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-warning/30 bg-warning/10">
+                  <AlertTriangle className="h-5 w-5 text-warning" />
+                </div>
+                <div>
+                  <DialogTitle className="text-sm">启用自动安装</DialogTitle>
+                  <DialogDescription className="text-xs">
+                    应用将能在后台静默完成 NSIS 安装包升级并自动重启。
+                  </DialogDescription>
+                </div>
+              </DialogHeader>
+              <div className="selectable space-y-2 text-xs leading-relaxed text-muted-foreground">
+                <p>启用后：</p>
+                <ul className="list-inside list-disc space-y-1 pl-1">
+                  <li>安装包自动下载完成后，将静默执行安装</li>
+                  <li>应用退出并自动重启到新版本</li>
+                  <li>可能会触发 UAC（用户账户控制）弹窗</li>
+                  <li>可随时在设置中关闭</li>
+                </ul>
+                <p className="mt-2 text-destructive">
+                  请仅从受信任来源获取 HFQ Code 更新。
+                </p>
+              </div>
+              <DialogFooter className="gap-2">
+                <Button variant="outline" size="sm" onClick={() => { setSilentConfirmOpen(false); setPendingSilentValue(false); }}>
+                  暂不启用
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setSilentInstall(true);
+                    setSilentInstallAcceptedAt(new Date().toISOString());
+                    setSilentConfirmOpen(false);
+                    toast.success("自动安装已启用");
+                  }}
+                >
+                  确认启用
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           {/* Diagnostics */}
           <Card className="border-border/70 bg-card/70 shadow-none">

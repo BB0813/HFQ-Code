@@ -56,25 +56,44 @@ function BootRoute() {
   return null;
 }
 
+/** Sticky banner copy used only by the splash failsafe (cleared when bootstrap finishes). */
+const BOOT_FAILSAFE_ERROR = "启动超时，部分状态可能未就绪";
+/**
+ * Must exceed bootstrap IPC budget (getInfo 5s + refreshSessions 4s ≈ 9s, plus margin).
+ * Older 8s raced a healthy slow boot and left a sticky false-positive banner.
+ */
+const BOOT_FAILSAFE_MS = 12_000;
+
 export function App() {
   const bootstrap = useAppStore((s) => s.bootstrap);
   const ready = useAppStore((s) => s.ready);
   const error = useAppStore((s) => s.error);
 
   useEffect(() => {
-    void bootstrap();
-    // Failsafe: never leave the splash longer than 8s even if IPC hangs.
+    let cancelled = false;
+    void bootstrap().finally(() => {
+      if (cancelled) return;
+      // Bootstrap settled (ok or soft-nulls): drop failsafe-only sticky error.
+      const st = useAppStore.getState();
+      if (st.error === BOOT_FAILSAFE_ERROR) {
+        useAppStore.setState({ error: null });
+      }
+    });
+    // Failsafe: never leave the splash forever if IPC truly hangs.
     const t = window.setTimeout(() => {
       const st = useAppStore.getState();
       if (!st.ready) {
         useAppStore.setState({
           ready: true,
-          error: st.error ?? "启动超时，部分状态可能未就绪",
+          error: st.error ?? BOOT_FAILSAFE_ERROR,
           statusLine: st.statusLine || "Bootstrap timeout",
         });
       }
-    }, 8000);
-    return () => window.clearTimeout(t);
+    }, BOOT_FAILSAFE_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
   }, [bootstrap]);
 
   if (!ready) {

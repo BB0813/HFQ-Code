@@ -329,8 +329,8 @@ export function withPrefs(cfg: AppConfig, patch: PrefsPatch): AppConfig {
 }
 
 /**
- * Merge updatePolicy patch (1.1.7). All fields optional; clamps checkIntervalHours to 1..168.
- * silentInstall is storage-only until 1.1.8 — still persisted here.
+ * Merge updatePolicy patch (1.1.7+). All fields optional; clamps checkIntervalHours to 1..168.
+ * silentInstall opt-in is enforced at install time in desktop main (1.1.8).
  */
 function mergeUpdatePolicy(
   prev: AppConfig["prefs"]["updatePolicy"] | undefined,

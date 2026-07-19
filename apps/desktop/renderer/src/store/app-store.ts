@@ -472,7 +472,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
     } finally {
       // Always leave splash — never block chrome paint on IPC.
-      set({ ready: true });
+      // Clear App.tsx failsafe-only sticky banner if bootstrap finished after it fired.
+      const FAILSAFE = "启动超时，部分状态可能未就绪";
+      set((s) => ({
+        ready: true,
+        error: s.error === FAILSAFE ? null : s.error,
+        statusLine:
+          s.statusLine === "Bootstrap timeout"
+            ? s.workspace?.path
+              ? String(s.workspace.path)
+              : "No workspace"
+            : s.statusLine,
+      }));
     }
 
     // Auto-open most recent session after first paint only.

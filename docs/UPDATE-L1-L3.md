@@ -1,7 +1,7 @@
 # HFQ Code · 应用内更新阶梯（L0 → L3）
 
-> 状态：**L1+L2 shipped in 1.1.7** · **最迟 1.1.8 交付完整 L3**  
-> 基线：1.1.7（L1 后台下载 + L2 就绪一键确认安装）；1.1.6 = D3 手动路径  
+> 状态：**L1+L2 shipped (1.1.7)** · **L3 backend shipped (1.1.8)**  
+> 基线：1.1.7（L1 后台下载 + L2 就绪一键确认安装）；1.1.8 = L3 opt-in silent NSIS  
 > 相关：`docs/UPDATE-D3.md` · `docs/PACKAGING.md` · `docs/DECISIONS.md` Q9 · `docs/RELEASE-1.1.7.md`  
 > 实现交接：`docs/prompts/1.1.7-handoff.md`（L1+L2 · done）· `docs/prompts/1.1.8-l3-handoff.md`（L3）
 
@@ -146,12 +146,12 @@ L3 改为（概念）：
    { version, filePath, scheduledAt, mode: "silent" }
 4. app.quit()（尽量 flush session）
 5. 分离进程（detached）：
-   - 优先：spawn installer with electron-builder NSIS silent 兼容参数
-     例：`HFQ Code-1.1.8-x64.exe /S` （以实际 NSIS 为准；需在 1.1.8 实现时用真包装验证）
-   - perMachine + elevation：允许 **一次 UAC**（算 OS 边界，不算产品「安装确认框」）
-6. 安装成功后 NSIS `runAfterFinish` 或显式 start 新 `HFQ Code.exe`
-7. 新版本启动：读 pending marker → 成功则清 marker + toast「已更新到 x.y.z」；
-   失败则保留 marker + Settings 红字 + 回退「打开安装包」L2 路径
+   - **最终 flags（1.1.8 代码钉死）**：`cmd /c ping … & start "" /b "…\installer.exe" /S`
+   - electron-builder NSIS：`oneClick:false` 仍识别 **`/S`**；`perMachine:true` 允许 **一次 UAC**
+   - 实现：`apps/desktop/electron/update-silent.cjs` → `spawnSilentNsis`
+6. 安装成功后 NSIS `runAfterFinish: true` 拉起新 `HFQ Code.exe`
+7. 新版本启动：读 pending marker → 成功则清 marker + `update:installed`；
+   失败则保留 marker + `update:install-pending` + Settings 回退 L2
 ```
 
 **实现注意：**
@@ -166,15 +166,22 @@ L3 改为（概念）：
 
 ### 6.3 L3 验收（1.1.8 发布门槛）
 
-- [ ] `silentInstall=false`：永不自动装（回归 L1/L2）  
-- [ ] 首次开启必须二次确认并写入 `silentInstallAcceptedAt`  
-- [ ] ready + silentInstall → 「马上安装并重启」可完成 **无 NSIS 向导页** 的升级（UAC 可有）  
-- [ ] 升级后数据目录 `%APPDATA%/HFQ-Code` 保留（config/sessions）  
-- [ ] 新版本号 StatusBar / Settings 正确  
-- [ ] 失败可从 Settings 手动 L2 安装  
-- [ ] 安全：路径沙箱 / allowlist / 无任意路径安装  
-- [ ] 自动化或半自动测：至少 mock spawn + pending marker 单测；真包手工冒烟一条  
-- [ ] 文档：`UPDATE-D3.md` 或本文件标注 L3 shipped；`PACKAGING.md` 删除「禁止一切自动装」的绝对表述，改为「默认关闭 + opt-in L3」  
+#### 后端（已实现）
+- [x] `silentInstall=false`：`mode:"silent"` / `installSilent` 拒绝  
+- [x] 开启时 main 补写 `silentInstallAcceptedAt`（FE 负责二次确认文案）  
+- [x] `pending-install.json` + detached `installer /S` + `app.quit()`  
+- [x] Portable runtime / portable asset 拒绝 L3  
+- [x] 路径沙箱 `userData/updates`；allowlist 下载链不放宽  
+- [x] 启动读 marker：version ≥ target → 清 marker + `update:installed`；否则保留 + `update:install-pending`  
+- [x] L2 `mode:"ui"` / openPath 回退仍可用  
+- [x] `@hfq/shared` update-silent 单测 + docs 同步  
+- [ ] 真包 `pack:win` 旧→新 L3 手工冒烟（发版/联调）  
+
+#### 前端 / 发版
+- [ ] Settings 开关二次确认 + Portable 禁用  
+- [ ] ready + silent → CTA「安装并重启」走 silent  
+- [ ] 升级成功 toast；失败 L2 回退  
+- [ ] 数据目录保留（NSIS 升级固有行为，冒烟确认）  
 
 ---
 

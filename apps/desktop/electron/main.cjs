@@ -3,6 +3,7 @@ const path = require("node:path");
 const os = require("node:os");
 const fs = require("node:fs/promises");
 const { UpdateDownloader } = require("./update-download.cjs");
+const updateSilent = require("./update-silent.cjs");
 
 /** Public GitHub repo used for release checks (manual download channel). */
 const UPDATE_REPO = { owner: "BB0813", name: "HFQ-Code" };
@@ -163,6 +164,15 @@ let lastUpdateCheckResult = null;
 /** @type {ReturnType<typeof setInterval> | null} */
 let updateIntervalTimer = null;
 
+/**
+ * Boot recovery of L3 pending-install marker (set after evaluate on startup).
+ * @type {null | { status: string, message?: string, version?: string, filePath?: string }}
+ */
+let lastPendingInstallBoot = null;
+
+/** When true, before-quit will not cancel an in-flight silent schedule. */
+let silentInstallScheduled = false;
+
 function getUpdatesDir() {
   return path.join(app.getPath("userData"), "updates");
 }
@@ -272,6 +282,14 @@ async function getEnrichedUpdateDownloadStatus() {
     status = "up_to_date";
   }
 
+  const portableRuntime = updateSilent.isPortableRuntime(process.env, process.execPath);
+  let pending = null;
+  try {
+    pending = await updateSilent.readPendingInstall(getUpdatesDir());
+  } catch {
+    pending = null;
+  }
+
   return {
     ...st,
     status,
@@ -281,9 +299,200 @@ async function getEnrichedUpdateDownloadStatus() {
     availableVersion: availableVersion || null,
     autoDownloadEnabled: policy.autoDownload,
     autoCheckEnabled: policy.autoCheck,
-    silentInstallEnabled: policy.silentInstall,
+    silentInstallEnabled: policy.silentInstall && !portableRuntime,
+    silentInstallAcceptedAt: policy.silentInstallAcceptedAt,
     checkIntervalHours: policy.checkIntervalHours,
+    portableRuntime,
+    /** L3: silent install allowed only when opt-in + NSIS channel + not portable runtime */
+    silentInstallAvailable:
+      policy.silentInstall === true && !portableRuntime && status === "ready",
+    pendingInstall: pending
+      ? {
+          version: pending.version,
+          filePath: pending.filePath,
+          mode: pending.mode,
+          scheduledAt: pending.scheduledAt,
+        }
+      : null,
+    lastPendingInstallBoot,
   };
+}
+
+/**
+ * Resolve target version string for a local installer (filename or last check).
+ * @param {string} filePath
+ * @param {string} [fallback]
+ */
+function versionFromInstallerPath(filePath, fallback = "") {
+  const base = path.basename(String(filePath || ""));
+  const m = base.match(/(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.]+)?)/);
+  if (m) return stripVersionNoise(m[1]);
+  if (lastUpdateCheckResult?.latestVersion) {
+    return stripVersionNoise(String(lastUpdateCheckResult.latestVersion));
+  }
+  return stripVersionNoise(fallback || "");
+}
+
+/**
+ * L3: write pending marker, detached silent NSIS spawn, then quit.
+ * Never openPath. Requires silentInstall opt-in. Portable rejected.
+ * @param {{ filePath?: string, version?: string, reason?: string, quit?: boolean, spawnImpl?: Function }} [opts]
+ */
+async function scheduleSilentInstall(opts = {}) {
+  const portableRuntime = updateSilent.isPortableRuntime(process.env, process.execPath);
+  let cfg = null;
+  try {
+    cfg = await readConfig();
+  } catch {
+    /* ignore */
+  }
+  const policy = readUpdatePolicy(cfg?.prefs);
+  if (portableRuntime) {
+    throw new Error("Portable 运行时不支持静默自动安装，请使用 NSIS 安装版或手动安装向导");
+  }
+  if (!policy.silentInstall) {
+    throw new Error("未开启「下载完成后自动安装更新」，无法静默安装");
+  }
+
+  const downloader = getUpdateDownloader();
+  if (downloader.getState().status === "downloading") {
+    throw new Error("正在下载安装包，请稍候完成后再安装");
+  }
+
+  let filePath = String(opts.filePath || "").trim();
+  if (!filePath) {
+    filePath = (await downloader.resolveInstallerPath()) || "";
+  }
+  if (!filePath) {
+    throw new Error("尚未下载安装包，请先下载更新");
+  }
+
+  const updatesRoot = getUpdatesDir();
+  filePath = updateSilent.assertInstallerPathInUpdatesDir(filePath, updatesRoot);
+  try {
+    await fs.access(filePath);
+  } catch {
+    throw new Error("安装包文件已丢失，请重新下载更新");
+  }
+
+  const version =
+    stripVersionNoise(String(opts.version || "")) ||
+    versionFromInstallerPath(filePath) ||
+    stripVersionNoise(String(lastUpdateCheckResult?.latestVersion || ""));
+  if (!version) {
+    throw new Error("无法确定目标版本号，请先检查更新");
+  }
+
+  const st = downloader.getState();
+  const marker = {
+    version,
+    filePath,
+    mode: "silent",
+    scheduledAt: new Date().toISOString(),
+    sha256: st.sha256 || null,
+    reason: opts.reason || "install-and-restart",
+    currentVersionAtSchedule: app.getVersion() || "0.0.0",
+  };
+  await updateSilent.writePendingInstall(updatesRoot, marker);
+
+  // Detached delayed /S so locks release after quit
+  let spawnResult;
+  try {
+    spawnResult = updateSilent.spawnSilentNsis(filePath, {
+      delaySeconds: 3,
+      spawn: opts.spawnImpl,
+    });
+  } catch (err) {
+    // Keep marker for L2 retry; surface error
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`静默安装启动失败：${msg}。可改用「打开安装向导」`);
+  }
+
+  silentInstallScheduled = true;
+  broadcast("update:install-scheduled", {
+    ok: true,
+    mode: "silent",
+    version,
+    filePath,
+    command: spawnResult.command,
+    args: spawnResult.args,
+    quit: opts.quit !== false,
+  });
+
+  const shouldQuit = opts.quit !== false;
+  if (shouldQuit) {
+    // Give renderer a tick to show toast, then quit so NSIS can replace files
+    setTimeout(() => {
+      try {
+        // Best-effort: stop session worker before quit
+        if (sessionWorker && typeof sessionWorker.shutdown === "function") {
+          void sessionWorker.shutdown().catch(() => {});
+          sessionWorker = null;
+          sessionBackend = null;
+        }
+      } catch {
+        /* ignore */
+      }
+      app.quit();
+    }, 400);
+  }
+
+  return {
+    ok: true,
+    mode: "silent",
+    version,
+    filePath,
+    scheduled: true,
+    quit: shouldQuit,
+    quitSuggested: true,
+    command: spawnResult.command,
+    args: spawnResult.args,
+    pendingInstall: marker,
+  };
+}
+
+/**
+ * Evaluate pending-install marker after boot; clear on success; notify UI.
+ */
+async function recoverPendingInstallOnStartup() {
+  try {
+    const updatesDir = getUpdatesDir();
+    const marker = await updateSilent.readPendingInstall(updatesDir);
+    const currentVersion = app.getVersion() || "0.0.0";
+    const result = updateSilent.evaluatePendingOnBoot(marker, currentVersion);
+    if (result.status === "none") {
+      lastPendingInstallBoot = null;
+      return null;
+    }
+    if (result.status === "success") {
+      await updateSilent.clearPendingInstall(updatesDir).catch(() => {});
+      lastPendingInstallBoot = {
+        status: "success",
+        message: result.message,
+        version: currentVersion,
+        filePath: marker?.filePath,
+      };
+      // Delay broadcast until window exists
+      setTimeout(() => {
+        broadcast("update:installed", lastPendingInstallBoot);
+      }, 3_000);
+      return lastPendingInstallBoot;
+    }
+    // pending / failed — keep marker for Settings retry
+    lastPendingInstallBoot = {
+      status: result.status,
+      message: result.message,
+      version: marker?.version,
+      filePath: marker?.filePath,
+      currentVersion,
+    };
+    setTimeout(() => {
+      broadcast("update:install-pending", lastPendingInstallBoot);
+    }, 3_000);
+    return lastPendingInstallBoot;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -1557,12 +1766,24 @@ function registerIpc() {
   });
 
   /**
-   * Open downloaded installer after explicit user confirm (no silent install).
-   * payload: { filePath?, confirm?: boolean, autoDownload?: boolean }
-   * - confirm=false skips dialog (UI already confirmed)
-   * - autoDownload!==false: if no local installer, download recommended asset then open
+   * L2 openPath wizard OR L3 silent schedule.
+   * payload: {
+   *   filePath?, confirm?, autoDownload?,
+   *   mode?: "ui"|"silent",   // default "ui" (L2); "silent" requires silentInstall prefs
+   *   version?, reason?, quit?
+   * }
    */
   ipcMain.handle("update:install", async (_evt, payload = {}) => {
+    const mode = payload?.mode === "silent" ? "silent" : "ui";
+    if (mode === "silent") {
+      return scheduleSilentInstall({
+        filePath: payload?.filePath,
+        version: payload?.version,
+        reason: payload?.reason || "install-and-restart",
+        quit: payload?.quit !== false,
+      });
+    }
+
     const downloader = getUpdateDownloader();
     let filePath = String(payload?.filePath || "").trim();
 
@@ -1654,10 +1875,42 @@ function registerIpc() {
     if (err) throw new Error(err);
     return {
       ok: true,
+      mode: "ui",
       filePath,
       /** UI may offer quit; we do not force-quit. */
       quitSuggested: true,
     };
+  });
+
+  /**
+   * L3 explicit silent install API (same as update:install { mode:"silent" }).
+   * Requires prefs.updatePolicy.silentInstall === true.
+   */
+  ipcMain.handle("update:installSilent", async (_evt, payload = {}) => {
+    return scheduleSilentInstall({
+      filePath: payload?.filePath,
+      version: payload?.version,
+      reason: payload?.reason || "install-and-restart",
+      quit: payload?.quit !== false,
+    });
+  });
+
+  /** Read / clear pending-install marker (Settings recovery UI). */
+  ipcMain.handle("update:pendingInstall", async () => {
+    const marker = await updateSilent.readPendingInstall(getUpdatesDir());
+    return {
+      pending: marker,
+      boot: lastPendingInstallBoot,
+      portableRuntime: updateSilent.isPortableRuntime(process.env, process.execPath),
+    };
+  });
+
+  ipcMain.handle("update:clearPendingInstall", async () => {
+    const ok = await updateSilent.clearPendingInstall(getUpdatesDir());
+    if (lastPendingInstallBoot?.status !== "success") {
+      lastPendingInstallBoot = null;
+    }
+    return { ok: true, cleared: ok };
   });
 
   ipcMain.handle("update:clearDownloads", async () => {
@@ -1665,6 +1918,8 @@ function registerIpc() {
     try {
       const entries = await fs.readdir(dir).catch(() => []);
       for (const name of entries) {
+        // Keep pending-install marker so failed L3 can still retry after clear of packages
+        if (name === updateSilent.MARKER_NAME) continue;
         await fs.rm(path.join(dir, name), { force: true, recursive: true }).catch(() => {});
       }
     } catch {
@@ -2901,6 +3156,13 @@ function registerIpc() {
       if (typeof up.autoCheck === "boolean") nextUp.autoCheck = up.autoCheck;
       if (typeof up.autoDownload === "boolean") nextUp.autoDownload = up.autoDownload;
       if (typeof up.silentInstall === "boolean") {
+        // Portable runtime: refuse enabling silentInstall
+        if (
+          up.silentInstall === true &&
+          updateSilent.isPortableRuntime(process.env, process.execPath)
+        ) {
+          throw new Error("Portable 运行时不能开启静默自动安装");
+        }
         nextUp.silentInstall = up.silentInstall;
         // Stamp acceptance when turning on (audit); clear when off
         if (up.silentInstall === true && !nextUp.silentInstallAcceptedAt) {
@@ -3557,6 +3819,8 @@ if (!gotLock) {
   app.whenReady().then(async () => {
     registerIpc();
     createWindow();
+    // L3: recover pending-install marker before/alongside silent check
+    void recoverPendingInstallOnStartup().catch(() => undefined);
     void maybeCheckUpdatesOnStartup();
     void ensureSessionBackend().catch(() => undefined);
     void readConfig().catch(() => undefined);
@@ -3577,5 +3841,7 @@ if (!gotLock) {
       sessionWorker = null;
       sessionBackend = null;
     }
+    // silentInstallScheduled: detached installer already launched; marker on disk
+    void silentInstallScheduled;
   });
 }

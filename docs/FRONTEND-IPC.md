@@ -246,7 +246,7 @@ await hfq.setPrefs({
 
 ---
 
-## Updates (D3 + 1.1.7 L1/L2)
+## Updates (D3 + 1.1.7 L1/L2 + 1.1.8 L3)
 
 ```js
 // prefs.updatePolicy (setPrefs whitelist)
@@ -255,9 +255,11 @@ await hfq.setPrefs({
     autoCheck: true,          // default true · aligns with checkUpdatesOnStartup
     autoDownload: false,      // default false · L1 background download when true
     checkIntervalHours: 24,   // clamp 1..168
-    silentInstall: false,     // 1.1.7 storage only · never auto-installs until 1.1.8
+    silentInstall: false,     // default false · L3 opt-in (FE must secondary-confirm)
+    // silentInstallAcceptedAt stamped by main when enabling if missing
   },
 });
+// Portable runtime: setPrefs silentInstall:true → rejected
 
 const r = await hfq.checkForUpdates({ force: true });
 // r.recommendedAsset, r.assets, r.updateAvailable
@@ -267,16 +269,27 @@ const st = await hfq.getUpdateDownloadStatus();
 // st.status: idle | downloading | ready | failed | cancelled | up_to_date
 //   (raw downloader "completed" is mapped to "ready"; st.downloadStatus keeps raw)
 // st.currentVersion, st.availableVersion?, st.filePath?, st.percent?, st.error?
-// st.autoDownloadEnabled?, st.autoCheckEnabled?, st.checkIntervalHours?
+// st.autoDownloadEnabled?, st.autoCheckEnabled?, st.silentInstallEnabled?
+// st.silentInstallAvailable?, st.portableRuntime?, st.pendingInstall?, st.lastPendingInstallBoot?
 
 const off = hfq.onUpdateDownload((st) => { /* progress; completed → UI shows ready */ });
-// optional: main may also broadcast update:ready after L1 auto-download finishes
+// also: onUpdateReady / onUpdateInstalled / onUpdateInstallPending / onUpdateInstallScheduled
 await hfq.downloadUpdate({}); // or { url, fileName }
-// install: opens local .exe; if missing, auto-downloads recommended asset first
-await hfq.installUpdate({});  // confirm dialog in main; { autoDownload: false } to require prior download
-// L2: still confirm + shell.openPath; quitSuggested: true; never silent
+
+// L2 — openPath wizard (default)
+await hfq.installUpdate({});              // confirm dialog; { autoDownload:false } requires prior download
+await hfq.installUpdate({ mode: "ui", confirm: false });
+
+// L3 — silent NSIS: requires silentInstall prefs; writes pending-install.json → /S → app.quit()
+await hfq.installUpdate({ mode: "silent", reason: "install-and-restart" });
+// or: await hfq.installUpdateSilent({})
+// → { ok, mode:"silent", scheduled:true, quit:true, version, filePath, command, args:["/S"] }
+// Portable / silentInstall=false / non-NSIS → throws (L2 still works)
+
+await hfq.getPendingInstall();            // { pending, boot, portableRuntime }
+await hfq.clearPendingInstall();
 await hfq.cancelUpdateDownload();
-await hfq.clearUpdateDownloads();
+await hfq.clearUpdateDownloads();         // keeps pending-install.json
 off();
 ```
 

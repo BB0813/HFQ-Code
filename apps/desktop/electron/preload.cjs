@@ -113,8 +113,15 @@ contextBridge.exposeInMainWorld("hfq", {
   downloadUpdate: (payload) => ipcRenderer.invoke("update:download", payload ?? {}),
   cancelUpdateDownload: () => ipcRenderer.invoke("update:downloadCancel"),
   getUpdateDownloadStatus: () => ipcRenderer.invoke("update:downloadStatus"),
-  /** Open downloaded .exe after confirm dialog (unless confirm:false). */
+  /**
+   * L2: openPath wizard (default mode "ui").
+   * L3: { mode: "silent" } requires prefs.updatePolicy.silentInstall — schedules /S + quit.
+   */
   installUpdate: (payload) => ipcRenderer.invoke("update:install", payload ?? {}),
+  /** L3 explicit silent install (same as installUpdate({ mode:"silent" })). */
+  installUpdateSilent: (payload) => ipcRenderer.invoke("update:installSilent", payload ?? {}),
+  getPendingInstall: () => ipcRenderer.invoke("update:pendingInstall"),
+  clearPendingInstall: () => ipcRenderer.invoke("update:clearPendingInstall"),
   clearUpdateDownloads: () => ipcRenderer.invoke("update:clearDownloads"),
   openExternal: (payload) => ipcRenderer.invoke("shell:openExternal", payload ?? {}),
   /** Reveal path in Explorer (workspace-relative or under app data). */
@@ -139,5 +146,25 @@ contextBridge.exposeInMainWorld("hfq", {
     const listener = (_event, data) => handler(data);
     ipcRenderer.on("update:download", listener);
     return () => ipcRenderer.removeListener("update:download", listener);
+  },
+  onUpdateReady: (handler) => {
+    const listener = (_event, data) => handler(data);
+    ipcRenderer.on("update:ready", listener);
+    return () => ipcRenderer.removeListener("update:ready", listener);
+  },
+  onUpdateInstalled: (handler) => {
+    const listener = (_event, data) => handler(data);
+    ipcRenderer.on("update:installed", listener);
+    return () => ipcRenderer.removeListener("update:installed", listener);
+  },
+  onUpdateInstallPending: (handler) => {
+    const listener = (_event, data) => handler(data);
+    ipcRenderer.on("update:install-pending", listener);
+    return () => ipcRenderer.removeListener("update:install-pending", listener);
+  },
+  onUpdateInstallScheduled: (handler) => {
+    const listener = (_event, data) => handler(data);
+    ipcRenderer.on("update:install-scheduled", listener);
+    return () => ipcRenderer.removeListener("update:install-scheduled", listener);
   },
 });

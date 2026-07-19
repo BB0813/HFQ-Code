@@ -145,14 +145,17 @@ Success marker used by silent script: `%TEMP%\HFQ-ClodBreeze.trust.key`.
 ## Update policy
 
 1. Publish NSIS and/or portable artifacts to GitHub Releases.
-2. Users may install via browser **or** in-app download (D3).
+2. Users may install via browser **or** in-app download (D3 / L1–L3).
 3. Data under `%APPDATA%/HFQ-Code` is preserved across upgrades (`config.json`, `credentials.json`, sessions).
 4. **Self-signed Authenticode** via HFQ-ClodBreeze (above). SmartScreen may still warn for new publishers.
-5. **No silent auto-install.** D3 downloads to `%APPDATA%/HFQ-Code/updates/` then opens the `.exe` after user confirm.
+5. **Silent auto-install is opt-in only** (`prefs.updatePolicy.silentInstall`, default **false**).  
+   - Default / L2: download under `%APPDATA%/HFQ-Code/updates/` → confirm → `shell.openPath` wizard.  
+   - L3 (1.1.8+): with opt-in, schedule NSIS **`/S`** after writing `updates/pending-install.json`, then `app.quit()`. UAC may still appear (`perMachine: true`). Portable channel **cannot** L3.  
+   - See [UPDATE-L1-L3.md](./UPDATE-L1-L3.md).
 
-**In-app check (1.0.2+):** Settings → 检查更新 queries GitHub Releases latest, compares semver to `app.getVersion()`, and can open the release page. Optional startup check (`prefs.checkUpdatesOnStartup`, default on, 6h throttle) only **notifies** when newer.
+**In-app check (1.0.2+):** Settings → 检查更新 queries GitHub Releases latest, compares semver to `app.getVersion()`, and can open the release page. Optional startup check (`prefs.checkUpdatesOnStartup` / `updatePolicy.autoCheck`, default on, 6h throttle).
 
-**In-app download (D3):** `update:download` / `update:install` — see [UPDATE-D3.md](./UPDATE-D3.md) · [FRONTEND-IPC.md](./FRONTEND-IPC.md).
+**In-app download / install:** `update:download` / `update:install` (`mode:"ui"|"silent"`) — [UPDATE-D3.md](./UPDATE-D3.md) · [FRONTEND-IPC.md](./FRONTEND-IPC.md).
 
 **Default transport (1.0.4+):** `prefs.updateSource` defaults to **`ghproxy`** so the API call is  
 `{updateProxyBase}https://api.github.com/repos/BB0813/HFQ-Code/releases/latest`  

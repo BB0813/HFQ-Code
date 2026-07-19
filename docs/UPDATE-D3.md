@@ -1,16 +1,18 @@
 # D3 — In-app update download
 
-Status: **shipped (backend)** · 2026-07-16  
-Policy: installers may be **self-signed (HFQ-ClodBreeze)** when release CI has signing secrets — see [PACKAGING.md](./PACKAGING.md). SmartScreen may still warn for new publishers.
+Status: **shipped** · extended by **1.1.7 L1+L2** + **1.1.8 L3**  
+Policy: installers may be **self-signed (HFQ-ClodBreeze)** when release CI has signing secrets — see [PACKAGING.md](./PACKAGING.md). SmartScreen may still warn for new publishers.  
+Ladder: [UPDATE-L1-L3.md](./UPDATE-L1-L3.md).
 
 ## Product behavior
 
 | Step | Behavior |
 |------|----------|
 | Check | Existing `update:check` (multi-source: ghproxy → ungh → direct) |
-| Download | User-initiated only; file under `%APPDATA%/HFQ-Code/updates/` |
-| Install | Opens `.exe` with OS; **confirmation dialog** by default (not silent) |
-| Auto | Startup still only **notifies** when newer (`update:available`) — never auto-downloads |
+| Download | User-initiated **or** L1 `updatePolicy.autoDownload` (default **off**) → `%APPDATA%/HFQ-Code/updates/` |
+| Install L2 | Opens `.exe` with OS; **confirmation dialog** by default (`mode:"ui"`) |
+| Install L3 | Opt-in `silentInstall` → pending marker + NSIS `/S` + quit (default **off**; Portable disabled) |
+| Auto | Default: notify only. L1 may auto-download; L3 never silent-installs without prefs opt-in |
 
 ## Why not electron-updater
 

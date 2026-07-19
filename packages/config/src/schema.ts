@@ -93,7 +93,7 @@ export const SkillMatchPrefsSchema = z.object({
 export type SkillMatchPrefs = z.infer<typeof SkillMatchPrefsSchema>;
 
 /**
- * Update ladder policy (1.1.7 L1+L2; silentInstall stored for 1.1.8 L3).
+ * Update ladder policy (1.1.7 L1+L2; 1.1.8 L3 silentInstall opt-in).
  * All fields optional — missing object / keys keep product defaults.
  */
 export const UpdatePolicySchema = z.object({
@@ -104,8 +104,9 @@ export const UpdatePolicySchema = z.object({
   /** Check interval hours. default 24; clamp 1..168 in withPrefs. */
   checkIntervalHours: z.number().int().min(1).max(168).default(24),
   /**
-   * L3 placeholder: allow silent install after ready.
-   * 1.1.7 stores only — never auto-installs.
+   * L3: allow silent NSIS install after ready (opt-in; default false).
+   * Requires FE secondary confirm; main stamps silentInstallAcceptedAt when enabling.
+   * Portable runtime refuses enable / schedule.
    */
   silentInstall: z.boolean().default(false),
   /** ISO time user accepted silentInstall (audit). */
@@ -248,7 +249,7 @@ export const UiPrefsSchema = z.object({
     maxBodyChars: 6_000,
   }),
   /**
-   * Update ladder (1.1.7+). autoDownload default false; silentInstall is storage-only until 1.1.8.
+   * Update ladder (1.1.7 L1+L2 · 1.1.8 L3). autoDownload / silentInstall default false.
    */
   updatePolicy: UpdatePolicySchema.default({
     autoCheck: true,
