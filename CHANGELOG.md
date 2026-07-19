@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.1.6 — 2026-07-20
+
+### Backend
+
+- **Compression LLM compact**: `compactChatMessagesMaybeLlm` uses `prefs.modelRoles.compression` when set; LLM summarizes head on compact path; failure falls back to heuristic; observable note `[context compacted · llm]` (+ system `message.completed`).
+- **Goal tree sidecar**: `%data%/sessions/<sessionId>.goals.json` — upsert on goal `task.updated`, merge on cold open, unlink on session delete (`goals-store.ts` + manager/loop).
+- **`read_document` tool**: workspace text / docx OOXML / best-effort pure-JS pdf; path-escape rejected; policy allow + hub tests.
+- Bundled skill `skills/bundled/document-read/SKILL.md`.
+
+### Desktop UI
+
+- **Settings**: `compactMaxChars` (8k–200k) + compression copy (LLM when model set; empty = heuristic).
+- **Tasks**: goal list with `parentTaskId` one-level indent; orphans stay top-level.
+- **Header**: Coding Profile chip hot-updates after save.
+- **Chat**: mermaid streaming-safe; goal banner prefers objective.
+- Shell surface / Memory & Permissions empty-state polish.
+
+### Docs
+
+- `docs/RELEASE-1.1.6.md` · prompts `1.1.6-*` + `release-1.1.6.md`
+- ROADMAP baseline → 1.1.6; FRONTEND-IPC / ADOPT notes for 1.1.6 fields
+
+---
+
 ## 1.1.5 — 2026-07-19
 
 ### Backend

@@ -8,7 +8,7 @@ Windows desktop **coding agent** (WorkBuddy / ZCode class): full GUI, workspace-
 
 ## Status
 
-**1.1.5** — Windows coding agent (Phase-1+2 + Phase-3 + 1.0.x patch train + 1.1.x + F1 Coding Profiles, mermaid, skill match, goal fields, memory links, diagram skill):
+**1.1.6** — Windows coding agent (Phase-1+2 + Phase-3 + 1.0.x patch train + 1.1.x + F1 + compression LLM compact, goal sidecar, read_document, UI polish):
 
 - Session loop: create / resume / stop / delete / rename + auto-title, streaming, tokens, compaction, **plan mode**, **sub-agents**
 - **Session worker** (child process) for agent loop isolation; in-process fallback
@@ -23,6 +23,7 @@ Windows desktop **coding agent** (WorkBuddy / ZCode class): full GUI, workspace-
 - Providers: delete mock/last channel · empty fail-closed · `models:list` · baseURL normalize
 - Session: open/send rebind to global active · identity pin against stale self-claims
 - Chat UI: topbar provider · model · model-id-only composer control · menus open upward
+- **1.1.6:** compression model drives LLM compact · goal `*.goals.json` cold-start · `read_document` (text/docx/pdf) · Settings `compactMaxChars` · profile chip hot update · mermaid streaming-safe · Tasks parent indent
 - **1.1.5:** Coding Profiles (6 built-in) · mermaid chat rendering · skill progressive match · goal driver fields · memory links · bundled diagram skill
 - **1.1.4:** abort isolation (only deny own session tree); live list enriched with `permissionMode`/`planMode`; permission queue (multi-session FIFO); Chat MessageBlock/copy/lazy routes/CSS tokens
 - **1.1.3:** `listSessions` always exposes `model`/`providerId`; Tasks `goal_required` spawn cold-start; UI identity helpers
@@ -75,6 +76,7 @@ Full notes: [CHANGELOG.md](./CHANGELOG.md). Release handoffs: `docs/RELEASE-*.md
 
 | Version | Date | Summary |
 |---------|------|---------|
+| **[1.1.6](./docs/RELEASE-1.1.6.md)** | 2026-07-20 | Compression LLM compact · goal sidecar cold-start · `read_document` · compactMaxChars · UI polish (profile chip / mermaid stream / Tasks indent) |
 | **[1.1.5](./docs/RELEASE-1.1.5.md)** | 2026-07-19 | Coding Profiles (6 built-in) · mermaid rendering · skill progressive match · goal driver fields · memory links · bundled diagram skill |
 | **[1.1.4](./docs/RELEASE-1.1.4.md)** | 2026-07-19 | Abort permission isolation; live list access modes; permission queue; Chat MessageBlock+copy; lazy routes; CSS token migration |
 | **[1.1.3](./docs/RELEASE-1.1.3.md)** | 2026-07-18 | Always expose session `model`/`providerId`; Tasks `goal_required` spawn cold-start; UI identity helpers; diagnostics test data-dir isolation |
