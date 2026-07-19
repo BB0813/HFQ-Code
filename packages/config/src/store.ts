@@ -239,10 +239,17 @@ export function withMcpServers(cfg: AppConfig, servers: McpServerConfig[]): AppC
   };
 }
 
-export function withPrefs(
-  cfg: AppConfig,
-  patch: Partial<AppConfig["prefs"]>,
-): AppConfig {
+/** Prefs patch: nested updatePolicy / skillMatch / modelRoles accept partials. */
+export type PrefsPatch = Omit<
+  Partial<AppConfig["prefs"]>,
+  "updatePolicy" | "skillMatch" | "modelRoles"
+> & {
+  updatePolicy?: Partial<NonNullable<AppConfig["prefs"]["updatePolicy"]>>;
+  skillMatch?: Partial<NonNullable<AppConfig["prefs"]["skillMatch"]>>;
+  modelRoles?: Partial<NonNullable<AppConfig["prefs"]["modelRoles"]>>;
+};
+
+export function withPrefs(cfg: AppConfig, patch: PrefsPatch): AppConfig {
   return {
     ...cfg,
     prefs: {
@@ -316,8 +323,46 @@ export function withPrefs(
           cfg.prefs?.skillMatch?.maxBodyChars ??
           6_000,
       },
+      updatePolicy: mergeUpdatePolicy(cfg.prefs?.updatePolicy, patch.updatePolicy),
     },
   };
+}
+
+/**
+ * Merge updatePolicy patch (1.1.7). All fields optional; clamps checkIntervalHours to 1..168.
+ * silentInstall is storage-only until 1.1.8 — still persisted here.
+ */
+function mergeUpdatePolicy(
+  prev: AppConfig["prefs"]["updatePolicy"] | undefined,
+  patch: Partial<NonNullable<AppConfig["prefs"]["updatePolicy"]>> | undefined,
+): NonNullable<AppConfig["prefs"]["updatePolicy"]> {
+  const base = {
+    autoCheck: prev?.autoCheck ?? true,
+    autoDownload: prev?.autoDownload ?? false,
+    checkIntervalHours: prev?.checkIntervalHours ?? 24,
+    silentInstall: prev?.silentInstall ?? false,
+    silentInstallAcceptedAt:
+      prev?.silentInstallAcceptedAt === undefined ? null : prev.silentInstallAcceptedAt,
+  };
+  if (!patch || typeof patch !== "object") return base;
+
+  const next = { ...base };
+  if (typeof patch.autoCheck === "boolean") next.autoCheck = patch.autoCheck;
+  if (typeof patch.autoDownload === "boolean") next.autoDownload = patch.autoDownload;
+  if (typeof patch.silentInstall === "boolean") next.silentInstall = patch.silentInstall;
+  if (patch.silentInstallAcceptedAt !== undefined) {
+    next.silentInstallAcceptedAt =
+      patch.silentInstallAcceptedAt === null
+        ? null
+        : String(patch.silentInstallAcceptedAt || "") || null;
+  }
+  if (patch.checkIntervalHours != null) {
+    const n = Number(patch.checkIntervalHours);
+    if (Number.isFinite(n)) {
+      next.checkIntervalHours = Math.max(1, Math.min(168, Math.round(n)));
+    }
+  }
+  return next;
 }
 
 export function withMcpServerHeaders(

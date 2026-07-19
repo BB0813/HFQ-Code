@@ -1,6 +1,6 @@
 # Product Decisions (Frozen)
 
-Last updated: 2026-07-15
+Last updated: 2026-07-20
 
 ## Positioning
 
@@ -124,4 +124,22 @@ Rationale: R8 Shoelace/vanilla polish could not reach Cursor/Claude-Desktop dens
 | setActive hot-swap | `config:setActive` returns `sessionApplied?: { id, model, providerId } \| null` and `sessionApplyError?`. |
 
 Frontend Models / Tasks already consume this contract; do not rename preload APIs.
+
+## Q9 — In-app update ladder L1→L3（2026-07-20）
+
+**Canonical:** [UPDATE-L1-L3.md](./UPDATE-L1-L3.md) · D3 baseline [UPDATE-D3.md](./UPDATE-D3.md)
+
+| Rule | Decision |
+|------|----------|
+| Transport | **Keep D3** (GitHub Releases + mirror chain + `userData/updates` sandbox). **Do not** migrate to electron-updater for 1.1.7–1.1.8 unless L3 is proven impossible on NSIS (written exception required). |
+| L1 | Background **auto-download** when `prefs.updatePolicy.autoDownload` (default **false**; product may default **true** for installed NSIS builds later). |
+| L2 | **One-click install** after ready: confirm → `shell.openPath` installer (wizard). |
+| L3 | **Opt-in silent/semi-silent NSIS upgrade**: quit app → detached spawn installer (e.g. `/S`, flags per real package) → relaunch. **UAC allowed**. SmartScreen may still appear (self-signed). |
+| Default silent | **`silentInstall` default false.** First enable requires explicit Settings double-confirm + `silentInstallAcceptedAt`. |
+| Deadline | **L1+L2 in 1.1.7. Full L3 no later than 1.1.8** (`v1.1.8` must demo end-to-end L3). |
+| Portable | **L3 disabled** (download / L2 open only). |
+| Security | HTTPS + host allowlist + updates-dir-only install paths + size cap **unchanged**. No arbitrary path execution. |
+| Data | `%APPDATA%/HFQ-Code` preserved across upgrades. |
+
+Supersedes absolute wording “no automatic install ever” in older PACKAGING/UPDATE-D3 notes: **automatic install is allowed only as L3 opt-in**, not as default.
 

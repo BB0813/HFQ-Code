@@ -180,6 +180,7 @@ DPAPI is transparent on config save/load (Windows). Detail: [DPAPI-1.2.md](./DPA
 
 `theme` · `proxyUrl` · `memoryEnabled` · `planModeDefault` · `permissionMode` ·  
 `checkUpdatesOnStartup` · `updateSource` · `updateProxyBase` ·  
+**`updatePolicy`** (`{ autoCheck?, autoDownload?, checkIntervalHours?, silentInstall?, silentInstallAcceptedAt? }`) ·  
 `compactMaxChars` · `usageInputPerMillion` · `usageOutputPerMillion` ·  
 **`terminalShell`** (`""` | `powershell` | `pwsh` | `cmd`) ·  
 **`activeCodingProfileId`** · **`codingProfiles`** · **`modelRoles`** · **`skillMatch`**
@@ -245,16 +246,35 @@ await hfq.setPrefs({
 
 ---
 
-## Updates (D3)
+## Updates (D3 + 1.1.7 L1/L2)
 
 ```js
+// prefs.updatePolicy (setPrefs whitelist)
+await hfq.setPrefs({
+  updatePolicy: {
+    autoCheck: true,          // default true · aligns with checkUpdatesOnStartup
+    autoDownload: false,      // default false · L1 background download when true
+    checkIntervalHours: 24,   // clamp 1..168
+    silentInstall: false,     // 1.1.7 storage only · never auto-installs until 1.1.8
+  },
+});
+
 const r = await hfq.checkForUpdates({ force: true });
 // r.recommendedAsset, r.assets, r.updateAvailable
+// When updatePolicy.autoDownload && updateAvailable → main starts download (no install)
 
-const off = hfq.onUpdateDownload((st) => { /* progress */ });
+const st = await hfq.getUpdateDownloadStatus();
+// st.status: idle | downloading | ready | failed | cancelled | up_to_date
+//   (raw downloader "completed" is mapped to "ready"; st.downloadStatus keeps raw)
+// st.currentVersion, st.availableVersion?, st.filePath?, st.percent?, st.error?
+// st.autoDownloadEnabled?, st.autoCheckEnabled?, st.checkIntervalHours?
+
+const off = hfq.onUpdateDownload((st) => { /* progress; completed → UI shows ready */ });
+// optional: main may also broadcast update:ready after L1 auto-download finishes
 await hfq.downloadUpdate({}); // or { url, fileName }
 // install: opens local .exe; if missing, auto-downloads recommended asset first
 await hfq.installUpdate({});  // confirm dialog in main; { autoDownload: false } to require prior download
+// L2: still confirm + shell.openPath; quitSuggested: true; never silent
 await hfq.cancelUpdateDownload();
 await hfq.clearUpdateDownloads();
 off();

@@ -105,6 +105,50 @@ describe("config store", () => {
     expect(ignored.prefs.updateSource).toBe("ghproxy");
   });
 
+  it("defaults and merges updatePolicy (1.1.7 L1+L2)", () => {
+    const base = defaultAppConfig();
+    expect(base.prefs.updatePolicy).toEqual({
+      autoCheck: true,
+      autoDownload: false,
+      checkIntervalHours: 24,
+      silentInstall: false,
+      silentInstallAcceptedAt: null,
+    });
+
+    const on = withPrefs(base, {
+      updatePolicy: {
+        autoDownload: true,
+        checkIntervalHours: 48,
+        silentInstall: true,
+        silentInstallAcceptedAt: "2026-07-20T00:00:00.000Z",
+      },
+    });
+    expect(on.prefs.updatePolicy.autoCheck).toBe(true);
+    expect(on.prefs.updatePolicy.autoDownload).toBe(true);
+    expect(on.prefs.updatePolicy.checkIntervalHours).toBe(48);
+    expect(on.prefs.updatePolicy.silentInstall).toBe(true);
+    expect(on.prefs.updatePolicy.silentInstallAcceptedAt).toBe("2026-07-20T00:00:00.000Z");
+
+    // Partial patch keeps previous values
+    const partial = withPrefs(on, { updatePolicy: { autoDownload: false } });
+    expect(partial.prefs.updatePolicy.autoDownload).toBe(false);
+    expect(partial.prefs.updatePolicy.checkIntervalHours).toBe(48);
+    expect(partial.prefs.updatePolicy.silentInstall).toBe(true);
+
+    // Clamp hours to 1..168
+    const low = withPrefs(base, { updatePolicy: { checkIntervalHours: 0 } });
+    expect(low.prefs.updatePolicy.checkIntervalHours).toBe(1);
+    const high = withPrefs(base, { updatePolicy: { checkIntervalHours: 999 } });
+    expect(high.prefs.updatePolicy.checkIntervalHours).toBe(168);
+    const rounded = withPrefs(base, { updatePolicy: { checkIntervalHours: 12.6 } });
+    expect(rounded.prefs.updatePolicy.checkIntervalHours).toBe(13);
+
+    // Empty / undefined patch preserves defaults
+    const empty = withPrefs(base, { updatePolicy: undefined });
+    expect(empty.prefs.updatePolicy.autoDownload).toBe(false);
+    expect(empty.prefs.updatePolicy.autoCheck).toBe(true);
+  });
+
   it("soft-migrates legacy planModeDefault into permissionMode on load", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "hfq-cfg-"));
     temps.push(dir);

@@ -92,6 +92,28 @@ export const SkillMatchPrefsSchema = z.object({
 
 export type SkillMatchPrefs = z.infer<typeof SkillMatchPrefsSchema>;
 
+/**
+ * Update ladder policy (1.1.7 L1+L2; silentInstall stored for 1.1.8 L3).
+ * All fields optional — missing object / keys keep product defaults.
+ */
+export const UpdatePolicySchema = z.object({
+  /** Background / interval checks. default true (aligned with checkUpdatesOnStartup). */
+  autoCheck: z.boolean().default(true),
+  /** After updateAvailable, download installer in background. default false. */
+  autoDownload: z.boolean().default(false),
+  /** Check interval hours. default 24; clamp 1..168 in withPrefs. */
+  checkIntervalHours: z.number().int().min(1).max(168).default(24),
+  /**
+   * L3 placeholder: allow silent install after ready.
+   * 1.1.7 stores only — never auto-installs.
+   */
+  silentInstall: z.boolean().default(false),
+  /** ISO time user accepted silentInstall (audit). */
+  silentInstallAcceptedAt: z.string().nullable().optional(),
+});
+
+export type UpdatePolicy = z.infer<typeof UpdatePolicySchema>;
+
 /** Built-in coding profiles (seeded when prefs.codingProfiles is empty). */
 export function defaultCodingProfiles(): CodingProfile[] {
   return [
@@ -225,6 +247,16 @@ export const UiPrefsSchema = z.object({
     maxBodies: 2,
     maxBodyChars: 6_000,
   }),
+  /**
+   * Update ladder (1.1.7+). autoDownload default false; silentInstall is storage-only until 1.1.8.
+   */
+  updatePolicy: UpdatePolicySchema.default({
+    autoCheck: true,
+    autoDownload: false,
+    checkIntervalHours: 24,
+    silentInstall: false,
+    silentInstallAcceptedAt: null,
+  }),
 });
 
 export type UiPrefs = z.infer<typeof UiPrefsSchema>;
@@ -261,6 +293,13 @@ export const AppConfigSchema = z.object({
     activeCodingProfileId: "",
     modelRoles: {},
     skillMatch: { enabled: true, maxBodies: 2, maxBodyChars: 6_000 },
+    updatePolicy: {
+      autoCheck: true,
+      autoDownload: false,
+      checkIntervalHours: 24,
+      silentInstall: false,
+      silentInstallAcceptedAt: null,
+    },
   }),
 });
 
@@ -290,6 +329,13 @@ export function defaultAppConfig(): AppConfig {
       activeCodingProfileId: "",
       modelRoles: {},
       skillMatch: { enabled: true, maxBodies: 2, maxBodyChars: 6_000 },
+      updatePolicy: {
+        autoCheck: true,
+        autoDownload: false,
+        checkIntervalHours: 24,
+        silentInstall: false,
+        silentInstallAcceptedAt: null,
+      },
     },
     providers: [
       {

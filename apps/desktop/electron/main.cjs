@@ -157,8 +157,214 @@ let mcpHostPromise = null;
 /** @type {InstanceType<typeof UpdateDownloader> | null} */
 let updateDownloader = null;
 
+/** Last successful check result (for downloadStatus enrichment). */
+let lastUpdateCheckResult = null;
+
+/** @type {ReturnType<typeof setInterval> | null} */
+let updateIntervalTimer = null;
+
 function getUpdatesDir() {
   return path.join(app.getPath("userData"), "updates");
+}
+
+/**
+ * Normalize prefs.updatePolicy with defaults (1.1.7).
+ * @param {any} prefs
+ */
+function readUpdatePolicy(prefs) {
+  const up = prefs?.updatePolicy && typeof prefs.updatePolicy === "object" ? prefs.updatePolicy : {};
+  const hoursRaw = Number(up.checkIntervalHours);
+  const hours = Number.isFinite(hoursRaw)
+    ? Math.max(1, Math.min(168, Math.round(hoursRaw)))
+    : 24;
+  return {
+    autoCheck: up.autoCheck !== false,
+    autoDownload: up.autoDownload === true,
+    checkIntervalHours: hours,
+    silentInstall: up.silentInstall === true,
+    silentInstallAcceptedAt:
+      up.silentInstallAcceptedAt === null || up.silentInstallAcceptedAt === undefined
+        ? null
+        : String(up.silentInstallAcceptedAt || "") || null,
+  };
+}
+
+/**
+ * True if updatesDir already has a complete .exe that looks like `version`.
+ * Best-effort filename match; falls back to any large .exe when version empty.
+ * @param {string} version
+ */
+async function hasLocalInstallerForVersion(version) {
+  const dir = getUpdatesDir();
+  const ver = String(version || "")
+    .trim()
+    .replace(/^v/i, "")
+    .toLowerCase();
+  try {
+    const names = await fs.readdir(dir);
+    for (const name of names) {
+      const lower = name.toLowerCase();
+      if (!lower.endsWith(".exe") || lower.endsWith(".blockmap")) continue;
+      const p = path.join(dir, name);
+      try {
+        const st = await fs.stat(p);
+        if (!st.isFile() || st.size < 1024 * 1024) continue;
+        if (!ver) return true;
+        // Match 1.1.7 / v1.1.7 / 1_1_7 style fragments in filename
+        const compact = ver.replace(/\./g, "");
+        if (lower.includes(ver) || (compact.length >= 3 && lower.includes(compact))) {
+          return true;
+        }
+        // Also accept newest complete installer when only one large exe exists
+      } catch {
+        /* ignore */
+      }
+    }
+    // If version-tagged file missing, still treat "any complete exe" as present only when
+    // resolveInstallerPath finds one AND caller already compared versions — keep strict: false.
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Build UI-facing download/check status (extends raw UpdateDownloader state).
+ * Maps completed → ready for Settings status bar.
+ */
+async function getEnrichedUpdateDownloadStatus() {
+  const downloader = getUpdateDownloader();
+  const raw = downloader.getState();
+  // Ensure disk-scanned installer is reflected after restart
+  if (raw.status === "idle" || !raw.filePath) {
+    try {
+      await downloader.resolveInstallerPath();
+    } catch {
+      /* ignore */
+    }
+  }
+  const st = downloader.getState();
+  let cfgPrefs = null;
+  try {
+    cfgPrefs = (await readConfig())?.prefs;
+  } catch {
+    /* ignore */
+  }
+  const policy = readUpdatePolicy(cfgPrefs);
+  const currentVersion = app.getVersion() || "0.0.0";
+  const availableVersion =
+    lastUpdateCheckResult?.latestVersion ||
+    (st.fileName
+      ? String(st.fileName).match(/(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.]+)?)/)?.[1] || null
+      : null);
+
+  /** @type {string} */
+  let status = st.status || "idle";
+  if (status === "completed") status = "ready";
+  else if (status === "idle" && st.filePath) status = "ready";
+  else if (
+    status === "idle" &&
+    lastUpdateCheckResult &&
+    lastUpdateCheckResult.ok &&
+    !lastUpdateCheckResult.skipped &&
+    lastUpdateCheckResult.updateAvailable === false
+  ) {
+    status = "up_to_date";
+  }
+
+  return {
+    ...st,
+    status,
+    // Keep raw downloader status for callers that still expect "completed"
+    downloadStatus: st.status,
+    currentVersion,
+    availableVersion: availableVersion || null,
+    autoDownloadEnabled: policy.autoDownload,
+    autoCheckEnabled: policy.autoCheck,
+    silentInstallEnabled: policy.silentInstall,
+    checkIntervalHours: policy.checkIntervalHours,
+  };
+}
+
+/**
+ * Start background download of recommended asset when policy allows.
+ * Never installs / openPath. Failures stay in downloader state.
+ * @param {any} checkResult
+ * @param {{ reason?: string }} [meta]
+ */
+async function maybeAutoDownloadUpdate(checkResult, meta = {}) {
+  try {
+    if (!checkResult?.ok || checkResult.skipped) return null;
+    if (!checkResult.updateAvailable || !checkResult.latestVersion) return null;
+
+    let cfg = null;
+    try {
+      cfg = await readConfig();
+    } catch {
+      return null;
+    }
+    const policy = readUpdatePolicy(cfg?.prefs);
+    if (!policy.autoDownload) return null;
+
+    const downloader = getUpdateDownloader();
+    if (downloader.getState().status === "downloading") return null;
+
+    const already = await hasLocalInstallerForVersion(checkResult.latestVersion);
+    if (already) {
+      // Refresh resolve so UI shows ready
+      await downloader.resolveInstallerPath().catch(() => null);
+      return null;
+    }
+
+    // Also skip if resolve already has a completed file for this session
+    const existing = await downloader.resolveInstallerPath().catch(() => null);
+    if (existing) {
+      const base = path.basename(existing).toLowerCase();
+      const ver = String(checkResult.latestVersion).replace(/^v/i, "").toLowerCase();
+      if (base.includes(ver) || base.includes(ver.replace(/\./g, ""))) {
+        return null;
+      }
+    }
+
+    const asset = checkResult.recommendedAsset;
+    if (!asset?.url && !asset?.mirrorUrl) return null;
+    const url = asset.mirrorUrl ? String(asset.mirrorUrl) : String(asset.url || "");
+    if (!url) return null;
+
+    // Fire-and-forget download; do not install
+    void downloader
+      .start({
+        url,
+        fileName: String(asset.name || ""),
+        expectedSize: Number(asset.size) || undefined,
+      })
+      .then((st) => {
+        if (st?.status === "completed" || st?.filePath) {
+          broadcast("update:ready", {
+            ...st,
+            status: "ready",
+            availableVersion: checkResult.latestVersion,
+            currentVersion: checkResult.currentVersion,
+            reason: meta.reason || "autoDownload",
+          });
+        }
+      })
+      .catch((err) => {
+        // State already failed/cancelled via downloader; surface once
+        try {
+          broadcast("update:download", {
+            ...downloader.getState(),
+            autoDownloadEnabled: true,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        } catch {
+          /* ignore */
+        }
+      });
+    return { started: true, reason: meta.reason || "autoDownload" };
+  } catch {
+    return null;
+  }
 }
 
 function getUpdateDownloader() {
@@ -1110,20 +1316,79 @@ async function persistUpdateCheckStamp(checkedAt) {
   }
 }
 
+/**
+ * Run a silent check; notify UI; optionally auto-download (L1).
+ * @param {{ force?: boolean, reason?: string }} [opts]
+ */
+async function runSilentUpdateCheck(opts = {}) {
+  const result = await checkForUpdates({ force: Boolean(opts.force), silent: true });
+  lastUpdateCheckResult = result;
+  if (result?.updateAvailable && result.latestVersion) {
+    broadcast("update:available", result);
+    await maybeAutoDownloadUpdate(result, { reason: opts.reason || "silent-check" });
+  }
+  return result;
+}
+
+/**
+ * Interval checks when updatePolicy.autoCheck is on.
+ * Uses max(checkIntervalHours, 6h hard throttle already in checkForUpdates).
+ */
+function scheduleUpdateIntervalChecks() {
+  if (updateIntervalTimer) {
+    clearInterval(updateIntervalTimer);
+    updateIntervalTimer = null;
+  }
+  void (async () => {
+    try {
+      const cfg = await readConfig();
+      const policy = readUpdatePolicy(cfg?.prefs);
+      // Legacy kill-switch still wins for any background check scheduling
+      if (cfg.prefs?.checkUpdatesOnStartup === false && policy.autoCheck === false) return;
+      if (policy.autoCheck === false) return;
+      const hours = policy.checkIntervalHours || 24;
+      // Poll a bit more often than interval; checkForUpdates enforces 6h min + lastUpdateCheckAt
+      const ms = Math.max(UPDATE_CHECK_MIN_INTERVAL_MS, Math.round(hours * 60 * 60 * 1000));
+      updateIntervalTimer = setInterval(() => {
+        void (async () => {
+          try {
+            const live = await readConfig();
+            const p = readUpdatePolicy(live?.prefs);
+            if (p.autoCheck === false) return;
+            if (live.prefs?.checkUpdatesOnStartup === false && p.autoCheck !== true) return;
+            await runSilentUpdateCheck({ force: false, reason: "interval" });
+          } catch {
+            /* ignore */
+          }
+        })();
+      }, ms);
+      // Don't keep Node alive solely for this timer in tests
+      if (typeof updateIntervalTimer.unref === "function") updateIntervalTimer.unref();
+    } catch {
+      /* ignore */
+    }
+  })();
+}
+
 async function maybeCheckUpdatesOnStartup() {
   try {
     const cfg = await readConfig();
-    if (cfg.prefs?.checkUpdatesOnStartup === false) return;
-    // Delay so UI can paint; silent — only notify when a newer release exists.
+    const policy = readUpdatePolicy(cfg?.prefs);
+    // Startup check still respects legacy checkUpdatesOnStartup; autoCheck===false also skips.
+    if (cfg.prefs?.checkUpdatesOnStartup === false) {
+      // Still schedule interval only if autoCheck explicitly true (user re-enabled via new field)
+      if (policy.autoCheck === true && cfg.prefs?.checkUpdatesOnStartup === false) {
+        // Legacy false wins for startup; interval still allowed if autoCheck true
+        scheduleUpdateIntervalChecks();
+      }
+      return;
+    }
+    if (policy.autoCheck === false) return;
+    // Delay so UI can paint; silent — notify + optional L1 auto-download.
     setTimeout(() => {
-      void checkForUpdates({ force: false, silent: true })
-        .then((result) => {
-          if (result?.updateAvailable && result.latestVersion) {
-            broadcast("update:available", result);
-          }
-        })
-        .catch(() => {});
+      void runSilentUpdateCheck({ force: false, reason: "startup" }).catch(() => {});
     }, 8_000);
+    scheduleUpdateIntervalChecks();
   } catch {
     /* ignore */
   }
@@ -1229,7 +1494,13 @@ function registerIpc() {
   });
 
   ipcMain.handle("update:check", async (_evt, payload = {}) => {
-    return checkForUpdates({ force: payload?.force !== false });
+    const result = await checkForUpdates({ force: payload?.force !== false });
+    lastUpdateCheckResult = result;
+    // Manual check can also trigger L1 auto-download when policy is on
+    if (result?.updateAvailable && result.latestVersion) {
+      void maybeAutoDownloadUpdate(result, { reason: "manual-check" }).catch(() => {});
+    }
+    return result;
   });
 
   /**
@@ -1282,7 +1553,7 @@ function registerIpc() {
   });
 
   ipcMain.handle("update:downloadStatus", async () => {
-    return getUpdateDownloader().getState();
+    return getEnrichedUpdateDownloadStatus();
   });
 
   /**
@@ -2622,6 +2893,41 @@ function registerIpc() {
     if (typeof payload.updateProxyBase === "string") {
       patch.updateProxyBase = payload.updateProxyBase.trim() || DEFAULT_GHPROXY_BASE;
     }
+    // 1.1.7 updatePolicy (L1+L2; silentInstall storage-only)
+    if (payload.updatePolicy && typeof payload.updatePolicy === "object") {
+      const up = payload.updatePolicy;
+      /** @type {Record<string, unknown>} */
+      const nextUp = { ...(cfg.prefs?.updatePolicy || {}) };
+      if (typeof up.autoCheck === "boolean") nextUp.autoCheck = up.autoCheck;
+      if (typeof up.autoDownload === "boolean") nextUp.autoDownload = up.autoDownload;
+      if (typeof up.silentInstall === "boolean") {
+        nextUp.silentInstall = up.silentInstall;
+        // Stamp acceptance when turning on (audit); clear when off
+        if (up.silentInstall === true && !nextUp.silentInstallAcceptedAt) {
+          nextUp.silentInstallAcceptedAt = new Date().toISOString();
+        }
+        if (up.silentInstall === false) {
+          nextUp.silentInstallAcceptedAt = null;
+        }
+      }
+      if (up.silentInstallAcceptedAt !== undefined) {
+        nextUp.silentInstallAcceptedAt =
+          up.silentInstallAcceptedAt === null
+            ? null
+            : String(up.silentInstallAcceptedAt || "") || null;
+      }
+      if (up.checkIntervalHours != null) {
+        const n = Number(up.checkIntervalHours);
+        if (Number.isFinite(n)) {
+          nextUp.checkIntervalHours = Math.max(1, Math.min(168, Math.round(n)));
+        }
+      }
+      patch.updatePolicy = nextUp;
+      // Keep legacy startup flag loosely aligned with autoCheck when both present
+      if (typeof up.autoCheck === "boolean" && payload.checkUpdatesOnStartup === undefined) {
+        patch.checkUpdatesOnStartup = up.autoCheck;
+      }
+    }
     if (payload.compactMaxChars != null) {
       const n = Number(payload.compactMaxChars);
       if (Number.isFinite(n)) patch.compactMaxChars = Math.max(8_000, Math.min(200_000, Math.floor(n)));
@@ -2682,6 +2988,10 @@ function registerIpc() {
     }
     const next = configMod.withPrefs(cfg, patch);
     await writeConfig(next);
+    // Reschedule interval checks when update policy / startup flag changes
+    if (patch.updatePolicy !== undefined || patch.checkUpdatesOnStartup !== undefined) {
+      scheduleUpdateIntervalChecks();
+    }
     return configMod.publicConfigView(next);
   });
 

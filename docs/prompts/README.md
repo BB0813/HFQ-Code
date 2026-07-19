@@ -33,6 +33,11 @@
 | [1.1.6-handoff.md](./1.1.6-handoff.md) | 1.1.6 前后端整包实现 Prompt | done · 已实现 |
 | [1.1.6-integration-audit.md](./1.1.6-integration-audit.md) | 1.1.6 统筹联调审计 + 孤儿 goal FE 修补 | done · 收口 |
 | [release-1.1.6.md](./release-1.1.6.md) | 发版 Agent：抬版本 1.1.6 + release:check + 打包 tag | done（1.1.6 shipped） |
+| [1.1.7-handoff.md](./1.1.7-handoff.md) | 1.1.7 更新 L1+L2（后台下载 + 一键安装） | done · 实现在工作区 |
+| [release-1.1.7.md](./release-1.1.7.md) | **发版 Agent：抬版本 1.1.7 + release:check + 打包 tag** | **active · 待发版** |
+| [1.1.8-l3-handoff.md](./1.1.8-l3-handoff.md) | **1.1.8 完整 L3 静默升级（最迟）** | **scheduled · 依赖 1.1.7 ship** |
+
+阶梯总册（非 prompt，实现必读）：[`docs/UPDATE-L1-L3.md`](../UPDATE-L1-L3.md) · DECISIONS Q9
 
 ## 与产品文档的关系
 

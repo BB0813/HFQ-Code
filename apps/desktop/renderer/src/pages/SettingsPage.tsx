@@ -60,6 +60,14 @@ export function SettingsPage() {
   const [loaded, setLoaded] = useState(false);
   const [diagBusy, setDiagBusy] = useState<string | null>(null);
   const [dlPercent, setDlPercent] = useState<number | null>(null);
+  // 1.1.7 update policy
+  const [autoCheck, setAutoCheck] = useState(true);
+  const [autoDownload, setAutoDownload] = useState(false);
+  const [silentInstall, setSilentInstall] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<string>("idle");
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [checkIntervalHours, setCheckIntervalHours] = useState(24);
 
   useEffect(() => {
     if (!hasHfq()) {
@@ -135,6 +143,14 @@ export function SettingsPage() {
         if (typeof prefs.compactMaxChars === "number") {
           setCompactMaxChars(String(Math.round(prefs.compactMaxChars)));
         }
+        // 1.1.7 updatePolicy
+        const up = (prefs.updatePolicy || {}) as Record<string, unknown>;
+        if (typeof up.autoCheck === "boolean") setAutoCheck(up.autoCheck);
+        if (typeof up.autoDownload === "boolean") setAutoDownload(up.autoDownload);
+        if (typeof up.silentInstall === "boolean") setSilentInstall(up.silentInstall);
+        if (typeof up.checkIntervalHours === "number") {
+          setCheckIntervalHours(Math.min(168, Math.max(1, Math.round(up.checkIntervalHours))));
+        }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -159,6 +175,12 @@ export function SettingsPage() {
         activeCodingProfileId,
         skillMatch: { enabled: skillMatchEnabled },
         compactMaxChars: clampCompactChars(compactMaxChars),
+        updatePolicy: {
+          autoCheck,
+          autoDownload,
+          silentInstall,
+          checkIntervalHours: Math.min(168, Math.max(1, Math.round(checkIntervalHours))),
+        },
         modelRoles: {
           title: titleModel.trim() ? { model: titleModel.trim() } : null,
           compression: compressionModel.trim() ? { model: compressionModel.trim() } : null,
@@ -425,6 +447,214 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
+          {/* 1.1.7 Update management */}
+          <Card className="border-border/70 bg-card/70 shadow-none">
+            <CardHeader className="p-3.5 pb-1.5">
+              <CardTitle className="text-sm">更新</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 p-3.5 pt-1.5">
+              {/* Policy toggles */}
+              <label className="flex cursor-pointer items-center justify-between gap-3 text-xs">
+                <span className="text-muted-foreground">启动时自动检查更新</span>
+                <Switch checked={autoCheck} onCheckedChange={setAutoCheck} />
+              </label>
+              <label className="flex cursor-pointer items-center justify-between gap-3 text-xs">
+                <span className="text-muted-foreground">有更新时后台自动下载</span>
+                <Switch checked={autoDownload} onCheckedChange={setAutoDownload} />
+              </label>
+              <label className="flex cursor-pointer items-center justify-between gap-3 text-xs opacity-50">
+                <span className="text-muted-foreground">自动安装（1.1.8 预置）</span>
+                <Switch
+                  checked={silentInstall}
+                  onCheckedChange={(v) => {
+                    setSilentInstall(v);
+                    toast.message("自动安装将在 1.1.8 版本生效");
+                  }}
+                  disabled
+                />
+              </label>
+
+              {/* Status + actions */}
+              <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-foreground/80">
+                    {updateStatus === "idle" && "等待检查"}
+                    {updateStatus === "checking" && "正在检查更新…"}
+                    {updateStatus === "downloading" && "下载中"}
+                    {updateStatus === "ready" && `新版本已就绪${updateVersion ? ` · v${updateVersion}` : ""}`}
+                    {updateStatus === "failed" && "更新失败"}
+                    {updateStatus === "up_to_date" && "已是最新版本"}
+                    {updateStatus === "cancelled" && "已取消"}
+                  </span>
+                  {updateVersion && updateStatus !== "ready" && (
+                    <span className="text-muted-foreground">{updateVersion}</span>
+                  )}
+                </div>
+                {updateStatus === "downloading" && dlPercent != null && (
+                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-border">
+                    <div
+                      className="h-full rounded-full bg-workbench transition-all duration-300"
+                      style={{ width: `${Math.min(100, dlPercent)}%` }}
+                    />
+                  </div>
+                )}
+                {updateError && (
+                  <div className="mt-1 text-destructive">{updateError}</div>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                <Button
+                  size="sm"
+                  variant={updateStatus === "ready" ? "secondary" : "outline"}
+                  disabled={!!diagBusy}
+                  onClick={async () => {
+                    setDiagBusy("update");
+                    setUpdateError(null);
+                    try {
+                      const r = (await getHfq().checkForUpdates({ force: true })) as {
+                        updateAvailable?: boolean;
+                        recommendedAsset?: { url?: string; name?: string };
+                      };
+                      if (r?.updateAvailable) {
+                        setUpdateStatus("idle");
+                        toast.success("发现新版本，可下载安装");
+                      } else {
+                        setUpdateStatus("up_to_date");
+                        toast.success("已是最新版本");
+                      }
+                    } catch (e) {
+                      const msg = e instanceof Error ? e.message : String(e);
+                      setUpdateError(msg);
+                      setUpdateStatus("failed");
+                      toast.error(msg);
+                    } finally {
+                      setDiagBusy(null);
+                    }
+                  }}
+                >
+                  {diagBusy === "update" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  检查更新
+                </Button>
+                {updateStatus === "ready" ? (
+                  <Button
+                    size="sm"
+                    variant="default"
+                    disabled={!!diagBusy}
+                    onClick={async () => {
+                      setDiagBusy("install");
+                      setUpdateError(null);
+                      let off: (() => void) | undefined;
+                      try {
+                        off = getHfq().onUpdateDownload?.((st) => {
+                          const s = st as UpdateDownloadStatus;
+                          if (s?.status === "downloading" && s?.percent != null) {
+                            setDlPercent(s.percent);
+                            toast.message(`正在下载安装包… ${Math.round(s.percent)}%`, { id: "upd-dl" });
+                          }
+                          if (s?.status === "failed") {
+                            toast.error(String(s.error || "自动下载失败"), { id: "upd-dl" });
+                          }
+                        });
+                        const r = (await getHfq().installUpdate({})) as InstallUpdateResult;
+                        if (r?.cancelled) {
+                          toast.message("已取消安装");
+                        } else if (r?.ok === false) {
+                          const msg = humanizeInstallError(String(r.error || "安装失败"));
+                          setUpdateError(msg);
+                          toast.error(msg);
+                        } else if (r?.quitSuggested) {
+                          toast.success("安装程序已打开，完成后可关闭本窗口");
+                        } else {
+                          toast.success("安装程序已打开");
+                        }
+                      } catch (e) {
+                        const msg = humanizeInstallError(e instanceof Error ? e.message : String(e));
+                        setUpdateError(msg);
+                        toast.error(msg);
+                      } finally {
+                        off?.();
+                        setDiagBusy(null);
+                      }
+                    }}
+                  >
+                    {diagBusy === "install" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    安装更新
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!!diagBusy}
+                    onClick={async () => {
+                      setDiagBusy("download");
+                      setDlPercent(0);
+                      setUpdateError(null);
+                      let off: (() => void) | undefined;
+                      try {
+                        off = getHfq().onUpdateDownload?.((st) => {
+                          const s = st as UpdateDownloadStatus;
+                          if (s?.percent != null) {
+                            const p = Math.max(0, Math.min(100, Math.round(Number(s.percent))));
+                            setDlPercent(p);
+                            setUpdateStatus("downloading");
+                            toast.message(`下载中 ${p}%`, { id: "upd-dl" });
+                          }
+                          if (s?.status === "completed") {
+                            setUpdateStatus("ready");
+                            toast.success("下载完成，可点安装更新", { id: "upd-dl" });
+                          }
+                          if (s?.status === "failed") {
+                            setUpdateError(String(s.error || "下载失败"));
+                            setUpdateStatus("failed");
+                            toast.error(String(s.error || "下载失败"), { id: "upd-dl" });
+                          }
+                          if (s?.status === "cancelled") {
+                            toast.message("已取消下载", { id: "upd-dl" });
+                          }
+                        });
+                        await getHfq().downloadUpdate({});
+                        setUpdateStatus("ready");
+                        toast.success("下载完成，可点安装更新", { id: "upd-dl" });
+                        setDlPercent(100);
+                      } catch (e) {
+                        const msg = e instanceof Error ? e.message : String(e);
+                        setUpdateError(msg);
+                        setUpdateStatus("failed");
+                        toast.error(msg, { id: "upd-dl" });
+                      } finally {
+                        off?.();
+                        setDiagBusy(null);
+                      }
+                    }}
+                  >
+                    {diagBusy === "download" && dlPercent != null
+                      ? `下载中 ${Math.round(dlPercent)}%`
+                      : "下载更新"}
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={!!diagBusy}
+                  onClick={async () => {
+                    try {
+                      await getHfq().openReleasePage({});
+                    } catch (e) {
+                      toast.error(e instanceof Error ? e.message : String(e));
+                    }
+                  }}
+                >
+                  打开发布页
+                </Button>
+              </div>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                安装包发布者 HFQ-ClodBreeze（自签）；首次可能触发 SmartScreen。{autoCheck ? `每 ${checkIntervalHours}h 后台检查。` : ""}
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Diagnostics */}
           <Card className="border-border/70 bg-card/70 shadow-none">
             <CardHeader className="p-3.5 pb-1.5">
               <CardTitle className="text-sm">诊断</CardTitle>
@@ -433,7 +663,6 @@ export function SettingsPage() {
               <Button
                 size="sm"
                 variant="outline"
-               
                 disabled={!!diagBusy}
                 onClick={async () => {
                   setDiagBusy("export");
@@ -446,9 +675,7 @@ export function SettingsPage() {
                     if (res?.dir) {
                       try {
                         await getHfq().revealInFolder({ path: String(res.dir) });
-                      } catch {
-                        /* reveal is best-effort */
-                      }
+                      } catch { /* best-effort */ }
                       toast.success(`诊断包已导出 · ${res.dir}`);
                     } else {
                       toast.success("诊断包已导出");
@@ -465,146 +692,6 @@ export function SettingsPage() {
                 {diagBusy === "export" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                 导出诊断包
               </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!!diagBusy}
-                onClick={async () => {
-                  setDiagBusy("update");
-                  try {
-                    const r = (await getHfq().checkForUpdates({ force: true })) as {
-                      updateAvailable?: boolean;
-                      recommendedAsset?: { url?: string; name?: string };
-                    };
-                    setError(null);
-                    if (r?.updateAvailable) {
-                      toast.success("发现新版本，可下载安装");
-                    } else {
-                      toast.success("已是最新版本");
-                    }
-                  } catch (e) {
-                    const msg = e instanceof Error ? e.message : String(e);
-                    setError(msg);
-                    toast.error(msg);
-                  } finally {
-                    setDiagBusy(null);
-                  }
-                }}
-              >
-                {diagBusy === "update" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                检查更新
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!!diagBusy}
-                onClick={async () => {
-                  setDiagBusy("download");
-                  setDlPercent(0);
-                  let off: (() => void) | undefined;
-                  try {
-                    off = getHfq().onUpdateDownload?.((st) => {
-                      const s = st as UpdateDownloadStatus;
-                      const status = String(s?.status ?? "");
-                      if (s?.percent != null) {
-                        const p = Math.max(0, Math.min(100, Math.round(Number(s.percent))));
-                        setDlPercent(p);
-                        toast.message(`下载中 ${p}%`, { id: "upd-dl" });
-                      }
-                      if (status === "failed") {
-                        toast.error(String(s.error || "下载失败"), { id: "upd-dl" });
-                      }
-                      if (status === "cancelled") {
-                        toast.message("已取消下载", { id: "upd-dl" });
-                      }
-                    });
-                    await getHfq().downloadUpdate({});
-                    toast.success("下载完成，可点安装更新", { id: "upd-dl" });
-                    setDlPercent(100);
-                  } catch (e) {
-                    const msg = e instanceof Error ? e.message : String(e);
-                    setError(msg);
-                    toast.error(msg, { id: "upd-dl" });
-                  } finally {
-                    off?.();
-                    setDiagBusy(null);
-                  }
-                }}
-              >
-                {diagBusy === "download" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                {diagBusy === "download" && dlPercent != null
-                  ? `下载中 ${dlPercent}%`
-                  : "下载更新"}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={!!diagBusy}
-                onClick={async () => {
-                  setDiagBusy("install");
-                  let off: (() => void) | undefined;
-                  try {
-                    // Backend may auto-download when no local installer (D3).
-                    off = getHfq().onUpdateDownload?.((st) => {
-                      const s = st as UpdateDownloadStatus;
-                      const status = String(s?.status ?? "");
-                      if (status === "downloading" && s?.percent != null) {
-                        const p = Math.max(0, Math.min(100, Math.round(Number(s.percent))));
-                        setDlPercent(p);
-                        toast.message(`正在下载安装包… ${p}%`, { id: "upd-dl" });
-                      }
-                      if (status === "failed") {
-                        toast.error(String(s.error || "自动下载失败"), { id: "upd-dl" });
-                      }
-                    });
-                    const r = (await getHfq().installUpdate({})) as InstallUpdateResult;
-                    if (r && r.cancelled) {
-                      toast.message("已取消安装");
-                    } else if (r && r.ok === false) {
-                      const msg = humanizeInstallError(String(r.error || "安装失败"));
-                      setError(msg);
-                      toast.error(msg);
-                    } else if (r?.quitSuggested) {
-                      toast.success("安装程序已打开，完成后可关闭本窗口");
-                    } else {
-                      toast.success("安装程序已打开");
-                    }
-                  } catch (e) {
-                    const msg = humanizeInstallError(
-                      e instanceof Error ? e.message : String(e),
-                    );
-                    setError(msg);
-                    toast.error(msg);
-                  } finally {
-                    off?.();
-                    setDiagBusy(null);
-                  }
-                }}
-              >
-                {diagBusy === "install" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                安装更新
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={!!diagBusy}
-                onClick={async () => {
-                  try {
-                    await getHfq().openReleasePage({});
-                  } catch (e) {
-                    toast.error(e instanceof Error ? e.message : String(e));
-                  }
-                }}
-              >
-                打开发布页
-              </Button>
-              <p className="basis-full text-[11px] leading-relaxed text-muted-foreground">
-                安装包发布者 HFQ-ClodBreeze（自签）；首次可能触发 SmartScreen。
-                不会在检查后静默下载，需手动「下载更新」或「安装更新」。
-                {dlPercent != null && diagBusy === "download"
-                  ? ` · 进度 ${dlPercent}%`
-                  : ""}
-              </p>
             </CardContent>
           </Card>
         </div>
