@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.1.8 — 2026-07-20
+
+### Backend / config
+
+- **L3 silent install (opt-in)**: `prefs.updatePolicy.silentInstall` (default false) + `silentInstallAcceptedAt`; `installUpdate({ mode:"silent" })` / `installUpdateSilent`.
+- **pending-install.json** under `userData/updates` + detached NSIS **`/S`** + `app.quit()`; boot recovery clears on success, keeps on failure.
+- **Portable** runtime/asset rejects silent; path sandbox stays under updates dir; L2 `mode:"ui"` / openPath fallback unchanged.
+- `@hfq/shared` `update-silent` helpers + unit tests; `apps/desktop/electron/update-silent.cjs`.
+
+### Desktop UI
+
+- Settings: enable silent with secondary confirm; ready + silent → **安装并重启**; silent off → **安装更新** (wizard).
+- Bootstrap failsafe: longer timeout and clear sticky error when bootstrap settles.
+
+### Docs
+
+- `docs/RELEASE-1.1.8.md` · UPDATE-L1-L3 L3 shipped · prompts release/test/handoff 1.1.8
+
+---
+
 ## 1.1.7 — 2026-07-20
 
 ### Backend / config

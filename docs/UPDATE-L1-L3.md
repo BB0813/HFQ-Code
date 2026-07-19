@@ -1,9 +1,9 @@
 # HFQ Code · 应用内更新阶梯（L0 → L3）
 
-> 状态：**L1+L2 shipped (1.1.7)** · **L3 backend shipped (1.1.8)**  
-> 基线：1.1.7（L1 后台下载 + L2 就绪一键确认安装）；1.1.8 = L3 opt-in silent NSIS  
-> 相关：`docs/UPDATE-D3.md` · `docs/PACKAGING.md` · `docs/DECISIONS.md` Q9 · `docs/RELEASE-1.1.7.md`  
-> 实现交接：`docs/prompts/1.1.7-handoff.md`（L1+L2 · done）· `docs/prompts/1.1.8-l3-handoff.md`（L3）
+> 状态：**L1+L2 shipped (1.1.7)** · **L3 shipped (1.1.8)** — opt-in silent NSIS `/S`  
+> 基线：1.1.8 = L3 opt-in silent install；1.1.7 = L1 后台下载 + L2 就绪一键确认安装  
+> 相关：`docs/UPDATE-D3.md` · `docs/PACKAGING.md` · `docs/DECISIONS.md` Q9 · `docs/RELEASE-1.1.8.md`  
+> 实现交接：`docs/prompts/1.1.7-handoff.md`（L1+L2 · done）· `docs/prompts/1.1.8-l3-handoff.md`（L3 · done）
 
 ---
 
@@ -175,13 +175,13 @@ L3 改为（概念）：
 - [x] 启动读 marker：version ≥ target → 清 marker + `update:installed`；否则保留 + `update:install-pending`  
 - [x] L2 `mode:"ui"` / openPath 回退仍可用  
 - [x] `@hfq/shared` update-silent 单测 + docs 同步  
-- [ ] 真包 `pack:win` 旧→新 L3 手工冒烟（发版/联调）  
+- [x] 真包 `pack:win` 旧→新 L3 手工冒烟（路径 A PASS · 1.1.7→1.1.8 · `/S` · 见 `docs/RELEASE-1.1.8.md`）  
 
 #### 前端 / 发版
-- [ ] Settings 开关二次确认 + Portable 禁用  
-- [ ] ready + silent → CTA「安装并重启」走 silent  
-- [ ] 升级成功 toast；失败 L2 回退  
-- [ ] 数据目录保留（NSIS 升级固有行为，冒烟确认）  
+- [x] Settings 开关二次确认 + Portable 禁用  
+- [x] ready + silent → CTA「安装并重启」走 silent  
+- [x] 升级成功 toast；失败 L2 回退  
+- [x] 数据目录保留（路径 A：config/sessions 仍在）  
 
 ---
 

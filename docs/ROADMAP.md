@@ -1,13 +1,13 @@
 # HFQ Code — Development roadmap (post-1.0.5)
 
 Status: **active plan**  
-Baseline: product **1.1.7** (`v1.1.7`) · 2026-07-20  
-Last updated: 2026-07-20 · **1.1.7 L1+L2 shipped** · **Next: 1.1.8 full L3 auto-install (deadline)** — see [UPDATE-L1-L3.md](./UPDATE-L1-L3.md) · DECISIONS Q9
+Baseline: product **1.1.8** (`v1.1.8`) · 2026-07-20  
+Last updated: 2026-07-20 · **1.1.8 L3 opt-in silent install shipped** · Next: F2 remainder / 1.2 — see [UPDATE-L1-L3.md](./UPDATE-L1-L3.md) · DECISIONS Q9
 
 ## Positioning (frozen)
 
 - Windows-first **desktop coding agent** — not an IM gateway  
-- Update channel: **manual by default**; **L1 auto-download + L2 one-click** in 1.1.7; **L3 opt-in silent NSIS upgrade by 1.1.8** (never default-on) — [UPDATE-L1-L3.md](./UPDATE-L1-L3.md)  
+- Update channel: **manual by default**; **L1+L2** in 1.1.7; **L3 opt-in silent NSIS** in 1.1.8 (never default-on) — [UPDATE-L1-L3.md](./UPDATE-L1-L3.md)  
 - Workspace path-escape rejection; secrets never committed  
 - Large changes still check [DECISIONS.md](./DECISIONS.md) + [ARCHITECTURE.md](./ARCHITECTURE.md)
 
@@ -33,13 +33,13 @@ Last updated: 2026-07-20 · **1.1.7 L1+L2 shipped** · **Next: 1.1.8 full L3 aut
 | Thinking / reasoning stream | **Backend shipped** · ThinkingBlock UI present — polish optional |
 | React shell (Q6) | **Shipped** (1.0.10+) — pages under `apps/desktop/renderer` |
 
-### Next train (post-1.1.7)
+### Next train (post-1.1.8)
 
 | Owner | Work | Notes |
 |-------|------|--------|
-| **Product** | **1.1.8 · Update L3（最迟）** | opt-in silent NSIS upgrade + pending marker + relaunch — [prompts/1.1.8-l3-handoff.md](./prompts/1.1.8-l3-handoff.md) · [UPDATE-L1-L3.md](./UPDATE-L1-L3.md) |
+| **Product** | **1.1.8 · Update L3** | opt-in silent NSIS `/S` + pending marker + relaunch | **Shipped** (`v1.1.8`) — [RELEASE-1.1.8.md](./RELEASE-1.1.8.md) |
 | **Product** | **1.1.7 · Update L1+L2** | `updatePolicy` · background auto-download · ready UI · one-click confirm install | **Shipped** (`v1.1.7`) — [RELEASE-1.1.7.md](./RELEASE-1.1.7.md) |
-| **Product** | **1.2 / F2 remainder** | Memory inverted index / FTS5 · full Goal OS / multi-level tree · panel prefs — after update ladder |
+| **Product** | **1.2 / F2 remainder** | Memory inverted index / FTS5 · full Goal OS / multi-level tree · panel prefs |
 | **Product** | **1.1.6 full train** | compression LLM compact · goal sidecar · `read_document` · compactMaxChars · UI polish | **Shipped** (`v1.1.6`) — [RELEASE-1.1.6.md](./RELEASE-1.1.6.md) |
 | **Product** | **Track F — Adopt Kivio/Athena patterns** | Canonical: [ADOPT-KIVIO-ATHENA.md](./ADOPT-KIVIO-ATHENA.md) · DECISIONS Q8 |
 | **F1** | Chat mermaid · Coding Profiles · model roles · skill progressive match · goal fields · memory links · bundled `diagram` | **Shipped in 1.1.5** |

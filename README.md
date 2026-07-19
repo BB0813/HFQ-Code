@@ -8,7 +8,7 @@ Windows desktop **coding agent** (WorkBuddy / ZCode class): full GUI, workspace-
 
 ## Status
 
-**1.1.7** — Windows coding agent (Phase-1+2 + Phase-3 + 1.0.x + 1.1.x + F1 + 1.1.6 full train + update L1+L2 guided auto-download):
+**1.1.8** — Windows coding agent (Phase-1+2 + Phase-3 + 1.0.x + 1.1.x + F1 + 1.1.6 full train + update L1+L2 + **L3 opt-in silent NSIS**):
 
 - Session loop: create / resume / stop / delete / rename + auto-title, streaming, tokens, compaction, **plan mode**, **sub-agents**
 - **Session worker** (child process) for agent loop isolation; in-process fallback
@@ -18,12 +18,13 @@ Windows desktop **coding agent** (WorkBuddy / ZCode class): full GUI, workspace-
 - Memory 2.0 · Usage dashboard · Import wizard · `/goal` long-run + Tasks banner
 - Skills store: curated catalog · local folder + **remote https zip/tar.gz** · SKILL.md preview / conflict / tags
 - MCP: stdio + HTTP · Permissions + Audit · Changes · Terminal (one-shot) · Models
-- Update check: multi-source fallback (ghproxy mirrors → ungh → direct GitHub); **L1 optional background download** + **L2 ready install** (still confirm + NSIS wizard; L3 silent → 1.1.8)
+- Update check: multi-source fallback (ghproxy mirrors → ungh → direct GitHub); **L1 optional background download** + **L2 ready install** + **L3 opt-in silent NSIS `/S`** (default off; Portable has no L3)
 - Packaging: NSIS + portable · `pnpm release:check` / `pack:verify` · self-sign HFQ-ClodBreeze
 - Providers: delete mock/last channel · empty fail-closed · `models:list` · baseURL normalize
 - Session: open/send rebind to global active · identity pin against stale self-claims
 - Chat UI: topbar provider · model · model-id-only composer control · menus open upward
-- **1.1.7:** update L1+L2 — `updatePolicy` · background auto-download · ready UI · one-click confirm install (not silent; L3 in 1.1.8)
+- **1.1.8:** update L3 — opt-in silentInstall · pending-install · install-and-restart (`/S`) · Portable reject · bootstrap failsafe polish
+- **1.1.7:** update L1+L2 — `updatePolicy` · background auto-download · ready UI · one-click confirm install
 - **1.1.6:** compression model drives LLM compact · goal `*.goals.json` cold-start · `read_document` (text/docx/pdf) · Settings `compactMaxChars` · profile chip hot update · mermaid streaming-safe · Tasks parent indent
 - **1.1.5:** Coding Profiles (6 built-in) · mermaid chat rendering · skill progressive match · goal driver fields · memory links · bundled diagram skill
 - **1.1.4:** abort isolation (only deny own session tree); live list enriched with `permissionMode`/`planMode`; permission queue (multi-session FIFO); Chat MessageBlock/copy/lazy routes/CSS tokens
@@ -69,7 +70,7 @@ Self-signed signing **does not** guarantee SmartScreen clearance. Commercial OV/
 | `HFQ Code-*-portable.exe` | Portable; use `Launch-HFQ-Code.bat` for trust + start |
 | `SHA256SUMS.txt` | Checksums for the above |
 
-Update policy remains **manual**: in-app check → download → confirm open installer; no silent auto-install.
+Update policy: check → optional background download → ready → confirm install; **L3 silent is opt-in only** (default off; Portable has no L3).
 
 ## Version history
 
@@ -77,7 +78,8 @@ Full notes: [CHANGELOG.md](./CHANGELOG.md). Release handoffs: `docs/RELEASE-*.md
 
 | Version | Date | Summary |
 |---------|------|---------|
-| **[1.1.7](./docs/RELEASE-1.1.7.md)** | 2026-07-20 | Update L1+L2: background auto-download · ready UI · one-click confirm install · `updatePolicy` (silentInstall placeholder for 1.1.8) |
+| **[1.1.8](./docs/RELEASE-1.1.8.md)** | 2026-07-20 | Update L3 opt-in silent NSIS · pending-install · install-and-restart · Portable reject L3 · bootstrap failsafe |
+| **[1.1.7](./docs/RELEASE-1.1.7.md)** | 2026-07-20 | Update L1+L2 auto-download · ready UI · one-click confirm install (`updatePolicy`) |
 | **[1.1.6](./docs/RELEASE-1.1.6.md)** | 2026-07-20 | Compression LLM compact · goal sidecar cold-start · `read_document` · compactMaxChars · UI polish (profile chip / mermaid stream / Tasks indent) |
 | **[1.1.5](./docs/RELEASE-1.1.5.md)** | 2026-07-19 | Coding Profiles (6 built-in) · mermaid rendering · skill progressive match · goal driver fields · memory links · bundled diagram skill |
 | **[1.1.4](./docs/RELEASE-1.1.4.md)** | 2026-07-19 | Abort permission isolation; live list access modes; permission queue; Chat MessageBlock+copy; lazy routes; CSS token migration |

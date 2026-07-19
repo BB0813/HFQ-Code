@@ -35,10 +35,10 @@
 | [release-1.1.6.md](./release-1.1.6.md) | 发版 Agent：抬版本 1.1.6 + release:check + 打包 tag | done（1.1.6 shipped） |
 | [1.1.7-handoff.md](./1.1.7-handoff.md) | 1.1.7 更新 L1+L2（后台下载 + 一键安装） | done · shipped in 1.1.7 |
 | [release-1.1.7.md](./release-1.1.7.md) | 发版 Agent：抬版本 1.1.7 + release:check + 打包 tag | done（1.1.7 shipped） |
-| [1.1.8-l3-handoff.md](./1.1.8-l3-handoff.md) | 1.1.8 完整 L3 静默升级（实现） | done · 实现在工作区 · 待发版 |
+| [1.1.8-l3-handoff.md](./1.1.8-l3-handoff.md) | 1.1.8 完整 L3 静默升级（实现） | done · shipped in 1.1.8 |
 | [test-1.1.8-l3-gate.md](./test-1.1.8-l3-gate.md) | 测试 Agent：1.1.8 L3 发布门槛 | done · 已执行 |
-| [test-1.1.8-l3-report-brief.md](./test-1.1.8-l3-report-brief.md) | 测试回传简报 | **CONDITIONAL GO** · 差路径 A |
-| [release-1.1.8.md](./release-1.1.8.md) | **发版 Agent：1.1.8 L3 · tag 前强制真包路径 A** | **active · 待执行** |
+| [test-1.1.8-l3-report-brief.md](./test-1.1.8-l3-report-brief.md) | 测试回传简报 | CONDITIONAL GO → 路径 A PASS by release |
+| [release-1.1.8.md](./release-1.1.8.md) | 发版 Agent：1.1.8 L3 · tag 前强制真包路径 A | done（1.1.8 shipped · Path A PASS） |
 
 阶梯总册（非 prompt，实现必读）：[`docs/UPDATE-L1-L3.md`](../UPDATE-L1-L3.md) · DECISIONS Q9
 
