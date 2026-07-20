@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.1.9 — 2026-07-21
+
+### Backend / PTY
+
+- **Scrollback reattach**: `@hfq/pty` ring buffer + `getScrollback`; `PtySessionInfo.shellKind` / `alive`.
+- IPC `pty:getScrollback` · preload `ptyGetScrollback`.
+- Route switch does **not** kill PTY; explicit close still does.
+
+### Desktop UI
+
+- **Terminal**: remount / tab re-entry replays BE ring (+ FE cache); readable tab labels.
+- **Changes**: empty commit message toast **请先填写提交说明**; clearer no-staged toast.
+
+### Docs
+
+- `docs/RELEASE-1.1.9.md` · ROADMAP baseline 1.1.9 · next **1.2** UI plan · PTY/FRONTEND-IPC reattach notes  
+- Smoke helper `scripts/t1-pty-reattach.mjs` (Electron T1)
+
+---
+
 ## 1.1.8 — 2026-07-20
 
 ### Backend / config

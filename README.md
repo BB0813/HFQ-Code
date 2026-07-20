@@ -8,7 +8,7 @@ Windows desktop **coding agent** (WorkBuddy / ZCode class): full GUI, workspace-
 
 ## Status
 
-**1.1.8** — Windows coding agent (Phase-1+2 + Phase-3 + 1.0.x + 1.1.x + F1 + 1.1.6 full train + update L1+L2 + **L3 opt-in silent NSIS**):
+**1.1.9** — Windows coding agent (Phase-1+2 + Phase-3 + 1.0.x + 1.1.x + F1 + update L1–L3 + **PTY reattach / coding-loop polish**):
 
 - Session loop: create / resume / stop / delete / rename + auto-title, streaming, tokens, compaction, **plan mode**, **sub-agents**
 - **Session worker** (child process) for agent loop isolation; in-process fallback
@@ -23,6 +23,7 @@ Windows desktop **coding agent** (WorkBuddy / ZCode class): full GUI, workspace-
 - Providers: delete mock/last channel · empty fail-closed · `models:list` · baseURL normalize
 - Session: open/send rebind to global active · identity pin against stale self-claims
 - Chat UI: topbar provider · model · model-id-only composer control · menus open upward
+- **1.1.9:** PTY scrollback reattach · Terminal remount replay · Changes empty-message toast · coding-loop polish (not layout redesign)
 - **1.1.8:** update L3 — opt-in silentInstall · pending-install · install-and-restart (`/S`) · Portable reject · bootstrap failsafe polish
 - **1.1.7:** update L1+L2 — `updatePolicy` · background auto-download · ready UI · one-click confirm install
 - **1.1.6:** compression model drives LLM compact · goal `*.goals.json` cold-start · `read_document` (text/docx/pdf) · Settings `compactMaxChars` · profile chip hot update · mermaid streaming-safe · Tasks parent indent
@@ -78,6 +79,7 @@ Full notes: [CHANGELOG.md](./CHANGELOG.md). Release handoffs: `docs/RELEASE-*.md
 
 | Version | Date | Summary |
 |---------|------|---------|
+| **[1.1.9](./docs/RELEASE-1.1.9.md)** | 2026-07-21 | PTY scrollback reattach · Terminal remount · Changes commit toast · coding-loop polish |
 | **[1.1.8](./docs/RELEASE-1.1.8.md)** | 2026-07-20 | Update L3 opt-in silent NSIS · pending-install · install-and-restart · Portable reject L3 · bootstrap failsafe |
 | **[1.1.7](./docs/RELEASE-1.1.7.md)** | 2026-07-20 | Update L1+L2 auto-download · ready UI · one-click confirm install (`updatePolicy`) |
 | **[1.1.6](./docs/RELEASE-1.1.6.md)** | 2026-07-20 | Compression LLM compact · goal sidecar cold-start · `read_document` · compactMaxChars · UI polish (profile chip / mermaid stream / Tasks indent) |

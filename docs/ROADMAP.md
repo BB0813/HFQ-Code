@@ -1,8 +1,8 @@
 # HFQ Code — Development roadmap (post-1.0.5)
 
 Status: **active plan**  
-Baseline: product **1.1.8** (`v1.1.8`) · 2026-07-20  
-Last updated: 2026-07-21 · **1.1.8 shipped** · **Next: 1.1.9 polish → 1.2 big UI** — [prompts/1.1.9-polish-handoff.md](./prompts/1.1.9-polish-handoff.md) · [prompts/1.2-ui-plan.md](./prompts/1.2-ui-plan.md)
+Baseline: product **1.1.9** (`v1.1.9`) · 2026-07-21  
+Last updated: 2026-07-21 · **1.1.9 coding-loop polish shipped** · **Next: 1.2 big UI + F2** — [prompts/1.2-ui-plan.md](./prompts/1.2-ui-plan.md)
 
 ## Positioning (frozen)
 
@@ -22,9 +22,9 @@ Last updated: 2026-07-21 · **1.1.8 shipped** · **Next: 1.1.9 polish → 1.2 bi
 | `/goal` long-run + Tasks + Chat banner | Shipped (1.0.4–1.0.6) |
 | Update check multi-source fallback | **Shipped** (1.0.5–1.0.7): mirrors → ungh → direct |
 | Skills store (preview / conflict / tags / **remote zip**) | **Shipped** (1.0.6 + **1.0.9**) |
-| True interactive Terminal (PTY) | **Backend + scrollback reattach (1.1.9)** · FE must call `ptyGetScrollback` on remount |
-| Changes / Git workspace IPC | **B2-0 shipped** · stage/commit UI present; **B2-1/B2-2** keyboard + ask-agent → frontend |
-| Sub-agent observability | **B3-0 shipped** · Tasks panel present; parent stack / tree polish → frontend |
+| True interactive Terminal (PTY) | **Shipped 1.1.9** — ring + `ptyGetScrollback` + Terminal remount replay |
+| Changes / Git workspace IPC | **Shipped** · stage/commit + empty-message toast; keyboard + ask-agent prefills |
+| Sub-agent observability | **Shipped** · Tasks panel · parent return / spawn error copy |
 | DPAPI credentials | **D1 shipped** (Windows envelope; Settings shows encoding) — [DPAPI-1.2.md](./DPAPI-1.2.md) |
 | Code signing (Authenticode) | **Shipped** — HFQ-ClodBreeze self-signed + trust pack + CI secrets — [PACKAGING.md](./PACKAGING.md) |
 | In-app update download (D3) | **Shipped** · **1.1.1 backend:** install auto-download + disk recover + CN errors — [UPDATE-D3.md](./UPDATE-D3.md) |
@@ -33,19 +33,19 @@ Last updated: 2026-07-21 · **1.1.8 shipped** · **Next: 1.1.9 polish → 1.2 bi
 | Thinking / reasoning stream | **Backend shipped** · ThinkingBlock UI present — polish optional |
 | React shell (Q6) | **Shipped** (1.0.10+) — pages under `apps/desktop/renderer` |
 
-### Next train (post-1.1.8) — product order **locked 2026-07-21**
+### Next train (post-1.1.9) — product order **locked 2026-07-21**
 
 ```text
-1.1.9  coding-loop polish (Terminal / Changes / Tasks)   ← current
+1.1.9  coding-loop polish (Terminal / Changes / Tasks)   ← shipped
   │
   ▼
-1.2    big UI overhaul (+ F2 remainder as slices)       ← after 1.1.9 ships
+1.2    big UI overhaul (+ F2 remainder as slices)       ← current next
 ```
 
 | Owner | Work | Notes |
 |-------|------|--------|
-| **Product** | **1.1.9 · Coding-loop polish** | B1-2 PTY reattach · B2 commit/keyboard/ask-agent 收口 · B3 tree/parent/spawn 收口 · 小 UX 毛刺 | **Active** — BE: `ptyGetScrollback` done · FE: [prompts/1.1.9-fe-implementation.md](./prompts/1.1.9-fe-implementation.md) · **no layout redesign** |
-| **Product** | **1.2 · Big UI + F2 remainder** | U0 design gate → design system/shell/Chat · then Memory FTS / Goal OS light / panel prefs | **Planned** — [prompts/1.2-ui-plan.md](./prompts/1.2-ui-plan.md) · **blocked on 1.1.9 ship + U0** |
+| **Product** | **1.1.9 · Coding-loop polish** | B1-2 PTY reattach · B2 commit toast · B3 Tasks 收口 | **Shipped** (`v1.1.9`) — [RELEASE-1.1.9.md](./RELEASE-1.1.9.md) · Electron T1 PASS |
+| **Product** | **1.2 · Big UI + F2 remainder** | U0 design gate → design system/shell/Chat · then Memory FTS / Goal OS light / panel prefs | **Next** — [prompts/1.2-ui-plan.md](./prompts/1.2-ui-plan.md) · needs U0 |
 | **Product** | **1.1.8 · Update L3** | opt-in silent NSIS `/S` + pending marker + relaunch | **Shipped** (`v1.1.8`) — [RELEASE-1.1.8.md](./RELEASE-1.1.8.md) |
 | **Product** | **1.1.7 · Update L1+L2** | `updatePolicy` · background auto-download · ready UI · one-click confirm install | **Shipped** (`v1.1.7`) — [RELEASE-1.1.7.md](./RELEASE-1.1.7.md) |
 | **Product** | **1.1.6 full train** | compression LLM compact · goal sidecar · `read_document` · compactMaxChars · UI polish | **Shipped** (`v1.1.6`) — [RELEASE-1.1.6.md](./RELEASE-1.1.6.md) |
