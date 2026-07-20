@@ -1,13 +1,52 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, TerminalSquare, Trash2 } from "lucide-react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { Button } from "@/components/ui/button";
 import { ChipButton, EmptyState } from "@/components/ui/page-states";
-import { getHfq, hasHfq } from "@/lib/hfq";
+import { getHfq, hasHfq, type PtySessionInfo } from "@/lib/hfq";
 import { cn } from "@/lib/utils";
 import { useTerminalStore } from "@/store/terminal-store";
+import { useAppStore } from "@/store/app-store";
+
+/** Per-session scrollback cache (UI side, complements BE ring). */
+const scrollbackCache = new Map<string, string>();
+const MAX_CACHE_BYTES = 512_000;
+let totalCachedBytes = 0;
+
+function appendCache(id: string, data: string) {
+  const prev = scrollbackCache.get(id) ?? "";
+  const next = prev + data;
+  if (next.length > MAX_CACHE_BYTES) {
+    // Drop oldest half when overflow
+    const keep = next.slice(-Math.floor(MAX_CACHE_BYTES / 2));
+    scrollbackCache.set(id, keep);
+    totalCachedBytes = keep.length;
+  } else {
+    scrollbackCache.set(id, next);
+    totalCachedBytes += data.length;
+  }
+}
+
+function getCache(id: string): string {
+  return scrollbackCache.get(id) ?? "";
+}
+
+function clearCache(id: string) {
+  const prev = scrollbackCache.get(id) ?? "";
+  totalCachedBytes -= prev.length;
+  scrollbackCache.delete(id);
+}
+
+function clearAllCache() {
+  scrollbackCache.clear();
+  totalCachedBytes = 0;
+}
+
+function tabLabel(s: PtySessionInfo): string {
+  return s.label || s.shellKind || (s.shell ? s.shell.split(/[/\\]/).pop() || s.shell : "") || s.id.slice(0, 6);
+}
 
 export function TerminalPanel() {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -31,10 +70,24 @@ export function TerminalPanel() {
     void bootstrap();
   }, [bootstrap]);
 
+  // Refresh pty list when workspace changes (killAll on workspace switch).
+  const workspacePath = useAppStore((s) => s.workspace?.path);
+  useEffect(() => {
+    if (workspacePath) {
+      clearAllCache();
+      void useTerminalStore.getState().refresh();
+    } else {
+      // No workspace → no pty sessions expected.
+      clearAllCache();
+      useTerminalStore.setState({ sessions: [], activeId: null });
+    }
+  }, [workspacePath]);
+
   useEffect(() => {
     if (preferred) setShellPick(preferred);
   }, [preferred]);
 
+  // Create xterm instance once.
   useEffect(() => {
     if (!hostRef.current || termRef.current) return;
     const term = new Terminal({
@@ -82,36 +135,93 @@ export function TerminalPanel() {
     };
   }, []);
 
+  // 1.1.9: Subscribe to onPtyData / onPtyExit once (module-level, not per-activeId).
+  // Caches all output globally; writes to xterm only if currently active.
   useEffect(() => {
-    activeIdRef.current = activeId;
-    // Don't clear on tab switch — preserve scrollback for revisiting.
     if (!hasHfq()) return;
-
-    unsubData.current?.();
-    unsubExit.current?.();
-
     const hfq = getHfq();
-    unsubData.current = hfq.onPtyData(({ id, data }) => {
-      if (id === activeIdRef.current) termRef.current?.write(data);
+    const offData = hfq.onPtyData(({ id, data }) => {
+      appendCache(id, data);
+      if (id === activeIdRef.current && termRef.current) {
+        termRef.current.write(data);
+      }
     });
-    unsubExit.current = hfq.onPtyExit(({ id, exitCode }) => {
-      if (id === activeIdRef.current) {
-        termRef.current?.writeln(`\r\n[process exited: ${exitCode ?? "?"}]`);
+    const offExit = hfq.onPtyExit(({ id, exitCode }) => {
+      const msg = `\r\n[进程退出: ${exitCode ?? "?"}]`;
+      appendCache(id, msg);
+      if (id === activeIdRef.current && termRef.current) {
+        termRef.current.writeln(msg);
       }
       void useTerminalStore.getState().refresh();
     });
+    return () => {
+      offData();
+      offExit();
+    };
+  }, []);
 
-    if (activeId && termRef.current && fitRef.current) {
-      fitRef.current.fit();
-      const { cols, rows } = termRef.current;
-      void hfq.ptyResize({ id: activeId, cols, rows });
+  /**
+   * Restore xterm from BE ring (authoritative) then keep cache in sync.
+   * FE cache alone is wrong after leaving Terminal: onPtyData is unsubscribed on unmount,
+   * so only the main-process ring has output produced while away.
+   */
+  const restoreScrollback = useCallback(async (id: string) => {
+    const term = termRef.current;
+    if (!term || !hasHfq()) return;
+
+    activeIdRef.current = id;
+    term.reset();
+
+    let painted = false;
+    try {
+      const sb = await getHfq().ptyGetScrollback({ id });
+      if (activeIdRef.current !== id) return; // switched away mid-flight
+      if (sb.truncated) term.writeln("[…更早输出已截断]");
+      if (sb.data) {
+        term.write(sb.data);
+        // Replace cache with BE snapshot (not append — avoids duplicate tails).
+        clearCache(id);
+        if (sb.data) {
+          scrollbackCache.set(id, sb.data);
+          totalCachedBytes += sb.data.length;
+        }
+        painted = true;
+      }
+    } catch {
+      // Dead / unknown id — fall back to any local cache, then refresh list.
+      const cached = getCache(id);
+      if (cached && activeIdRef.current === id) {
+        term.write(cached);
+        painted = true;
+      }
+      void useTerminalStore.getState().refresh();
     }
 
-    return () => {
-      unsubData.current?.();
-      unsubExit.current?.();
-    };
-  }, [activeId]);
+    // Cold race: BE empty but we already cached live data this mount.
+    if (!painted) {
+      const cached = getCache(id);
+      if (cached) term.write(cached);
+    }
+
+    if (fitRef.current && activeIdRef.current === id) {
+      fitRef.current.fit();
+      const { cols, rows } = term;
+      try {
+        await getHfq().ptyResize({ id, cols, rows });
+      } catch {
+        /* best-effort */
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!activeId) {
+      activeIdRef.current = null;
+      return;
+    }
+    // Remount / tab switch / same-id re-entry: always re-attach from BE ring.
+    void restoreScrollback(activeId);
+  }, [activeId, restoreScrollback]);
 
   const shellOptions = [
     { kind: "auto", label: "auto" },
@@ -119,6 +229,11 @@ export function TerminalPanel() {
       .filter((s) => s.available !== false && s.kind && s.kind !== "auto")
       .map((s) => ({ kind: s.kind, label: s.label || s.kind })),
   ];
+
+  const handleKill = async (id: string) => {
+    clearCache(id);
+    await kill(id);
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -137,7 +252,10 @@ export function TerminalPanel() {
                   : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
               )}
             >
-              {s.label || s.shell || s.id.slice(0, 6)}
+              {tabLabel(s)}
+              {s.alive === false && (
+                <span className="ml-1 text-destructive" title="已退出">†</span>
+              )}
             </button>
           ))}
           {sessions.length === 0 && (
@@ -184,7 +302,7 @@ export function TerminalPanel() {
           title="关闭当前终端"
           aria-label="关闭当前终端"
           disabled={!activeId}
-          onClick={() => activeId && void kill(activeId)}
+          onClick={() => activeId && void handleKill(activeId)}
         >
           <Trash2 className="h-4 w-4" />
         </Button>
@@ -200,7 +318,6 @@ export function TerminalPanel() {
               action={
                 <Button
                   size="sm"
-                 
                   onClick={() =>
                     void create({
                       shell: shellPick === "auto" ? undefined : shellPick,

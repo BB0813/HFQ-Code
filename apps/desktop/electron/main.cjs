@@ -2377,6 +2377,24 @@ function registerIpc() {
     return ptyHost.list();
   });
 
+  /**
+   * 1.1.9 B1-2 — reattach scrollback for a live PTY.
+   * Payload: { id, maxChars? } → { id, data, truncated, bytes, chars }
+   */
+  ipcMain.handle("pty:getScrollback", async (_evt, payload = {}) => {
+    const id = String(payload.id || "").trim();
+    if (!id) throw new Error("id required");
+    const host = await getPtyHost();
+    if (typeof host.getScrollback !== "function") {
+      return { id, data: "", truncated: false, bytes: 0, chars: 0 };
+    }
+    const maxChars =
+      payload.maxChars != null && Number.isFinite(Number(payload.maxChars))
+        ? Number(payload.maxChars)
+        : undefined;
+    return host.getScrollback(id, maxChars);
+  });
+
   /** Available interactive shells for Terminal settings / picker. */
   ipcMain.handle("pty:shells", async () => {
     const { ptyMod } = await loadModules();

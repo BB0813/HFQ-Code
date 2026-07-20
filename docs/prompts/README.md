@@ -39,8 +39,15 @@
 | [test-1.1.8-l3-gate.md](./test-1.1.8-l3-gate.md) | 测试 Agent：1.1.8 L3 发布门槛 | done · 已执行 |
 | [test-1.1.8-l3-report-brief.md](./test-1.1.8-l3-report-brief.md) | 测试回传简报 | CONDITIONAL GO → 路径 A PASS by release |
 | [release-1.1.8.md](./release-1.1.8.md) | 发版 Agent：1.1.8 L3 · tag 前强制真包路径 A | done（1.1.8 shipped · Path A PASS） |
+| [1.1.9-polish-handoff.md](./1.1.9-polish-handoff.md) | 1.1.9 编码闭环小补丁（PTY / Changes / Tasks） | done · 实现在工作区 · 待发版 |
+| [1.1.9-fe-implementation.md](./1.1.9-fe-implementation.md) | 1.1.9 前端整包 | done · FE 落地 |
+| [test-1.1.9-polish-gate.md](./test-1.1.9-polish-gate.md) | 测试 Agent：1.1.9 发布门槛 | done · 已执行 |
+| [test-1.1.9-polish-report-brief.md](./test-1.1.9-polish-report-brief.md) | 测试回传简报 | **CONDITIONAL GO** · 差 Electron T1 |
+| [release-1.1.9.md](./release-1.1.9.md) | **发版 Agent：1.1.9 · tag 前强制 Electron T1** | **active · 待执行** |
+| [1.2-ui-plan.md](./1.2-ui-plan.md) | **1.2 大动 UI + F2 余量（规划）** | **planned · 1.1.9 ship 后 + U0 门禁** |
 
-阶梯总册（非 prompt，实现必读）：[`docs/UPDATE-L1-L3.md`](../UPDATE-L1-L3.md) · DECISIONS Q9
+阶梯总册（非 prompt，实现必读）：[`docs/UPDATE-L1-L3.md`](../UPDATE-L1-L3.md) · DECISIONS Q9  
+排序（2026-07-21）：**1.1.9 小补丁 → 1.2 大动 UI**（禁止跳过 1.1.9 直接大改壳）
 
 ## 与产品文档的关系
 

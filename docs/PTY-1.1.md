@@ -61,18 +61,21 @@ Shell process (powershell / pwsh / cmd — user pref)
 
 ```ts
 // invoke
-pty:create { sessionId?, cwd, shell?, cols, rows } → { id, … }
+pty:create { sessionId?, cwd, shell?, cols, rows } → { id, shellKind, alive: true, … }
 // shell omit → prefs.terminalShell → auto resolve
 pty:write  { id, data }
 pty:resize { id, cols, rows }
 pty:kill   { id }
-pty:list   → PtySessionInfo[]
+pty:list   → PtySessionInfo[]  // live only
+pty:getScrollback { id, maxChars? } → { id, data, truncated, bytes, chars }  // 1.1.9 reattach
 pty:shells → { shells: AvailableShell[], preferred }
 
 // events → renderer
 pty:data { id, data }
 pty:exit { id, exitCode, signal }
 ```
+
+**1.1.9 reattach:** `@hfq/pty` keeps a per-session output ring (~200k chars). Renderer remount should `ptyList` → pick active → `ptyGetScrollback` → `xterm.write` → then `onPtyData`. Workspace switch still `killAll`.
 
 Canonical frontend pack: [FRONTEND-IPC.md](./FRONTEND-IPC.md).
 

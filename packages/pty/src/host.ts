@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { resolveWorkspaceCwd } from "./paths.js";
-import { resolveShell, sanitizedEnv, type ResolvedShell } from "./shells.js";
+import { resolveShell, sanitizedEnv, type ResolvedShell, type ShellKind } from "./shells.js";
 
 export type PtyBackend = "node-pty" | "spawn-pipe";
+
+/** Soft cap for reattach scrollback (chars). FE remount / tab switch replays this. */
+export const DEFAULT_PTY_SCROLLBACK_CHARS = 200_000;
 
 export interface PtyCreateParams {
   workspaceRoot: string;
@@ -13,6 +16,8 @@ export interface PtyCreateParams {
   rows?: number;
   /** Optional tag for UI (e.g. session id) — not security boundary. */
   label?: string | null;
+  /** Override ring-buffer size (chars). Clamped 4k..2M. */
+  scrollbackChars?: number;
 }
 
 export interface PtySessionInfo {
@@ -20,11 +25,24 @@ export interface PtySessionInfo {
   pid: number | null;
   cwd: string;
   shell: string;
+  /** Whitelisted kind when known (powershell / pwsh / cmd). */
+  shellKind: ShellKind | null;
   backend: PtyBackend;
   cols: number;
   rows: number;
   label: string | null;
   createdAt: string;
+  /** Always true for list()/get() results (dead sessions are removed). */
+  alive: true;
+}
+
+export interface PtyScrollback {
+  id: string;
+  data: string;
+  /** True when older output was dropped to stay under the ring cap. */
+  truncated: boolean;
+  bytes: number;
+  chars: number;
 }
 
 export interface PtyHostEvents {
@@ -37,6 +55,11 @@ interface LiveSession {
   kill: () => void;
   write: (data: string) => void;
   resize: (cols: number, rows: number) => void;
+  /** Ring buffer of recent output for reattach. */
+  scrollback: string[];
+  scrollbackChars: number;
+  scrollbackCap: number;
+  scrollbackTruncated: boolean;
 }
 
 type NodePtyModule = {
@@ -85,9 +108,13 @@ export function resetNodePtyCacheForTests(): void {
 export class PtyHost {
   private sessions = new Map<string, LiveSession>();
   private events: PtyHostEvents;
+  private defaultScrollbackCap: number;
 
-  constructor(events: PtyHostEvents) {
+  constructor(events: PtyHostEvents, opts?: { scrollbackChars?: number }) {
     this.events = events;
+    this.defaultScrollbackCap = clampScrollbackCap(
+      opts?.scrollbackChars ?? DEFAULT_PTY_SCROLLBACK_CHARS,
+    );
   }
 
   list(): PtySessionInfo[] {
@@ -97,6 +124,33 @@ export class PtyHost {
   get(id: string): PtySessionInfo | null {
     const s = this.sessions.get(id);
     return s ? { ...s.info } : null;
+  }
+
+  /**
+   * Return recent output for a live session so the renderer can reattach
+   * after remount / page switch without losing history (1.1.9 B1-2).
+   */
+  getScrollback(id: string, maxChars?: number): PtyScrollback {
+    const s = this.sessions.get(String(id || "").trim());
+    if (!s) throw new Error(`unknown pty: ${id}`);
+    // Read-side max can be smaller than the ring floor (4k); only used to slice response.
+    const cap =
+      maxChars != null && Number.isFinite(Number(maxChars)) && Number(maxChars) > 0
+        ? Math.min(s.scrollbackCap, Math.floor(Number(maxChars)))
+        : s.scrollbackCap;
+    let data = s.scrollback.join("");
+    let truncated = s.scrollbackTruncated;
+    if (data.length > cap) {
+      data = data.slice(data.length - cap);
+      truncated = true;
+    }
+    return {
+      id: s.info.id,
+      data,
+      truncated,
+      bytes: Buffer.byteLength(data, "utf8"),
+      chars: data.length,
+    };
   }
 
   async create(params: PtyCreateParams): Promise<PtySessionInfo> {
@@ -109,12 +163,15 @@ export class PtyHost {
     const rows = clampInt(params.rows, 5, 200, 24);
     const id = randomUUID();
     const label = params.label ? String(params.label).slice(0, 120) : null;
+    const scrollbackCap = clampScrollbackCap(
+      params.scrollbackChars ?? this.defaultScrollbackCap,
+    );
 
     const nodePty = await tryLoadNodePty();
     const live =
       nodePty != null
-        ? this.spawnNodePty(id, cwd, shell, cols, rows, label, nodePty)
-        : this.spawnPipe(id, cwd, shell, cols, rows, label);
+        ? this.spawnNodePty(id, cwd, shell, cols, rows, label, scrollbackCap, nodePty)
+        : this.spawnPipe(id, cwd, shell, cols, rows, label, scrollbackCap);
 
     this.sessions.set(id, live);
     return { ...live.info };
@@ -156,6 +213,31 @@ export class PtyHost {
     }
   }
 
+  private pushScrollback(live: LiveSession, data: string): void {
+    if (!data) return;
+    live.scrollback.push(data);
+    live.scrollbackChars += data.length;
+    while (live.scrollbackChars > live.scrollbackCap && live.scrollback.length > 0) {
+      const dropped = live.scrollback.shift()!;
+      live.scrollbackChars -= dropped.length;
+      live.scrollbackTruncated = true;
+    }
+    // Rare edge: single chunk larger than cap
+    if (live.scrollbackChars > live.scrollbackCap && live.scrollback.length === 1) {
+      const only = live.scrollback[0]!;
+      const keep = only.slice(only.length - live.scrollbackCap);
+      live.scrollback[0] = keep;
+      live.scrollbackChars = keep.length;
+      live.scrollbackTruncated = true;
+    }
+  }
+
+  private emitData(live: LiveSession, data: string): void {
+    if (!data) return;
+    this.pushScrollback(live, data);
+    this.events.onData(live.info.id, data);
+  }
+
   private spawnNodePty(
     id: string,
     cwd: string,
@@ -163,6 +245,7 @@ export class PtyHost {
     cols: number,
     rows: number,
     label: string | null,
+    scrollbackCap: number,
     nodePty: NodePtyModule,
   ): LiveSession {
     const env = sanitizedEnv();
@@ -178,21 +261,20 @@ export class PtyHost {
       pid: term.pid ?? null,
       cwd,
       shell: shell.file,
+      shellKind: shell.kind,
       backend: "node-pty",
       cols,
       rows,
       label,
       createdAt: new Date().toISOString(),
+      alive: true,
     };
-    term.onData((data) => {
-      this.events.onData(id, data);
-    });
-    term.onExit(({ exitCode }) => {
-      this.sessions.delete(id);
-      this.events.onExit(id, exitCode ?? null, null);
-    });
-    return {
+    const live: LiveSession = {
       info,
+      scrollback: [],
+      scrollbackChars: 0,
+      scrollbackCap,
+      scrollbackTruncated: false,
       write: (data) => term.write(data),
       resize: (c, r) => term.resize(c, r),
       kill: () => {
@@ -203,6 +285,14 @@ export class PtyHost {
         }
       },
     };
+    term.onData((data) => {
+      this.emitData(live, data);
+    });
+    term.onExit(({ exitCode }) => {
+      this.sessions.delete(id);
+      this.events.onExit(id, exitCode ?? null, null);
+    });
+    return live;
   }
 
   /**
@@ -216,6 +306,7 @@ export class PtyHost {
     cols: number,
     rows: number,
     label: string | null,
+    scrollbackCap: number,
   ): LiveSession {
     const env = sanitizedEnv();
     env.TERM = env.TERM || "xterm-256color";
@@ -230,34 +321,20 @@ export class PtyHost {
       pid: child.pid ?? null,
       cwd,
       shell: shell.file,
+      shellKind: shell.kind,
       backend: "spawn-pipe",
       cols,
       rows,
       label,
       createdAt: new Date().toISOString(),
+      alive: true,
     };
-    const push = (buf: Buffer | string) => {
-      const data = typeof buf === "string" ? buf : buf.toString("utf8");
-      if (data) this.events.onData(id, data);
-    };
-    child.stdout.on("data", push);
-    child.stderr.on("data", push);
-    child.on("error", (err) => {
-      this.events.onData(id, `\r\n[pty error] ${err.message}\r\n`);
-    });
-    child.on("exit", (code, signal) => {
-      this.sessions.delete(id);
-      this.events.onExit(id, code, signal);
-    });
-    // Banner so UI can tell degraded mode
-    queueMicrotask(() => {
-      this.events.onData(
-        id,
-        `\r\n[HFQ PTY] backend=spawn-pipe (install node-pty for ConPTY)\r\ncwd=${cwd}\r\n\r\n`,
-      );
-    });
-    return {
+    const live: LiveSession = {
       info,
+      scrollback: [],
+      scrollbackChars: 0,
+      scrollbackCap,
+      scrollbackTruncated: false,
       write: (data) => {
         if (child.stdin.destroyed) return;
         child.stdin.write(data);
@@ -284,6 +361,27 @@ export class PtyHost {
         }
       },
     };
+    const push = (buf: Buffer | string) => {
+      const data = typeof buf === "string" ? buf : buf.toString("utf8");
+      if (data) this.emitData(live, data);
+    };
+    child.stdout.on("data", push);
+    child.stderr.on("data", push);
+    child.on("error", (err) => {
+      this.emitData(live, `\r\n[pty error] ${err.message}\r\n`);
+    });
+    child.on("exit", (code, signal) => {
+      this.sessions.delete(id);
+      this.events.onExit(id, code, signal);
+    });
+    // Banner so UI can tell degraded mode
+    queueMicrotask(() => {
+      this.emitData(
+        live,
+        `\r\n[HFQ PTY] backend=spawn-pipe (install node-pty for ConPTY)\r\ncwd=${cwd}\r\n\r\n`,
+      );
+    });
+    return live;
   }
 }
 
@@ -291,4 +389,10 @@ function clampInt(n: unknown, min: number, max: number, fallback: number): numbe
   const v = Number(n);
   if (!Number.isFinite(v)) return fallback;
   return Math.min(max, Math.max(min, Math.floor(v)));
+}
+
+function clampScrollbackCap(n: unknown): number {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return DEFAULT_PTY_SCROLLBACK_CHARS;
+  return Math.min(2_000_000, Math.max(4_000, Math.floor(v)));
 }

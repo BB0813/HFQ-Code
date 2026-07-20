@@ -71,8 +71,11 @@ describe("PtyHost spawn-pipe smoke", () => {
     });
     expect(info.id).toBeTruthy();
     expect(info.cwd).toBe(path.resolve(root));
+    expect(info.alive).toBe(true);
+    expect(info.shellKind).toBeTruthy();
     expect(["node-pty", "spawn-pipe"]).toContain(info.backend);
     expect(host.list().length).toBe(1);
+    expect(host.list()[0]?.shellKind).toBe(info.shellKind);
 
     // Give shell a moment, then send a trivial command
     await new Promise((r) => setTimeout(r, 400));
@@ -87,8 +90,65 @@ describe("PtyHost spawn-pipe smoke", () => {
     // Banner or echo should produce some output
     expect(joined.length).toBeGreaterThan(0);
 
+    const sb = host.getScrollback(info.id);
+    expect(sb.id).toBe(info.id);
+    expect(sb.data.length).toBeGreaterThan(0);
+    expect(sb.chars).toBe(sb.data.length);
+
     host.kill(info.id);
     expect(host.list().length).toBe(0);
+    expect(() => host.getScrollback(info.id)).toThrow(/unknown pty/);
+    host.killAll();
+  }, 15_000);
+
+  it("scrollback ring truncates under cap (1.1.9 reattach)", async () => {
+    resetNodePtyCacheForTests();
+    const root = path.join(os.tmpdir(), `hfq-pty-sb-${Date.now()}`);
+    fs.mkdirSync(root, { recursive: true });
+
+    const host = new PtyHost(
+      {
+        onData: () => {},
+        onExit: () => {},
+      },
+      { scrollbackChars: 4_000 },
+    );
+
+    const info = await host.create({
+      workspaceRoot: root,
+      cols: 80,
+      rows: 24,
+      shell: process.platform === "win32" ? "cmd" : undefined,
+      scrollbackChars: 4_000,
+    });
+
+    // Deterministic overflow: inject via private emitData (compiled JS field access).
+    const sessions = (host as unknown as { sessions: Map<string, unknown> }).sessions;
+    const live = sessions.get(info.id) as {
+      scrollback: string[];
+      scrollbackChars: number;
+      scrollbackCap: number;
+      scrollbackTruncated: boolean;
+    };
+    expect(live).toBeTruthy();
+    const emit = (
+      host as unknown as {
+        emitData: (s: typeof live, data: string) => void;
+      }
+    ).emitData.bind(host);
+    for (let i = 0; i < 20; i++) {
+      emit(live, `CHUNK-${i}-` + "X".repeat(400));
+    }
+
+    const full = host.getScrollback(info.id);
+    expect(full.chars).toBeLessThanOrEqual(4_000);
+    expect(full.truncated).toBe(true);
+    expect(full.data.endsWith("X".repeat(50)) || full.data.includes("CHUNK-")).toBe(true);
+
+    const tiny = host.getScrollback(info.id, 100);
+    expect(tiny.chars).toBeLessThanOrEqual(100);
+    expect(tiny.truncated).toBe(true);
+
     host.killAll();
   }, 15_000);
 });

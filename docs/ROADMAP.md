@@ -2,7 +2,7 @@
 
 Status: **active plan**  
 Baseline: product **1.1.8** (`v1.1.8`) · 2026-07-20  
-Last updated: 2026-07-20 · **1.1.8 L3 opt-in silent install shipped** · Next: F2 remainder / 1.2 — see [UPDATE-L1-L3.md](./UPDATE-L1-L3.md) · DECISIONS Q9
+Last updated: 2026-07-21 · **1.1.8 shipped** · **Next: 1.1.9 polish → 1.2 big UI** — [prompts/1.1.9-polish-handoff.md](./prompts/1.1.9-polish-handoff.md) · [prompts/1.2-ui-plan.md](./prompts/1.2-ui-plan.md)
 
 ## Positioning (frozen)
 
@@ -22,7 +22,7 @@ Last updated: 2026-07-20 · **1.1.8 L3 opt-in silent install shipped** · Next: 
 | `/goal` long-run + Tasks + Chat banner | Shipped (1.0.4–1.0.6) |
 | Update check multi-source fallback | **Shipped** (1.0.5–1.0.7): mirrors → ungh → direct |
 | Skills store (preview / conflict / tags / **remote zip**) | **Shipped** (1.0.6 + **1.0.9**) |
-| True interactive Terminal (PTY) | **Backend shipped** · React xterm UI present; reattach polish → frontend |
+| True interactive Terminal (PTY) | **Backend + scrollback reattach (1.1.9)** · FE must call `ptyGetScrollback` on remount |
 | Changes / Git workspace IPC | **B2-0 shipped** · stage/commit UI present; **B2-1/B2-2** keyboard + ask-agent → frontend |
 | Sub-agent observability | **B3-0 shipped** · Tasks panel present; parent stack / tree polish → frontend |
 | DPAPI credentials | **D1 shipped** (Windows envelope; Settings shows encoding) — [DPAPI-1.2.md](./DPAPI-1.2.md) |
@@ -33,22 +33,26 @@ Last updated: 2026-07-20 · **1.1.8 L3 opt-in silent install shipped** · Next: 
 | Thinking / reasoning stream | **Backend shipped** · ThinkingBlock UI present — polish optional |
 | React shell (Q6) | **Shipped** (1.0.10+) — pages under `apps/desktop/renderer` |
 
-### Next train (post-1.1.8)
+### Next train (post-1.1.8) — product order **locked 2026-07-21**
+
+```text
+1.1.9  coding-loop polish (Terminal / Changes / Tasks)   ← current
+  │
+  ▼
+1.2    big UI overhaul (+ F2 remainder as slices)       ← after 1.1.9 ships
+```
 
 | Owner | Work | Notes |
 |-------|------|--------|
+| **Product** | **1.1.9 · Coding-loop polish** | B1-2 PTY reattach · B2 commit/keyboard/ask-agent 收口 · B3 tree/parent/spawn 收口 · 小 UX 毛刺 | **Active** — BE: `ptyGetScrollback` done · FE: [prompts/1.1.9-fe-implementation.md](./prompts/1.1.9-fe-implementation.md) · **no layout redesign** |
+| **Product** | **1.2 · Big UI + F2 remainder** | U0 design gate → design system/shell/Chat · then Memory FTS / Goal OS light / panel prefs | **Planned** — [prompts/1.2-ui-plan.md](./prompts/1.2-ui-plan.md) · **blocked on 1.1.9 ship + U0** |
 | **Product** | **1.1.8 · Update L3** | opt-in silent NSIS `/S` + pending marker + relaunch | **Shipped** (`v1.1.8`) — [RELEASE-1.1.8.md](./RELEASE-1.1.8.md) |
 | **Product** | **1.1.7 · Update L1+L2** | `updatePolicy` · background auto-download · ready UI · one-click confirm install | **Shipped** (`v1.1.7`) — [RELEASE-1.1.7.md](./RELEASE-1.1.7.md) |
-| **Product** | **1.2 / F2 remainder** | Memory inverted index / FTS5 · full Goal OS / multi-level tree · panel prefs |
 | **Product** | **1.1.6 full train** | compression LLM compact · goal sidecar · `read_document` · compactMaxChars · UI polish | **Shipped** (`v1.1.6`) — [RELEASE-1.1.6.md](./RELEASE-1.1.6.md) |
 | **Product** | **Track F — Adopt Kivio/Athena patterns** | Canonical: [ADOPT-KIVIO-ATHENA.md](./ADOPT-KIVIO-ATHENA.md) · DECISIONS Q8 |
 | **F1** | Chat mermaid · Coding Profiles · model roles · skill progressive match · goal fields · memory links · bundled `diagram` | **Shipped in 1.1.5** |
-| **F2** | Goal tree sidecar · Memory FTS · pdf/docx skills · panel prefs | **partial shipped in 1.1.6** (sidecar + read_document); Memory FTS / Goal OS → 1.2+ |
-| **Product** | **1.1.5 F1** Coding Profiles · mermaid · skill match · goal fields · memory links · diagram skill | **Shipped** (`v1.1.5`) |
-| **Product** | **1.1.4** abort isolation + permission queue + live list access modes + Chat/route/CSS polish | **Shipped** (`v1.1.4`) |
-| **Product** | **1.1.3** session identity + spawn cold-start + README zh | **Shipped** (`v1.1.3`) |
-| **Product** | **1.1.2** full installer = 1.1.1 backend + Settings/Tasks/Changes/Models UI | **Shipped** (`v1.1.2`) |
-| **Backend** | **1.1.1** D3 · `providerId` · Tasks cold-start | In 1.1.1/1.1.2 tree |
+| **F2** | Goal tree sidecar · Memory FTS · pdf/docx skills · panel prefs | **partial shipped in 1.1.6** (sidecar + read_document); Memory FTS / Goal OS / panel prefs → **1.2** |
+| **Product** | **1.1.5–1.1.4** | F1 · abort isolation · identity | **Shipped** |
 | Later | Track E (embeddings, Python sidecar, MCP OAuth, cost charts) | Not Phase-1 |
 
 ---
@@ -138,7 +142,7 @@ Small, shippable patches. Keep `pnpm release:check` green; tag `v*` + Actions + 
 | ID | Work | Notes |
 |----|------|--------|
 | B1-1 | Integrate `node-pty` / ConPTY on Windows | ✅ T1 backend (`@hfq/pty` + IPC); xterm UI → frontend |
-| B1-2 | Session-linked PTY + reattach / stop | killAll on workspace switch / quit; reattach UI later |
+| B1-2 | Session-linked PTY + reattach / stop | killAll on switch/quit; **1.1.9 BE** ring + `pty:getScrollback`; FE remount wire-up |
 | B1-3 | Keep one-shot `shell` tool for agent; PTY is human Terminal page | ✅ Don’t merge blindly |
 | B1-shell | `pty:shells` + prefs `terminalShell` | ✅ default shell for create |
 | B1-pack | pack-verify `@hfq/pty` + optional node-pty | ✅ asserts + WARN fallback |
@@ -258,11 +262,11 @@ Canonical: **[ADOPT-KIVIO-ATHENA.md](./ADOPT-KIVIO-ATHENA.md)**.
 
 | Priority | Item | Why |
 |----------|------|-----|
-| **P0** | **1.1 PTY** (design spike → implement) | Largest coding-agent gap vs peers |
-| **P1** | 1.1 Changes/Git depth + Tasks observability | Coding loop + observability |
-| **P2** | Optional UI polish (virtual list, focus docs) | Non-blocking |
-| **P2** | 1.2 signing/DPAPI | Distribution trust |
-| **P3** | Embeddings / sidecar (not React rewrite) | Only after P0–P1 |
+| **P0** | **1.1.9 coding-loop polish** | Close Terminal/Changes/Tasks gaps before any shell redesign |
+| **P1** | **1.2 U0 design gate → big UI** | User-facing workbench upgrade (post-1.1.9) |
+| **P1** | **1.2 F2 remainder** (Memory FTS · Goal light · panel prefs) | Product depth; slice with or after UI |
+| **P2** | Residual virtual list / focus docs | Non-blocking |
+| **P3** | Track E embeddings / sidecar / MCP OAuth | Only after 1.2 main train |
 
 ---
 
@@ -288,15 +292,11 @@ Canonical: **[ADOPT-KIVIO-ATHENA.md](./ADOPT-KIVIO-ATHENA.md)**.
 
 ---
 
-## Next concrete sprint (after 1.0.9 · UI-first)
+## Next concrete sprint (2026-07-21)
 
-1. **R1 extracts (highest priority)**  
-   - `settings` page + update panel helpers  
-   - `nav` / shell chrome  
-   - `skills` page body (beyond pure `HFQSkillsUI`)  
-   - `chat` shell: composer + message list host (behavior-preserving)  
-2. **R2** Chat UX on the new modules (virtual list spike, tool cards)  
-3. **1.1** PTY design spike (docs + isolated spike OK in parallel with R1)  
-4. Keep `pnpm release:check` green on main  
+1. **1.1.9** — execute [prompts/1.1.9-polish-handoff.md](./prompts/1.1.9-polish-handoff.md) (FE-first; additive IPC only if PTY needs it)  
+2. **release 1.1.9** — `release:check` + pack + tag (prompt when implementation green)  
+3. **1.2 U0** — design gate per [prompts/1.2-ui-plan.md](./prompts/1.2-ui-plan.md) (mock + layout skin vs hybrid)  
+4. **1.2 implement slices** — UI first; F2 FTS/Goal/panel prefs as agreed slices  
 
-Default next ship target: **UI architecture slice (1.0.10 or 1.1.0-ui)** then **1.1 PTY**, unless product reorders again.
+Default next ship target: **`v1.1.9` polish**, then **1.2 big UI** (not F2-only, not update-train).

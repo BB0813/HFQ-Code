@@ -201,10 +201,13 @@ export function ChangesPanel({ compact = false }: { compact?: boolean }) {
 
   const commit = async () => {
     const msg = message.trim();
-    if (!msg) return;
+    if (!msg) {
+      toast.message("请先填写提交说明");
+      return;
+    }
     const stagedNow = (status?.entries ?? []).filter(isStagedEntry);
     if (stagedNow.length === 0) {
-      toast.message("没有已暂存文件，请先 stage");
+      toast.message("没有已暂存文件，请先在工作区文件列表 stage");
       return;
     }
     setBusy(true);

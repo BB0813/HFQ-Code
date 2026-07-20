@@ -153,6 +153,10 @@ export interface PtySessionInfo {
   rows?: number;
   label?: string;
   createdAt?: string;
+  /** 1.1.9 BE additive — shell kind for tab label */
+  shellKind?: string | null;
+  /** 1.1.9 BE additive — whether process is still alive */
+  alive?: boolean;
 }
 
 export interface AvailableShell {
@@ -298,6 +302,11 @@ export interface HfqApi {
   ptyShells: () => Promise<{ shells: AvailableShell[]; preferred: string }>;
   onPtyData: (handler: (data: { id: string; data: string }) => void) => () => void;
   onPtyExit: (handler: (data: { id: string; exitCode?: number; signal?: string }) => void) => () => void;
+  /** 1.1.9 — reattach scrollback for inactive/remounted terminals */
+  ptyGetScrollback: (payload: {
+    id: string;
+    maxChars?: number;
+  }) => Promise<{ id: string; data: string; truncated: boolean; bytes: number; chars: number }>;
 
   getConfig: () => Promise<Record<string, unknown>>;
   setActiveModel: (payload: {

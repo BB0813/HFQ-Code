@@ -23,6 +23,8 @@ contextBridge.exposeInMainWorld("hfq", {
   ptyResize: (payload) => ipcRenderer.invoke("pty:resize", payload ?? {}),
   ptyKill: (payload) => ipcRenderer.invoke("pty:kill", payload ?? {}),
   ptyList: () => ipcRenderer.invoke("pty:list"),
+  /** 1.1.9 reattach: recent output for a live session (ring buffer). */
+  ptyGetScrollback: (payload) => ipcRenderer.invoke("pty:getScrollback", payload ?? {}),
   /** { shells: AvailableShell[], preferred: ""|"powershell"|"pwsh"|"cmd" } */
   ptyShells: () => ipcRenderer.invoke("pty:shells"),
   onPtyData: (handler) => {

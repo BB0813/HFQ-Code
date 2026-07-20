@@ -43,23 +43,34 @@ const info = await hfq.ptyCreate({
   label: sessionId,    // optional UI tag
   workspacePath: null, // default active workspace
 });
-// → { id, pid, cwd, shell, backend: "node-pty"|"spawn-pipe", cols, rows, label, createdAt }
+// → {
+//   id, pid, cwd, shell, shellKind: "powershell"|"pwsh"|"cmd"|null,
+//   backend: "node-pty"|"spawn-pipe", cols, rows, label, createdAt, alive: true
+// }
 
 const offData = hfq.onPtyData(({ id, data }) => { /* xterm.write(data) */ });
 const offExit = hfq.onPtyExit(({ id, exitCode, signal }) => { /* status bar */ });
 
 await hfq.ptyWrite({ id: info.id, data: "dir\r" });
 await hfq.ptyResize({ id: info.id, cols: 140, rows: 40 });
-await hfq.ptyList(); // all live sessions
+const live = await hfq.ptyList(); // all live sessions (dead ids never listed)
+
+// 1.1.9 B1-2 reattach: after remount / route switch, replay ring buffer then subscribe
+const sb = await hfq.ptyGetScrollback({ id: info.id /*, maxChars?: number */ });
+// → { id, data, truncated, bytes, chars }
+// term.reset(); if (sb.data) term.write(sb.data);
+
 await hfq.ptyKill({ id: info.id });
 offData(); offExit();
 ```
 
 **Notes**
 
-- Workspace switch / app quit → all PTYs killed by main.
+- Workspace switch / app quit → all PTYs killed by main. Listen `onWorkspaceChanged` and `ptyList`/`refresh` (list becomes empty).
 - Backend may be `spawn-pipe` if native `node-pty` missing (limited interactivity).
 - One-shot agent shell remains `hfq.runShell` (unchanged).
+- **Scrollback** is in-process only (~200k chars default ring). Not persisted across app restart.
+- `ptyGetScrollback` throws / rejects for unknown (dead) id — treat as dead tab and `refresh`.
 
 Detail: [PTY-1.1.md](./PTY-1.1.md)
 
