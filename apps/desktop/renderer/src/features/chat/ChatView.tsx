@@ -10,7 +10,6 @@ import {
   Sparkles,
   Square,
   Terminal,
-  Wrench,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -27,8 +26,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { asList, getHfq, hasHfq, messageBody, sessionModel, sessionProviderId, type SessionMessage } from "@/lib/hfq";
-import { cn, shortPath } from "@/lib/utils";
+import { asList, getHfq, hasHfq, messageBody, type SessionMessage } from "@/lib/hfq";
+import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store/app-store";
 import { ComposerSlashPalette } from "./ComposerSlashPalette";
 import { MarkdownMessage } from "./MarkdownMessage";
@@ -130,7 +129,7 @@ const MessageBlock = memo(function MessageBlock({ message }: { message: SessionM
         )}
         <button
           type="button"
-          className="ml-auto hidden h-5 w-5 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+          className="ml-auto flex h-5 w-5 items-center justify-center rounded text-muted-foreground opacity-0 pointer-events-none transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 group-hover:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto"
           title="复制消息"
           aria-label="复制消息内容"
           onClick={handleCopy}

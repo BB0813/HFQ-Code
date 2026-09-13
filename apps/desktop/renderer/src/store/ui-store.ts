@@ -237,7 +237,10 @@ export const useUiStore = create<UiState>((set, get) => ({
       if (!get().drawerPinned && get().drawerOpen === false) {
         /* leave closed if user closed it */
       }
-      patch.sidebarOpen = true;
+      // Don't force the sidebar open on narrow windows — the auto-collapse owns it there.
+      if (window.innerWidth >= 700) {
+        patch.sidebarOpen = true;
+      }
     } else if (!workbench) {
       // Secondary pages: collapse inspector noise unless user pinned it open.
       if (!get().drawerPinned) {

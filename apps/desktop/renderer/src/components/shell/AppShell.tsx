@@ -44,14 +44,16 @@ function ShellChrome() {
   const workbench = isWorkbenchRoute(path);
 
   // Narrow-screen: independent thresholds — only close when width shrinks across threshold.
+  // prev starts at Infinity so a window already narrow at startup collapses once.
   useEffect(() => {
-    let prev = window.innerWidth;
+    let prev = Number.POSITIVE_INFINITY;
     const onResize = () => {
       const w = window.innerWidth;
       if (w < 900 && prev >= 900) setDrawerOpen(false);
       if (w < 700 && prev >= 700 && workbench) setSidebarOpen(false);
       prev = w;
     };
+    onResize();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [workbench]);

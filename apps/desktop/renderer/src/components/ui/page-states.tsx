@@ -58,7 +58,7 @@ export function EmptyState({
     >
       {Icon && (
         <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-muted/50">
-          <Icon className="h-4.5 w-4.5 text-muted-foreground" strokeWidth={1.5} />
+          <Icon className="h-[18px] w-[18px] text-muted-foreground" strokeWidth={1.5} />
         </div>
       )}
       <div className="text-sm font-medium text-foreground/85">{title}</div>
