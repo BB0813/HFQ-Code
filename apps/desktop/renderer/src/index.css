@@ -340,7 +340,7 @@
 
   /* Capability cards */
   .capability-card {
-    @apply rounded-xl transition-colors duration-200;
+    @apply rounded-lg transition-colors duration-200;
     transition-timing-function: var(--ease-out-expo);
     background: hsl(var(--surface-2));
     border: 1px solid hsl(var(--border) / 0.4);

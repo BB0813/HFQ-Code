@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Eye, FolderPlus, Loader2, Package, Sparkles } from "lucide-react";
+import { Eye, FolderPlus, Loader2, Package, Search, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +60,7 @@ export function SkillsPage() {
   const [pkgOpen, setPkgOpen] = useState(false);
   const [pkgUrl, setPkgUrl] = useState("");
   const [preview, setPreview] = useState<{ name?: string; body?: string } | null>(null);
+  const [q, setQ] = useState("");
 
   const refresh = async () => {
     if (!hasHfq()) {
@@ -99,6 +100,22 @@ export function SkillsPage() {
     ];
   }, [skills, catalog]);
 
+  const filteredSkills = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return skills;
+    return skills.filter((s) => {
+      const hay = [
+        String(s.name ?? ""),
+        String(s.id ?? ""),
+        String(s.description ?? ""),
+        ...(Array.isArray(s.tags) ? s.tags.map(String) : []),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(needle);
+    });
+  }, [skills, q]);
+
   const installFromDir = async () => {
     setBusy(true);
     try {
@@ -137,6 +154,16 @@ export function SkillsPage() {
       description="多 Agent 能力扩展 · 已安装与可发现 skill"
       actions={
         <div className="flex gap-1.5">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="搜索技能…（实时）"
+              aria-label="搜索技能"
+              className="h-8 w-44 pl-7 text-xs"
+            />
+          </div>
           <Button size="sm" variant="outline" disabled={busy} onClick={() => void installFromDir()}>
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderPlus className="h-4 w-4" />}
             从目录安装
@@ -156,7 +183,7 @@ export function SkillsPage() {
         <>
           <MetricStrip items={metrics} />
 
-          <SectionHeader title="已安装能力" count={skills.length} />
+          <SectionHeader title="已安装能力" count={filteredSkills.length} />
           {skills.length === 0 ? (
             <EmptyState
               icon={Sparkles}
@@ -169,9 +196,20 @@ export function SkillsPage() {
                 </Button>
               }
             />
+          ) : filteredSkills.length === 0 ? (
+            <EmptyState
+              icon={Sparkles}
+              title="无匹配技能"
+              description="换个关键词试试，或清空搜索查看全部"
+              action={
+                <Button size="sm" variant="outline" onClick={() => setQ("")}>
+                  清空搜索
+                </Button>
+              }
+            />
           ) : (
             <div className="mb-6 grid gap-2.5 sm:grid-cols-2">
-              {skills.map((s, i) => {
+              {filteredSkills.map((s, i) => {
                 const name = s.name || s.id || "skill";
                 const on = s.enabled !== false;
                 return (

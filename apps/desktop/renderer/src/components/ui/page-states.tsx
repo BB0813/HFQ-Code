@@ -280,7 +280,7 @@ export function CapabilityCard({
           : "status-dot-idle";
 
   return (
-    <div className={cn("capability-card p-3.5", className)}>
+    <div className={cn("capability-card p-3", className)}>
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
