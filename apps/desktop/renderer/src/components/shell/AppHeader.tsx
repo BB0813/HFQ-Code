@@ -21,7 +21,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { shortPath } from "@/lib/utils";
+import { cn, shortPath } from "@/lib/utils";
 import { sessionModel } from "@/lib/hfq";
 import { useAppStore } from "@/store/app-store";
 import {
@@ -104,39 +104,40 @@ export function AppHeader() {
   const modeMeta = permissionModeMeta(permissionMode);
 
   return (
-    <header className="flex h-11 shrink-0 items-center gap-3 border-b border-border/40 bg-[hsl(var(--surface-3))] px-3">
-      <div className="flex min-w-0 flex-1 items-center gap-2.5">
+    <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border/30 bg-[hsl(var(--surface-3))] px-2.5">
+      {/* Left: sidebar toggle + title + workspace */}
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         {workbench && (
           <Button
             size="icon-sm"
             variant={sidebarOpen ? "ghost" : "secondary"}
-            className="shrink-0"
+            className="shrink-0 h-7 w-7"
             title="会话侧栏 (Ctrl+B)"
             aria-label="切换会话侧栏"
             aria-pressed={sidebarOpen}
             onClick={() => toggleSidebar()}
           >
-            <PanelLeft className="h-4 w-4" />
+            <PanelLeft className="h-3.5 w-3.5" />
           </Button>
         )}
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             {path === "chat" && (
               <span
                 className={running ? "status-dot-running status-pulse" : "status-dot-idle"}
                 aria-hidden
               />
             )}
-            <div className="truncate text-[15px] font-semibold leading-none tracking-tight">
+            <div className="truncate text-sm font-semibold leading-tight tracking-tight">
               {title}
             </div>
             {running && path === "chat" && (
-              <Badge variant="success" className="font-normal">
-                running
+              <Badge variant="success" className="h-5 px-1.5 font-normal text-[10px]">
+                运行中
               </Badge>
             )}
             {workbench && path !== "chat" && session && (
-              <span className="hidden truncate text-sm text-muted-foreground sm:inline">
+              <span className="hidden truncate text-[11px] text-muted-foreground sm:inline">
                 · {sessionTitle}
               </span>
             )}
@@ -145,7 +146,7 @@ export function AppHeader() {
             <button
               type="button"
               onClick={() => void openWorkspace()}
-              className="interactive mt-1 max-w-full truncate rounded-sm text-left text-xs text-muted-foreground hover:text-foreground"
+              className="interactive -mt-0.5 max-w-full truncate rounded-sm text-left text-[10px] text-muted-foreground/70 hover:text-foreground"
               title={workspace?.path ? String(workspace.path) : "点击打开工作区"}
               aria-label={workspace?.path ? `工作区 ${workspace.path}` : "打开工作区"}
             >
@@ -155,16 +156,17 @@ export function AppHeader() {
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-1.5">
+      {/* Right: profile · mode · model · [stop] · cmd · drawer */}
+      <div className="flex shrink-0 items-center gap-1">
         {profileName && workbench && (
           <button
             type="button"
-            className="mr-1 hidden h-7 items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-2 text-[11px] text-muted-foreground hover:bg-muted/60 sm:inline-flex"
+            className="hidden h-7 items-center gap-1 rounded-md bg-muted/40 px-2 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground sm:inline-flex"
             title="当前编码档案 · 点击打开设置"
             onClick={() => navigate("/settings")}
           >
             <UserCheck className="h-3 w-3" />
-            {profileName}
+            <span className="max-w-[72px] truncate">{profileName}</span>
           </button>
         )}
 
@@ -173,16 +175,16 @@ export function AppHeader() {
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="mr-0.5 hidden h-8 items-center gap-1.5 rounded-md border border-border/80 bg-[hsl(var(--panel-elevated))] px-2 text-xs text-foreground sm:inline-flex hover:bg-muted/50"
+                className="hidden h-7 items-center gap-1 rounded-md bg-muted/30 px-2 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground sm:inline-flex"
                 title={modeMeta.hint}
                 aria-label="权限模式"
               >
                 <Shield
-                  className={`h-3.5 w-3.5 shrink-0 ${
-                    modeMeta.warn ? "text-warning" : "text-muted-foreground"
+                  className={`h-3 w-3 shrink-0 ${
+                    modeMeta.warn ? "text-warning" : "text-muted-foreground/70"
                   }`}
                 />
-                <span className="max-w-[88px] truncate">{modeMeta.short}</span>
+                <span className="max-w-[72px] truncate">{modeMeta.short}</span>
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
@@ -213,80 +215,74 @@ export function AppHeader() {
             </DropdownMenuContent>
           </DropdownMenu>
         )}
-        {workbench &&
-          (displayModel ? (
-            <button
-              type="button"
-              className="mr-1 hidden max-w-[200px] md:inline-flex"
-              title={
-                modelMismatch
-                  ? `本会话: ${rawSessionModel}\n全局默认: ${globalModel}\n点击打开「模型」；点选模型会热切换当前会话`
-                  : `${displayModel} · 点击打开「模型」`
-              }
-              onClick={() => navigate("/models")}
-            >
-              <Badge
-                variant={modelMismatch ? "outline" : "secondary"}
-                className={
-                  modelMismatch
-                    ? "max-w-[200px] cursor-pointer truncate border-warning/50 font-mono font-normal text-warning"
-                    : "max-w-[200px] cursor-pointer truncate font-mono font-normal"
-                }
-              >
-                {displayModel}
-                {modelMismatch ? " · 会话" : ""}
-              </Badge>
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="mr-1 hidden max-w-[200px] md:inline-flex"
-              title="providers 为空或未选择模型 · 点击打开「模型」页"
-              onClick={() => navigate("/models")}
-            >
-              <Badge
-                variant="outline"
-                className="max-w-[200px] cursor-pointer truncate font-normal text-warning"
-              >
-                未配置模型
-              </Badge>
-            </button>
-          ))}
+
+        {workbench && (
+          <button
+            type="button"
+            className="hidden h-7 items-center gap-1 rounded bg-muted/30 px-2 text-[11px] font-mono text-muted-foreground hover:bg-accent hover:text-foreground md:inline-flex"
+            title={
+              displayModel
+                ? modelMismatch
+                  ? `本会话: ${rawSessionModel}\n全局: ${globalModel} · 点击打开模型页`
+                  : `${displayModel} · 点击打开模型页`
+                : "未配置模型 · 点击打开模型页"
+            }
+            onClick={() => navigate("/models")}
+          >
+            <span className={cn(displayModel ? "" : "text-warning")}>
+              {displayModel || "未配置模型"}
+            </span>
+            {modelMismatch && (
+              <span className="text-warning/70">· 会话</span>
+            )}
+          </button>
+        )}
+
         {!workspace?.path && (
-          <Button size="sm" variant="outline" onClick={() => void openWorkspace()}>
-            <FolderOpen className="h-4 w-4" />
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 px-2 text-[11px]"
+            onClick={() => void openWorkspace()}
+          >
+            <FolderOpen className="h-3.5 w-3.5" />
             工作区
           </Button>
         )}
+
         {running && (
           <Button
             size="sm"
             variant="destructive"
+            className="h-7 px-2 text-[11px]"
             onClick={() => void abortSession()}
             title="停止 Agent (Esc)"
           >
-            <Square className="h-3.5 w-3.5 fill-current" />
+            <Square className="h-3 w-3 fill-current" />
             停止
           </Button>
         )}
+
         <Button
           size="icon-sm"
           variant="ghost"
+          className="h-7 w-7"
           title="命令面板 (Ctrl+K)"
           aria-label="打开命令面板"
           onClick={() => setCommandOpen(true)}
         >
-          <Command className="h-4 w-4" />
+          <Command className="h-3.5 w-3.5" />
         </Button>
         <Button
           size="icon-sm"
           variant={drawerOpen ? "secondary" : "ghost"}
+          className="h-7 w-7"
           title="检视面板 (Ctrl+J)"
           aria-label="切换检视面板"
           aria-pressed={drawerOpen}
           onClick={() => toggleDrawer()}
         >
-          <PanelRight className="h-4 w-4" />
+          <PanelRight className="h-3.5 w-3.5" />
         </Button>
       </div>
     </header>

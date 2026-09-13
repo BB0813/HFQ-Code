@@ -161,16 +161,16 @@ export function SessionSideBar() {
                 key={s.id}
                 role="listitem"
                 className={cn(
-                  "group relative flex items-start gap-1 rounded-lg px-2.5 py-2.5 text-left transition-colors duration-150",
+                  "group relative flex items-start gap-1 rounded-md px-2 py-2 text-left transition-colors duration-150",
                   active
-                    ? "bg-white/[0.08] text-foreground ring-1 ring-white/[0.06]"
-                    : "text-sidebar-foreground/90 hover:bg-white/[0.04]",
+                    ? "bg-workbench/10 text-foreground"
+                    : "text-sidebar-foreground/85 hover:bg-white/[0.04]",
                   isChild && "pl-4",
                 )}
               >
                 {active && (
                   <span
-                    className="absolute bottom-2.5 left-0 top-2.5 w-[3px] rounded-r bg-zinc-100"
+                    className="absolute bottom-2 left-0 top-2 w-0.5 rounded-r bg-workbench"
                     aria-hidden
                   />
                 )}
@@ -190,22 +190,22 @@ export function SessionSideBar() {
                     navigate("/chat");
                   }}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     {running && (
                       <span className="status-dot-running status-pulse" aria-label="运行中" />
                     )}
-                    <span className="truncate text-sm font-medium leading-snug">{title}</span>
+                    <span className="truncate text-sm font-medium leading-tight">{title}</span>
                     {isChild && (
-                      <span className="shrink-0 rounded border border-border/60 px-1 py-px font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+                      <span className="shrink-0 rounded border border-border/50 px-1 py-px font-mono text-[10px] uppercase tracking-wide text-muted-foreground/70">
                         {profile || "sub"}
                       </span>
                     )}
                   </div>
-                  <div className="mt-1 text-xs text-muted-foreground">
+                  <div className="mt-0.5 text-[11px] text-muted-foreground/70">
                     {formatRelativeTime(s.updatedAt ?? s.createdAt)}
                     {s.status ? ` · ${s.status}` : ""}
                     {sessionModel(s)
-                      ? ` · ${sessionModel(s).slice(0, 18)}`
+                      ? ` · ${sessionModel(s).slice(0, 16)}`
                       : ""}
                     {isChild && s.parentSessionId
                       ? ` · ↳ ${String(s.parentSessionId).slice(0, 6)}`

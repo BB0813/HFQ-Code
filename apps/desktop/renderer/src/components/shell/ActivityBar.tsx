@@ -106,7 +106,7 @@ function RailButton({
           {active && <span className="rail-active-bar" aria-hidden />}
           <Icon
             className={cn("h-[18px] w-[18px]", active && "text-workbench")}
-            strokeWidth={active ? 2 : 1.75}
+            strokeWidth={1.75}
           />
         </button>
       </TooltipTrigger>
@@ -139,15 +139,15 @@ export function ActivityBar() {
             type="button"
             onClick={() => go("home", "/home")}
             className={cn(
-              "mb-2.5 flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg shadow-sm duration-150",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-[hsl(240_9%_3%)]",
+              "mb-2 flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg duration-150",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               path === "home"
-                ? "bg-zinc-50 text-zinc-900 ring-1 ring-white/25"
-                : "bg-zinc-100/95 text-zinc-900 hover:bg-white",
+                ? "bg-workbench/15 text-workbench ring-1 ring-workbench/25"
+                : "text-muted-foreground hover:bg-white/[0.07] hover:text-foreground",
             )}
             aria-label="HFQ Code 主页"
           >
-            <Bot className="h-[18px] w-[18px]" strokeWidth={2} />
+            <Bot className="h-[18px] w-[18px]" strokeWidth={1.75} />
           </button>
         </TooltipTrigger>
         <TooltipContent side="right">主页</TooltipContent>

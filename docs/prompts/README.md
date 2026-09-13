@@ -44,10 +44,18 @@
 | [test-1.1.9-polish-gate.md](./test-1.1.9-polish-gate.md) | 测试 Agent：1.1.9 发布门槛 | done · 已执行 |
 | [test-1.1.9-polish-report-brief.md](./test-1.1.9-polish-report-brief.md) | 测试回传简报 | CONDITIONAL GO → Electron T1 PASS by release |
 | [release-1.1.9.md](./release-1.1.9.md) | 发版 Agent：1.1.9 · tag 前强制 Electron T1 | done（1.1.9 shipped · T1 PASS） |
-| [1.2-ui-plan.md](./1.2-ui-plan.md) | **1.2 大动 UI + F2 余量（规划）** | **planned · next after 1.1.9 · U0 门禁** |
+| [1.2-ui-plan.md](./1.2-ui-plan.md) | 1.2 大动 UI + F2 余量（规划） | reference · U0 已锁 |
+| [1.2-ui-handoff.md](./1.2-ui-handoff.md) | 1.2 全列车契约（U1–U5 + F2） | reference · 总包 |
+| [1.2-slice-a-handoff.md](./1.2-slice-a-handoff.md) | 1.2 Slice A 总范围（U1+U2+U3） | active · 父契约 · 选项 A |
+| [1.2-slice-a-shell-handoff.md](./1.2-slice-a-shell-handoff.md) | 1.2 Slice A · U2 壳硬做 | done · 联调壳刀 GO（待测试门禁） |
+| [test-1.2-slice-a-gate.md](./test-1.2-slice-a-gate.md) | 测试 Agent：1.2 Slice A 可演示门禁 | done · CONDITIONAL GO |
+| [test-1.2-slice-a-report-brief.md](./test-1.2-slice-a-report-brief.md) | 测试回传简报 | CONDITIONAL GO · 待 Electron V8+T1 |
+| [release-1.2.0.md](./release-1.2.0.md) | **发版 Agent：1.2.0 Slice A · tag 前强制 V8+T1** | **active · 当前执行** |
+| [session-handoff-post-1.1.9.md](./session-handoff-post-1.1.9.md) | 会话压缩交接 · 1.1.9→1.2 起点 | reference |
+
 
 阶梯总册（非 prompt，实现必读）：[`docs/UPDATE-L1-L3.md`](../UPDATE-L1-L3.md) · DECISIONS Q9  
-排序（2026-07-21）：**1.1.9 小补丁 → 1.2 大动 UI**（禁止跳过 1.1.9 直接大改壳）
+排序（2026-07-21）：**1.1.9 shipped** → **1.2 Slice A CONDITIONAL GO** → 当前执行 `release-1.2.0.md`（tag 前 V8+T1）
 
 ## 与产品文档的关系
 

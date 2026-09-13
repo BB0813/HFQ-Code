@@ -32,7 +32,7 @@ export function RightDrawer() {
         className="flex h-full flex-col"
       >
         <div className="dock-pane-header gap-2">
-          <TabsList className="grid h-9 flex-1 grid-cols-3 rounded-lg bg-white/[0.04] p-0.5">
+          <TabsList className="grid h-8 flex-1 grid-cols-3 rounded-lg bg-white/[0.04] p-0.5">
             {(Object.keys(TAB_LABEL) as DrawerTab[]).map((id) => (
               <TabsTrigger
                 key={id}

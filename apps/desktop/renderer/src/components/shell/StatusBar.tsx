@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { shortPath } from "@/lib/utils";
 import { useAppStore } from "@/store/app-store";
 import { useUiStore } from "@/store/ui-store";
-import { getHfq, hasHfq, sessionModel, type GitStatus } from "@/lib/hfq";
+import { getHfq, hasHfq, type GitStatus } from "@/lib/hfq";
+import { cn } from "@/lib/utils";
 
 export function StatusBar() {
   const navigate = useNavigate();
@@ -17,13 +18,10 @@ export function StatusBar() {
   const [git, setGit] = useState<GitStatus | null>(null);
 
   const session = sessions.find((s) => s.id === activeSessionId);
-  const sessModel = sessionModel(session);
+  const sessModel = session?.model ? String(session.model).trim() : "";
   const globalModel = info?.activeModel ? String(info.activeModel).trim() : "";
-  // Prefer bound session model (open rebind / hot-swap); fall back to global; never invent mock-hfq.
   const displayModel = sessModel || globalModel;
-  const modelMismatch = Boolean(
-    sessModel && globalModel && sessModel !== globalModel,
-  );
+  const modelMismatch = Boolean(sessModel && globalModel && sessModel !== globalModel);
 
   useEffect(() => {
     if (!hasHfq() || !workspace?.path) {
@@ -47,7 +45,6 @@ export function StatusBar() {
     void load();
     schedule(8000);
     const onVis = () => {
-      // Pause polling when window is hidden (other tab / minimized).
       if (document.hidden) {
         clearInterval(interval);
       } else {
@@ -64,21 +61,27 @@ export function StatusBar() {
   }, [workspace?.path]);
 
   return (
-    <footer className="flex h-6 shrink-0 items-center gap-2 border-t border-border/40 bg-[hsl(var(--statusbar))] px-2 text-[11px] text-muted-foreground">
+    <footer className="flex h-6 shrink-0 items-center gap-1.5 border-t border-border/30 bg-[hsl(var(--statusbar))] px-2 text-[11px] text-muted-foreground/80">
+      {/* Left: product + version */}
       <button
         type="button"
-        className="cursor-pointer font-medium text-foreground/85 transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className="cursor-pointer font-medium text-foreground/70 transition-colors duration-150 hover:text-foreground"
         onClick={() => setCommandOpen(true)}
         title="命令面板 (Ctrl+K)"
       >
-        HFQ Code
+        HFQ
       </button>
-      {info?.version && <span className="opacity-70">v{String(info.version)}</span>}
-      <span className="h-3.5 w-px bg-border/90" aria-hidden />
+      {info?.version && (
+        <span className="opacity-60">v{String(info.version)}</span>
+      )}
+
+      <span className="h-3 w-px bg-border/40" aria-hidden />
+
+      {/* Git status */}
       {git?.isRepo ? (
         <button
           type="button"
-          className="cursor-pointer truncate transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className="cursor-pointer truncate transition-colors duration-150 hover:text-foreground"
           title="打开改动"
           onClick={() => {
             setDrawerTab("changes");
@@ -86,57 +89,58 @@ export function StatusBar() {
           }}
         >
           <span className="font-mono">{git.branch ?? "git"}</span>
-          {git.dirty ? (
-            <span className="text-warning"> · dirty</span>
-          ) : (
-            <span className="text-success"> · clean</span>
-          )}
+          <span className={git.dirty ? "text-warning/80" : "text-success/70"}>
+            {git.dirty ? " · 有改动" : " · 干净"}
+          </span>
         </button>
       ) : (
-        <span className="opacity-70">{workspace?.path ? "非 Git" : "—"}</span>
+        <span className="opacity-60">{workspace?.path ? "非 Git" : "—"}</span>
       )}
-      <span className="h-3.5 w-px bg-border/90" aria-hidden />
+
+      <span className="h-3 w-px bg-border/40" aria-hidden />
+
+      {/* Agent status */}
       <span
         className={
           running
-            ? "inline-flex items-center gap-1.5 font-medium text-success"
-            : "inline-flex items-center gap-1.5 opacity-80"
+            ? "inline-flex items-center gap-1 font-medium text-success"
+            : "inline-flex items-center gap-1 opacity-70"
         }
         aria-live="polite"
       >
         <span className={running ? "status-dot-running status-pulse" : "status-dot-idle"} />
-        {running ? "running" : "idle"}
+        {running ? "运行中" : "空闲"}
       </span>
-      <>
-        <span className="h-3.5 w-px bg-border/90" aria-hidden />
-        <button
-          type="button"
-          className={
-            displayModel
-              ? modelMismatch
-                ? "max-w-[180px] cursor-pointer truncate font-mono text-warning transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                : "max-w-[180px] cursor-pointer truncate font-mono transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              : "max-w-[180px] cursor-pointer truncate text-warning transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          }
-          title={
-            modelMismatch
-              ? `本会话: ${sessModel}\n全局默认: ${globalModel}\n点击打开模型页`
-              : displayModel
-                ? `${displayModel} · 模型设置`
-                : "未配置模型 · 点击打开模型页"
-          }
-          onClick={() => navigate("/models")}
-        >
-          {displayModel || "未配置模型"}
-        </button>
-      </>
+
+      <span className="h-3 w-px bg-border/40" aria-hidden />
+
+      {/* Model */}
       <button
         type="button"
-        className="ml-auto max-w-[50%] cursor-pointer truncate opacity-80 transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className={cn(
+          "max-w-[140px] cursor-pointer truncate font-mono transition-colors duration-150 hover:text-foreground",
+          !displayModel && "text-warning/70",
+        )}
+        title={
+          modelMismatch
+            ? `本会话: ${sessModel}\n全局: ${globalModel}\n点击打开模型页`
+            : displayModel
+              ? `${displayModel} · 点击打开模型页`
+              : "未配置模型 · 点击打开模型页"
+        }
+        onClick={() => navigate("/models")}
+      >
+        {displayModel || "未配置模型"}
+      </button>
+
+      {/* Right: workspace path */}
+      <button
+        type="button"
+        className="ml-auto max-w-[45%] cursor-pointer truncate opacity-60 transition-colors duration-150 hover:text-foreground"
         title={workspace?.path ? String(workspace.path) : "未绑定工作区"}
         onClick={() => void useAppStore.getState().openWorkspace()}
       >
-        {workspace?.path ? shortPath(String(workspace.path), 56) : "未绑定工作区"}
+        {workspace?.path ? shortPath(String(workspace.path), 48) : "未绑定工作区"}
       </button>
     </footer>
   );

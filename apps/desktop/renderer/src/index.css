@@ -44,6 +44,9 @@
     --activitybar: 215 25% 22%;
     --dialog-surface: 0 0% 100%;
     --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+    /* 1.2 font tokens */
+    --font-ui: "Inter", "SF Pro", "Segoe UI", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
   }
 
   .dark {
@@ -86,6 +89,8 @@
     --activitybar: 240 9% 3%;
     --dialog-surface: 240 8% 6%;
     --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+    --font-ui: "Inter", "SF Pro", "Segoe UI", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
   }
 
   * {
@@ -101,12 +106,18 @@
 
   body {
     @apply bg-background text-foreground text-[14px] leading-normal;
+    font-family: var(--font-ui);
     font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
     user-select: none;
     letter-spacing: -0.011em;
+  }
+
+  /* 1.2: monospace for code blocks */
+  pre, code, kbd, samp, .font-mono {
+    font-family: var(--font-mono);
   }
 
   /* IDE density: selectable text in content panes */

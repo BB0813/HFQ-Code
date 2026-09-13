@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
   ArrowUp,
+  ChevronDown,
   Copy,
   FolderOpen,
   Loader2,
@@ -50,6 +51,7 @@ const MessageBlock = memo(function MessageBlock({ message }: { message: SessionM
   const isThinking =
     role === "thinking" || Boolean((message as { thinking?: boolean }).thinking);
   const [copied, setCopied] = useState(false);
+  const [toolOpen, setToolOpen] = useState(true);
 
   const handleCopy = useCallback(async () => {
     if (!text) return;
@@ -75,47 +77,60 @@ const MessageBlock = memo(function MessageBlock({ message }: { message: SessionM
   );
   const phase = (message as { phase?: string }).phase;
   const ok = (message as { ok?: boolean }).ok;
+  const body = text || (isTool ? "（无输出）" : "");
   return (
     <article
       className={cn(
-        "group relative animate-message-in rounded-lg px-3.5 py-2.5 text-sm",
+        "group animate-message-in rounded-lg px-3 py-2 text-sm leading-relaxed",
         isUser && "msg-user",
         isTool && "msg-tool",
         !isUser && !isTool && "msg-agent",
       )}
     >
-      <div className="mb-1.5 flex items-center gap-2">
+      <div className="flex items-center gap-2">
         {isTool && (
-          <span className="flex h-5 w-5 items-center justify-center rounded-md bg-white/[0.06]">
-            <Wrench className="h-3 w-3 text-muted-foreground" />
+          <button
+            type="button"
+            onClick={() => setToolOpen(!toolOpen)}
+            className="flex h-5 w-5 items-center justify-center rounded hover:bg-white/[0.08]"
+            title={toolOpen ? "折叠" : "展开"}
+          >
+            <ChevronDown
+              className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform", !toolOpen && "-rotate-90")}
+            />
+          </button>
+        )}
+        {isUser && (
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-muted/50">
+            <span className="text-[10px] font-medium text-muted-foreground">U</span>
           </span>
         )}
         <span
           className={cn(
-            "text-xs font-medium uppercase tracking-wide",
+            "text-[11px] font-medium",
             isUser
-              ? "text-zinc-300/90"
+              ? "text-foreground/80"
               : isTool
                 ? "text-muted-foreground"
-                : "text-foreground/55",
+                : "text-foreground/60",
           )}
         >
-          {isUser ? "You" : isTool ? toolName : "Agent"}
+          {isUser ? "你" : isTool ? toolName : "Agent"}
         </span>
         {isTool && phase === "running" && (
-          <Badge variant="outline" className="gap-1 font-normal">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            running
+          <Badge variant="outline" className="h-5 gap-1 px-1.5 font-normal text-[10px]">
+            <Loader2 className="h-2.5 w-2.5 animate-spin" />
+            运行中
           </Badge>
         )}
         {isTool && phase === "done" && ok === false && (
-          <Badge variant="destructive" className="font-normal">
-            failed
+          <Badge variant="destructive" className="h-5 px-1.5 font-normal text-[10px]">
+            失败
           </Badge>
         )}
         <button
           type="button"
-          className="ml-auto hidden h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className="ml-auto hidden h-5 w-5 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
           title="复制消息"
           aria-label="复制消息内容"
           onClick={handleCopy}
@@ -127,12 +142,16 @@ const MessageBlock = memo(function MessageBlock({ message }: { message: SessionM
           )}
         </button>
       </div>
-      {isUser || isTool ? (
-        <div className="selectable whitespace-pre-wrap break-words text-[14px] leading-relaxed">
-          {text || (isTool ? "（无输出）" : "")}
+      {(!isTool || toolOpen) && (
+        <div className="mt-1 pl-1">
+          {isUser || isTool ? (
+            <pre className="selectable whitespace-pre-wrap break-words font-sans text-[13px] leading-relaxed text-foreground/85">
+              {body}
+            </pre>
+          ) : (
+            <MarkdownMessage text={body} />
+          )}
         </div>
-      ) : (
-        <MarkdownMessage text={text || ""} />
       )}
     </article>
   );
@@ -504,101 +523,31 @@ export function ChatView() {
   };
 
   return (
-    <div className="relative flex h-full flex-col bg-[hsl(var(--panel-elevated))]">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-30"
-        style={{
-          background:
-            "radial-gradient(ellipse 62% 42% at 50% 28%, hsl(240 8% 14% / 0.75), transparent 72%)",
-        }}
-      />
-      <ScrollArea className="relative min-h-0 flex-1">
-        <div className="chat-content mx-auto flex min-h-full max-w-[760px] flex-col gap-3.5 px-7 py-6">
+    <div className="flex h-full flex-col bg-[hsl(var(--surface-1))]">
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="chat-content mx-auto flex min-h-full max-w-[760px] flex-col gap-2.5 px-6 py-5">
           {empty && (
-            <div className="flex flex-1 flex-col items-center justify-center px-2 py-14">
-              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-b from-zinc-800/85 to-zinc-950/90 shadow-lg shadow-black/40">
-                <Sparkles className="h-5 w-5 text-zinc-100" strokeWidth={1.5} />
+            <div className="flex flex-1 flex-col items-center justify-center px-2 py-10">
+              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-muted/50">
+                <Sparkles className="h-5 w-5 text-muted-foreground" strokeWidth={1.5} />
               </div>
-              <h2 className="text-base font-semibold tracking-tight text-balance">
-                {session?.title || session?.goal || "开始编码"}
-              </h2>
-              <p className="mt-2 max-w-md text-center text-sm leading-relaxed text-muted-foreground text-balance">
+              <div className="text-sm font-medium text-foreground/85">
+                {session?.title || session?.goal || (workspace?.path ? "开始编码" : "绑定工作区")}
+              </div>
+              <p className="mt-1 max-w-md text-center text-xs leading-relaxed text-muted-foreground text-balance">
                 {workspace?.path
-                  ? `工作区 ${shortPath(String(workspace.path), 48)} · 描述任务，或输入 / 命令 · $ 技能`
+                  ? "描述任务，或输入 / 命令 · $ 技能"
                   : "先绑定工作区，再描述你想改的代码或要跑的任务"}
               </p>
-              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-                {(() => {
-                  const sessModel = sessionModel(session);
-                  const globalModel = info?.activeModel
-                    ? String(info.activeModel).trim()
-                    : "";
-                  const model = sessModel || globalModel;
-                  const provider =
-                    sessionProviderId(session) ||
-                    (info?.activeProviderId &&
-                      String(info.activeProviderId).trim()) ||
-                    "";
-                  return (
-                    <>
-                      {model ? (
-                        <Badge
-                          variant="secondary"
-                          className="font-mono font-normal"
-                          title={
-                            sessModel && globalModel && sessModel !== globalModel
-                              ? `本会话: ${sessModel}\n全局: ${globalModel}`
-                              : model
-                          }
-                        >
-                          {model}
-                        </Badge>
-                      ) : (
-                        <Badge
-                          variant="outline"
-                          className="font-normal text-warning"
-                        >
-                          未配置模型
-                        </Badge>
-                      )}
-                      {provider ? (
-                        <Badge variant="outline" className="font-normal">
-                          {provider}
-                        </Badge>
-                      ) : null}
-                    </>
-                  );
-                })()}
-                {activeSessionId && (
-                  <Badge variant="muted" className="font-mono font-normal">
-                    {activeSessionId.slice(0, 8)}
-                  </Badge>
-                )}
-                {session?.parentSessionId ? (
-                  <Badge
-                    variant="outline"
-                    className="font-normal"
-                    title={`父会话 ${session.parentSessionId}`}
-                  >
-                    子会话
-                    {session.subagentProfile
-                      ? ` · ${session.subagentProfile}`
-                      : ""}
-                  </Badge>
-                ) : null}
-              </div>
-              <div className="mt-6 grid w-full max-w-lg gap-2 sm:grid-cols-2">
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-1.5">
                 {[
-                  { label: "解释当前项目结构", insert: "解释当前项目结构" },
-                  { label: "修复最近的 TypeScript 报错", insert: "修复最近的 TypeScript 报错" },
-                  { label: "长运行 /goal", insert: "/goal " },
-                  { label: "压缩上下文 /compact", insert: "/compact " },
+                  { label: "解释项目结构", insert: "解释当前项目结构" },
+                  { label: "/goal 长运行", insert: "/goal " },
                 ].map((hint) => (
                   <button
                     key={hint.label}
                     type="button"
-                    className="hint-chip"
+                    className="rounded-md bg-muted/50 px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors duration-150"
                     onClick={() => {
                       setDraft(hint.insert);
                       requestAnimationFrame(() => {
@@ -613,7 +562,7 @@ export function ChatView() {
                   </button>
                 ))}
               </div>
-              <div className="mt-5 flex gap-2">
+              <div className="mt-4 flex gap-2">
                 {!workspace?.path && (
                   <Button size="sm" variant="outline" onClick={() => void openWorkspace()}>
                     <FolderOpen className="h-4 w-4" />
@@ -689,8 +638,8 @@ export function ChatView() {
         </div>
       )}
 
-      <div className="relative shrink-0 border-t border-border/70 bg-[hsl(var(--panel))] px-6 py-3.5">
-        <div className="relative mx-auto max-w-[760px]">
+      <div className="shrink-0 border-t border-border/40 bg-[hsl(var(--surface-2))] px-5 py-3">
+        <div className="mx-auto max-w-[760px]">
           {!workspace?.path && (
             <div className="mb-2.5 flex items-center gap-2.5 rounded-lg border border-warning/25 bg-warning/[0.07] px-3 py-2 text-xs text-warning">
               <FolderOpen className="h-4 w-4 shrink-0" />

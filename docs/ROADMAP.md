@@ -2,7 +2,7 @@
 
 Status: **active plan**  
 Baseline: product **1.1.9** (`v1.1.9`) · 2026-07-21  
-Last updated: 2026-07-21 · **1.1.9 coding-loop polish shipped** · **Next: 1.2 big UI + F2** — [prompts/1.2-ui-plan.md](./prompts/1.2-ui-plan.md)
+Last updated: 2026-07-21 · **1.1.9 shipped** · **Next: release 1.2.0 (Slice A · CONDITIONAL GO)** — [prompts/release-1.2.0.md](./prompts/release-1.2.0.md) · [UI-1.2.md](./UI-1.2.md)
 
 ## Positioning (frozen)
 
@@ -39,13 +39,13 @@ Last updated: 2026-07-21 · **1.1.9 coding-loop polish shipped** · **Next: 1.2 
 1.1.9  coding-loop polish (Terminal / Changes / Tasks)   ← shipped
   │
   ▼
-1.2    big UI overhaul (+ F2 remainder as slices)       ← current next
+1.2    big UI overhaul (+ F2 remainder as slices)       ← implement now
 ```
 
 | Owner | Work | Notes |
 |-------|------|--------|
 | **Product** | **1.1.9 · Coding-loop polish** | B1-2 PTY reattach · B2 commit toast · B3 Tasks 收口 | **Shipped** (`v1.1.9`) — [RELEASE-1.1.9.md](./RELEASE-1.1.9.md) · Electron T1 PASS |
-| **Product** | **1.2 · Big UI + F2 remainder** | U0 design gate → design system/shell/Chat · then Memory FTS / Goal OS light / panel prefs | **Next** — [prompts/1.2-ui-plan.md](./prompts/1.2-ui-plan.md) · needs U0 |
+| **Product** | **1.2 · Big UI + F2 remainder** | U0 **locked** · **Slice A 当前执行**（U1–U3）→ B/C | **Active** — [prompts/1.2-slice-a-handoff.md](./prompts/1.2-slice-a-handoff.md) · 总包 [1.2-ui-handoff.md](./prompts/1.2-ui-handoff.md) · [UI-1.2.md](./UI-1.2.md) |
 | **Product** | **1.1.8 · Update L3** | opt-in silent NSIS `/S` + pending marker + relaunch | **Shipped** (`v1.1.8`) — [RELEASE-1.1.8.md](./RELEASE-1.1.8.md) |
 | **Product** | **1.1.7 · Update L1+L2** | `updatePolicy` · background auto-download · ready UI · one-click confirm install | **Shipped** (`v1.1.7`) — [RELEASE-1.1.7.md](./RELEASE-1.1.7.md) |
 | **Product** | **1.1.6 full train** | compression LLM compact · goal sidecar · `read_document` · compactMaxChars · UI polish | **Shipped** (`v1.1.6`) — [RELEASE-1.1.6.md](./RELEASE-1.1.6.md) |
@@ -294,9 +294,9 @@ Canonical: **[ADOPT-KIVIO-ATHENA.md](./ADOPT-KIVIO-ATHENA.md)**.
 
 ## Next concrete sprint (2026-07-21)
 
-1. **1.1.9** — execute [prompts/1.1.9-polish-handoff.md](./prompts/1.1.9-polish-handoff.md) (FE-first; additive IPC only if PTY needs it)  
-2. **release 1.1.9** — `release:check` + pack + tag (prompt when implementation green)  
-3. **1.2 U0** — design gate per [prompts/1.2-ui-plan.md](./prompts/1.2-ui-plan.md) (mock + layout skin vs hybrid)  
-4. **1.2 implement slices** — UI first; F2 FTS/Goal/panel prefs as agreed slices  
+1. **release 1.2.0** — execute [prompts/release-1.2.0.md](./prompts/release-1.2.0.md)（Slice A only · **tag 前强制 Electron V8 + T1**）  
+2. **1.2 Slice B/C** — 三页版式 + Memory FTS / Goal light / panel prefs（总包 [1.2-ui-handoff.md](./prompts/1.2-ui-handoff.md)）— **1.2.0 ship 后再开**  
+3. U0 选型纪要 — [UI-1.2.md](./UI-1.2.md)（已锁）  
+4. 测试简报 — [prompts/test-1.2-slice-a-report-brief.md](./prompts/test-1.2-slice-a-report-brief.md)（CONDITIONAL GO）  
 
-Default next ship target: **`v1.1.9` polish**, then **1.2 big UI** (not F2-only, not update-train).
+Default next ship target: **`v1.2.0`** after Slice A（至少）可演示且回归不红；F2 可 1.2.1。

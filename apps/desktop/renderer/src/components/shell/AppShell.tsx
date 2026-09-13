@@ -25,6 +25,8 @@ function ShellChrome() {
   const syncRoute = useUiStore((s) => s.syncRoute);
   const toggleDrawer = useUiStore((s) => s.toggleDrawer);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
+  const setDrawerOpen = useUiStore((s) => s.setDrawerOpen);
+  const setSidebarOpen = useUiStore((s) => s.setSidebarOpen);
   const setCommandOpen = useUiStore((s) => s.setCommandOpen);
   const commandOpen = useUiStore((s) => s.commandOpen);
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
@@ -40,6 +42,19 @@ function ShellChrome() {
 
   const path = location.pathname;
   const workbench = isWorkbenchRoute(path);
+
+  // Narrow-screen: independent thresholds — only close when width shrinks across threshold.
+  useEffect(() => {
+    let prev = window.innerWidth;
+    const onResize = () => {
+      const w = window.innerWidth;
+      if (w < 900 && prev >= 900) setDrawerOpen(false);
+      if (w < 700 && prev >= 700 && workbench) setSidebarOpen(false);
+      prev = w;
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [workbench]);
 
   useEffect(() => {
     syncRoute(path);
