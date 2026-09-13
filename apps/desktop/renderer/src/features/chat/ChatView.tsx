@@ -207,6 +207,8 @@ export function ChatView() {
   const empty = messages.length === 0 && !streamingText && !streamingThinking;
   /** Only blocks send — composer tools stay usable while agent runs. */
   const sendLocked = running || sending;
+  /** Progressive gating (dsh-style): no workspace → send disabled, guidance shown. */
+  const noWorkspace = !workspace?.path;
 
   // Smart scroll: auto-scroll only when user hasn't scrolled up.
   // Uses IntersectionObserver on bottom anchor; visible → near bottom.
@@ -797,12 +799,16 @@ export function ChatView() {
                     size="icon"
                     className={cn(
                       "h-8 w-8 shrink-0 rounded-lg duration-150",
-                      !draft.trim() && attachments.length === 0 && "opacity-40",
+                      (!draft.trim() && attachments.length === 0) && "opacity-40",
                     )}
-                    disabled={(!draft.trim() && attachments.length === 0) || sendLocked}
+                    disabled={
+                      (!draft.trim() && attachments.length === 0) ||
+                      sendLocked ||
+                      noWorkspace
+                    }
                     onClick={() => void submit()}
-                    title="发送 (Enter)"
-                    aria-label="发送消息"
+                    title={noWorkspace ? "先绑定工作区再发送" : "发送 (Enter)"}
+                    aria-label={noWorkspace ? "未绑定工作区，无法发送" : "发送消息"}
                   >
                     {sending ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
