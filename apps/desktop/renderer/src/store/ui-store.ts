@@ -223,9 +223,11 @@ export const useUiStore = create<UiState>((set, get) => ({
       patch.drawerOpen = true;
       patch.drawerPinned = false;
     } else if (id === "tasks") {
+      // Full page already shows the task tree — don't double-render it in the drawer.
       patch.drawerTab = "tasks";
-      patch.drawerOpen = true;
-      patch.drawerPinned = false;
+      if (!get().drawerPinned) {
+        patch.drawerOpen = false;
+      }
     } else if (id === "terminal") {
       // Full-page terminal already owns the center; avoid double PTY chrome in drawer.
       patch.drawerTab = "changes";

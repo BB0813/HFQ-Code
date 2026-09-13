@@ -1,7 +1,62 @@
 import type { ReactNode } from "react";
 import { Loader2, RefreshCw, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+
+/** Shared destructive/confirm dialog — replaces native window.confirm across pages. */
+export function ConfirmDialog({
+  open,
+  title,
+  description,
+  confirmText = "确认",
+  destructive,
+  onConfirm,
+  onOpenChange,
+}: {
+  open: boolean;
+  title: string;
+  description?: string;
+  confirmText?: string;
+  destructive?: boolean;
+  onConfirm: () => void;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          {description ? (
+            <DialogDescription className="whitespace-pre-wrap">{description}</DialogDescription>
+          ) : null}
+        </DialogHeader>
+        <DialogFooter className="gap-2">
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+            取消
+          </Button>
+          <Button
+            variant={destructive ? "destructive" : "default"}
+            size="sm"
+            onClick={() => {
+              onConfirm();
+              onOpenChange(false);
+            }}
+          >
+            {confirmText}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export function ErrorBanner({
   message,

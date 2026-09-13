@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   Cpu,
   Loader2,
+  MoreHorizontal,
   Pencil,
   Plus,
   RefreshCw,
@@ -15,6 +16,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -24,6 +32,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   ChipButton,
+  ConfirmDialog,
   EmptyState,
   ErrorBanner,
   LoadingBlock,
@@ -249,6 +258,7 @@ export function ModelsPage() {
   const [form, setForm] = useState<ProviderForm>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<Record<string, unknown> | null>(null);
   const [testingKey, setTestingKey] = useState<string | null>(null);
   /** Remote/config enumeration cache keyed by provider id (not persisted). */
   const [listedByProvider, setListedByProvider] = useState<
@@ -309,31 +319,18 @@ export function ModelsPage() {
       .map((s) => s.trim())
       .filter(Boolean);
 
+  const requestRemoveProvider = (p: Record<string, unknown>) => {
+    const id = String(p.id ?? p.providerId ?? "").trim();
+    if (!id) return;
+    setRemoveTarget(p);
+  };
+
   const removeProvider = async (p: Record<string, unknown>) => {
     const id = String(p.id ?? p.providerId ?? "").trim();
     const name = String(p.name ?? id);
     if (!id) return;
     // Product decision: mock and last provider are deletable. Empty list is allowed;
     // backend must clear/reassign active* and fail closed when no provider remains.
-    const isActive = String(info?.activeProviderId) === id;
-    const isLast = providers.length <= 1;
-    const isMock = id === "mock";
-    const ok = window.confirm(
-      [
-        `确定删除渠道「${name}」(${id})？`,
-        "",
-        "将从本地配置移除（含该渠道密钥）。",
-        isMock ? "这是 Mock 渠道：删除后离线兜底不可用，除非再添加。" : "",
-        isLast
-          ? "这是当前最后一个渠道：删除后 providers 将为空，新会话/探测在补回渠道前会失败。"
-          : isActive
-            ? "当前工作台正在使用该渠道，删除后应回落到其他渠道或清空 active。"
-            : "不影响其他渠道。",
-      ]
-        .filter(Boolean)
-        .join("\n"),
-    );
-    if (!ok) return;
     setRemovingId(id);
     try {
       const next = (await getHfq().removeProvider({ id })) as Record<string, unknown>;
@@ -345,6 +342,7 @@ export function ModelsPage() {
       toast.error(e instanceof Error ? e.message : String(e));
     } finally {
       setRemovingId(null);
+      setRemoveTarget(null);
     }
   };
 
@@ -804,21 +802,6 @@ export function ModelsPage() {
                       size="sm"
                       variant="ghost"
                       className="h-7 gap-1 px-2 text-xs"
-                      title="刷新模型列表（远端优先，失败回落配置）"
-                      disabled={listingId === id}
-                      onClick={() => void refreshProviderModels(id)}
-                    >
-                      {listingId === id ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        <RefreshCw className="h-3 w-3" />
-                      )}
-                      刷新列表
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 gap-1 px-2 text-xs"
                       title={`用默认模型探测渠道 ${id}`}
                       disabled={Boolean(testingKey?.startsWith(`${id}:`))}
                       onClick={() => {
@@ -850,21 +833,45 @@ export function ModelsPage() {
                       <Pencil className="h-3 w-3" />
                       编辑
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-destructive"
-                      disabled={removingId === id}
-                      title={id === "mock" ? "删除 Mock（允许；删后无离线兜底）" : providers.length <= 1 ? "删除最后一个渠道（允许；将清空 providers）" : `删除 ${id}`}
-                      onClick={() => void removeProvider(p)}
-                    >
-                      {removingId === id ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-3 w-3" />
-                      )}
-                      删除
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 text-muted-foreground"
+                          title="更多操作"
+                          aria-label={`更多操作 ${id}`}
+                        >
+                          <MoreHorizontal className="h-3.5 w-3.5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-44">
+                        <DropdownMenuItem
+                          disabled={listingId === id}
+                          onClick={() => void refreshProviderModels(id)}
+                        >
+                          {listingId === id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <RefreshCw className="h-3.5 w-3.5" />
+                          )}
+                          刷新模型列表
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          disabled={removingId === id}
+                          onClick={() => requestRemoveProvider(p)}
+                        >
+                          {removingId === id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-3.5 w-3.5" />
+                          )}
+                          删除渠道…
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
                 {p.baseURL || p.baseUrl ? (
@@ -900,7 +907,7 @@ export function ModelsPage() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="h-6 w-6 p-0 text-muted-foreground"
+                          className="h-7 w-7 p-0 text-muted-foreground"
                           title={`探测 ${id}/${modelId}`}
                           disabled={testingKey === key}
                           onClick={(e) => {
@@ -1046,11 +1053,9 @@ export function ModelsPage() {
                   ["mock", "Mock"],
                 ] as const
               ).map(([k, label]) => (
-                <Button
+                <ChipButton
                   key={k}
-                  size="sm"
-                  variant={form.kind === k ? "secondary" : "outline"}
-                  className="h-7 text-xs"
+                  active={form.kind === k}
                   onClick={() => {
                     setForm((f) => ({ ...f, kind: k }));
                     if (!editing) {
@@ -1060,65 +1065,79 @@ export function ModelsPage() {
                   }}
                 >
                   {label}
-                </Button>
+                </ChipButton>
               ))}
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <label className="grid grid-cols-[88px_1fr] items-center gap-2">
+              <span className="text-xs text-muted-foreground">ID（唯一）</span>
               <Input
-                placeholder="id（唯一）"
                 className="font-mono text-xs"
                 value={form.id}
                 disabled={editing}
                 onChange={(e) => setForm((f) => ({ ...f, id: e.target.value }))}
               />
+            </label>
+            <label className="grid grid-cols-[88px_1fr] items-center gap-2">
+              <span className="text-xs text-muted-foreground">名称</span>
               <Input
-                placeholder="显示名称"
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
               />
-            </div>
-            <Input
-              placeholder="baseURL（OpenAI 兼容一般以 /v1 结尾）"
-              className="font-mono text-xs"
-              value={form.baseURL}
-              onChange={(e) => setForm((f) => ({ ...f, baseURL: e.target.value }))}
-              onBlur={() => {
-                const next = polishBaseURL(form.baseURL, form.kind);
-                if (next !== form.baseURL.trim().replace(/\/+$/, "")) {
-                  setForm((f) => ({ ...f, baseURL: next }));
-                }
-              }}
-            />
-            <Input
-              type="password"
-              autoComplete="off"
-              placeholder={
-                form.apiKey && (form.apiKey.includes("…") || form.apiKey === "********")
-                  ? "已配置密钥 · 留空或保持脱敏则不改"
-                  : "API Key（可选）"
-              }
-              className="font-mono text-xs"
-              value={form.apiKey}
-              onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))}
-            />
-            <div className="space-y-1">
+            </label>
+            <label className="grid grid-cols-[88px_1fr] items-center gap-2">
+              <span className="text-xs text-muted-foreground">baseURL</span>
               <Input
-                placeholder="models（逗号分隔，至少一个）"
+                placeholder="OpenAI 兼容一般以 /v1 结尾"
                 className="font-mono text-xs"
-                value={form.modelsText}
-                onChange={(e) => setForm((f) => ({ ...f, modelsText: e.target.value }))}
+                value={form.baseURL}
+                onChange={(e) => setForm((f) => ({ ...f, baseURL: e.target.value }))}
+                onBlur={() => {
+                  const next = polishBaseURL(form.baseURL, form.kind);
+                  if (next !== form.baseURL.trim().replace(/\/+$/, "")) {
+                    setForm((f) => ({ ...f, baseURL: next }));
+                  }
+                }}
               />
-              <p className="text-[11px] text-muted-foreground">
+            </label>
+            <label className="grid grid-cols-[88px_1fr] items-center gap-2">
+              <span className="text-xs text-muted-foreground">API Key</span>
+              <Input
+                type="password"
+                autoComplete="off"
+                placeholder={
+                  form.apiKey && (form.apiKey.includes("…") || form.apiKey === "********")
+                    ? "已配置密钥 · 留空或保持脱敏则不改"
+                    : "可选"
+                }
+                className="font-mono text-xs"
+                value={form.apiKey}
+                onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))}
+              />
+            </label>
+            <div className="space-y-1">
+              <label className="grid grid-cols-[88px_1fr] items-center gap-2">
+                <span className="text-xs text-muted-foreground">models</span>
+                <Input
+                  placeholder="逗号分隔，至少一个"
+                  className="font-mono text-xs"
+                  value={form.modelsText}
+                  onChange={(e) => setForm((f) => ({ ...f, modelsText: e.target.value }))}
+                />
+              </label>
+              <p className="pl-[96px] text-[11px] text-muted-foreground">
                 保存前会校验：非空、去重；defaultModel 必须落在列表内（空则取第一项）。
               </p>
             </div>
-            <Input
-              placeholder="defaultModel（须属于上方 models）"
-              className="font-mono text-xs"
-              value={form.defaultModel}
-              onChange={(e) => setForm((f) => ({ ...f, defaultModel: e.target.value }))}
-              list="hfq-provider-model-options"
-            />
+            <label className="grid grid-cols-[88px_1fr] items-center gap-2">
+              <span className="text-xs text-muted-foreground">默认模型</span>
+              <Input
+                placeholder="须属于上方 models"
+                className="font-mono text-xs"
+                value={form.defaultModel}
+                onChange={(e) => setForm((f) => ({ ...f, defaultModel: e.target.value }))}
+                list="hfq-provider-model-options"
+              />
+            </label>
             <datalist id="hfq-provider-model-options">
               {parseModelsText(form.modelsText).map((m) => (
                 <option key={m} value={m} />
@@ -1143,6 +1162,33 @@ export function ModelsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={removeTarget != null}
+        title={`删除渠道「${String(removeTarget?.name ?? removeTarget?.id ?? "")}」？`}
+        description={[
+          `ID: ${String(removeTarget?.id ?? removeTarget?.providerId ?? "")}`,
+          "将从本地配置移除（含该渠道密钥）。",
+          removeTarget && String(removeTarget.id) === "mock"
+            ? "这是 Mock 渠道：删除后离线兜底不可用，除非再添加。"
+            : "",
+          removeTarget && String(removeTarget.id) !== "mock" && providers.length <= 1
+            ? "这是当前最后一个渠道：删除后 providers 将为空，新会话/探测在补回渠道前会失败。"
+            : removeTarget && String(info?.activeProviderId) === String(removeTarget.id)
+              ? "当前工作台正在使用该渠道，删除后应回落到其他渠道或清空 active。"
+              : "",
+        ]
+          .filter(Boolean)
+          .join("\n")}
+        confirmText="删除"
+        destructive
+        onOpenChange={(o) => {
+          if (!o) setRemoveTarget(null);
+        }}
+        onConfirm={() => {
+          if (removeTarget) void removeProvider(removeTarget);
+        }}
+      />
     </PageScaffold>
   );
 }

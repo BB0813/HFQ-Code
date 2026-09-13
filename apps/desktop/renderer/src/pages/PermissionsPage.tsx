@@ -173,9 +173,12 @@ export function PermissionsPage() {
             </CardHeader>
             <CardContent className="p-3.5 pt-1.5">
               {!activeSessionId ? (
-                <div className="py-8 text-center text-sm text-muted-foreground">
-                  选择会话后可查看本会话 allow_session 项
-                </div>
+                <EmptyState
+                  icon={Shield}
+                  title="未选择会话"
+                  description="选择会话后可查看本会话 allow_session 项"
+                  className="border-0 py-8"
+                />
               ) : (
                 <>
                   <div className="mb-3 flex gap-1.5">
@@ -249,7 +252,7 @@ export function PermissionsPage() {
                           {tool}
                           <button
                             type="button"
-                            className="ml-0.5 rounded-sm hover:bg-black/20"
+                            className="-mr-1 ml-0.5 flex h-[18px] w-[18px] items-center justify-center rounded-sm hover:bg-black/25"
                             title="撤销"
                             aria-label={`撤销 ${tool}`}
                             onClick={async () => {
@@ -278,9 +281,12 @@ export function PermissionsPage() {
                   {JSON.stringify(allows, null, 2)}
                 </pre>
               ) : (
-                <div className="py-8 text-center text-sm text-muted-foreground">
-                  本会话暂无额外允许项
-                </div>
+                <EmptyState
+                  icon={Shield}
+                  title="本会话暂无额外允许项"
+                  description="用上方输入框为特定工具授予 allow_session"
+                  className="border-0 py-8"
+                />
               )}
                 </>
               )}

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Database, Loader2, Plus, Search, Trash2 } from "lucide-react";
+import { Database, Link2, Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,6 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  ConfirmDialog,
   EmptyState,
   ErrorBanner,
   LoadingBlock,
@@ -44,6 +46,7 @@ export function MemoryPage() {
   const [text, setText] = useState("");
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [delTarget, setDelTarget] = useState<string | null>(null);
 
   const refresh = async (query?: string) => {
     if (!hasHfq()) {
@@ -64,9 +67,14 @@ export function MemoryPage() {
     }
   };
 
+  // Debounced live search — replaces the old Enter/button dual trigger.
   useEffect(() => {
-    void refresh();
-  }, []);
+    const t = setTimeout(() => {
+      void refresh(q);
+    }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q]);
 
   return (
     <PageScaffold
@@ -80,22 +88,16 @@ export function MemoryPage() {
             <Input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="搜索…"
+              placeholder="搜索…（实时）"
               aria-label="搜索记忆"
               className="h-8 w-48 pl-7 text-xs"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void refresh(q);
-              }}
             />
           </div>
-          <Button size="sm" variant="secondary" onClick={() => void refresh(q)}>
-            搜索
-          </Button>
           <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>
             <Plus className="h-4 w-4" />
             添加
           </Button>
-          <RefreshButton onClick={() => void refresh()} loading={loading} />
+          <RefreshButton onClick={() => void refresh(q)} loading={loading} />
         </div>
       }
     >
@@ -148,19 +150,8 @@ export function MemoryPage() {
                         disabled={busyId === String(m.id)}
                         title="删除记忆"
                         aria-label="删除记忆"
-                        onClick={async () => {
-                          const id = String(m.id);
-                          if (!window.confirm("删除这条记忆？")) return;
-                          setBusyId(id);
-                          try {
-                            await getHfq().removeMemory({ id });
-                            await refresh(q);
-                            toast.success("已删除");
-                          } catch (e) {
-                            toast.error(e instanceof Error ? e.message : String(e));
-                          } finally {
-                            setBusyId(null);
-                          }
+                        onClick={() => {
+                          if (m.id) setDelTarget(String(m.id));
                         }}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -174,26 +165,27 @@ export function MemoryPage() {
                 {Array.isArray(m.tags) && m.tags.length > 0 && (
                   <div className="mt-1.5 flex flex-wrap gap-1">
                     {m.tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="inline-flex rounded border border-border/60 bg-muted/40 px-1 py-px font-mono text-[10px] text-muted-foreground"
-                      >
+                      <Badge key={tag} variant="outline" className="gap-0 font-mono font-normal">
                         #{tag}
-                      </span>
+                      </Badge>
                     ))}
                   </div>
                 )}
                 {Array.isArray(m.links) && m.links.length > 0 && (
                   <div className="mt-1 flex flex-wrap gap-1">
                     {m.links.map((link) => (
-                      <span
+                      <Badge
                         key={link}
-                        className="inline-flex rounded border border-border/60 bg-accent/20 px-1 py-px font-mono text-[10px] text-muted-foreground"
+                        variant="secondary"
+                        className="max-w-[240px] gap-1 font-mono font-normal"
                         title={link}
                       >
-                        🔗 {link.slice(0, 32)}
-                        {link.length > 32 ? "…" : ""}
-                      </span>
+                        <Link2 className="h-3 w-3 shrink-0" />
+                        <span className="truncate">
+                          {link.slice(0, 32)}
+                          {link.length > 32 ? "…" : ""}
+                        </span>
+                      </Badge>
                     ))}
                   </div>
                 )}
@@ -202,6 +194,32 @@ export function MemoryPage() {
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={delTarget != null}
+        title="删除这条记忆？"
+        description="删除后不可恢复。"
+        confirmText="删除"
+        destructive
+        onOpenChange={(o) => {
+          if (!o) setDelTarget(null);
+        }}
+        onConfirm={async () => {
+          const id = delTarget;
+          if (!id) return;
+          setBusyId(id);
+          try {
+            await getHfq().removeMemory({ id });
+            await refresh(q);
+            toast.success("已删除");
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : String(e));
+          } finally {
+            setBusyId(null);
+            setDelTarget(null);
+          }
+        }}
+      />
 
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="max-w-md">

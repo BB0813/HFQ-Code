@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/page-states";
 import { PageScaffold } from "./PageScaffold";
 import { useAppStore } from "@/store/app-store";
 import { cn, formatRelativeTime, shortPath } from "@/lib/utils";
@@ -50,26 +51,26 @@ export function HomePage() {
         </Button>
       }
     >
-      <div className="mb-5 overflow-hidden rounded-xl border border-workbench/20 bg-gradient-to-br from-workbench/[0.08] via-white/[0.02] to-transparent shadow-sm shadow-black/20">
-        <div className="flex items-start gap-3.5 px-5 py-5">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-workbench/30 bg-workbench/15 shadow-inner">
-            <Sparkles className="h-5 w-5 text-workbench" strokeWidth={1.5} />
+      <div className="mb-4 rounded-lg border border-border/50 bg-muted/25">
+        <div className="flex items-start gap-3 px-4 py-4">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted/60">
+            <Sparkles className="h-4 w-4 text-workbench" strokeWidth={1.75} />
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="text-base font-semibold tracking-tight">多 Agent 编码工作台</div>
+              <div className="text-sm font-semibold tracking-tight">多 Agent 编码工作台</div>
               {info?.version && (
                 <Badge variant="muted" className="font-mono font-normal">
                   v{String(info.version)}
                 </Badge>
               )}
             </div>
-            <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground text-balance">
+            <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground text-balance">
               {workspace?.path
                 ? `工作区 ${shortPath(String(workspace.path), 48)} · 会话 / 子 Agent / 技能 / MCP 同屏协作。从最近会话继续，或新建编码任务。`
                 : "绑定工作区后打开会话。主 Agent 可 spawn 子任务，技能与 MCP 扩展工具面，改动在右侧检视。"}
             </p>
-            <div className="mt-3.5 flex flex-wrap gap-2">
+            <div className="mt-3 flex flex-wrap gap-2">
               {!workspace?.path && (
                 <Button size="sm" variant="secondary" onClick={() => void openWorkspace()}>
                   <FolderOpen className="h-4 w-4" />
@@ -90,7 +91,7 @@ export function HomePage() {
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2">
         <Card className="border-border/70 bg-card/70 shadow-none">
           <CardHeader className="pb-2 pt-4">
             <CardTitle className="text-sm">状态</CardTitle>
@@ -184,15 +185,18 @@ export function HomePage() {
               );
             })}
             {sessions.length === 0 && (
-              <div className="py-10 text-center text-sm text-muted-foreground">
-                暂无会话
-                <div className="mt-3">
+              <EmptyState
+                icon={MessageSquarePlus}
+                title="暂无会话"
+                description="新建一个会话开始编码"
+                className="border-0 py-8"
+                action={
                   <Button size="sm" variant="outline" disabled={creating} onClick={() => void handleCreate()}>
                     <MessageSquarePlus className="h-4 w-4" />
                     新建
                   </Button>
-                </div>
-              </div>
+                }
+              />
             )}
           </CardContent>
         </Card>

@@ -19,7 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { EmptyState, ErrorBanner, SectionHeader } from "@/components/ui/page-states";
+import { ConfirmDialog, EmptyState, ErrorBanner, SectionHeader } from "@/components/ui/page-states";
 import {
   asList,
   getHfq,
@@ -71,6 +71,7 @@ export function ChangesPanel({ compact = false }: { compact?: boolean }) {
   const [editOriginal, setEditOriginal] = useState("");
   const [editLoading, setEditLoading] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
+  const [confirmCloseEditor, setConfirmCloseEditor] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!hasHfq() || !workspace?.path) {
@@ -144,15 +145,19 @@ export function ChangesPanel({ compact = false }: { compact?: boolean }) {
     }
   };
 
-  const closeEditor = () => {
-    if (editSaving) return;
-    if (editContent !== editOriginal) {
-      const ok = window.confirm("有未保存修改，确定关闭？");
-      if (!ok) return;
-    }
+  const discardEditor = () => {
     setEditPath(null);
     setEditContent("");
     setEditOriginal("");
+  };
+
+  const closeEditor = () => {
+    if (editSaving) return;
+    if (editContent !== editOriginal) {
+      setConfirmCloseEditor(true);
+      return;
+    }
+    discardEditor();
   };
 
   const saveEditor = async () => {
@@ -726,6 +731,21 @@ export function ChangesPanel({ compact = false }: { compact?: boolean }) {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmCloseEditor}
+        title="有未保存修改"
+        description="关闭编辑器将丢失未保存的修改。"
+        confirmText="丢弃并关闭"
+        destructive
+        onOpenChange={(o) => {
+          if (!o) setConfirmCloseEditor(false);
+        }}
+        onConfirm={() => {
+          setConfirmCloseEditor(false);
+          discardEditor();
+        }}
+      />
     </div>
   );
 }

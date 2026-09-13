@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   ChipButton,
+  ConfirmDialog,
   ErrorBanner,
   LoadingBlock,
 } from "@/components/ui/page-states";
@@ -68,6 +69,7 @@ export function SettingsPage() {
   const [loaded, setLoaded] = useState(false);
   const [diagBusy, setDiagBusy] = useState<string | null>(null);
   const [dlPercent, setDlPercent] = useState<number | null>(null);
+  const [pendingInstall, setPendingInstall] = useState<null | "silent" | "ui">(null);
   // 1.1.7 update policy
   const [autoCheck, setAutoCheck] = useState(true);
   const [autoDownload, setAutoDownload] = useState(false);
@@ -227,6 +229,45 @@ export function SettingsPage() {
     { kind: "auto", label: "自动", available: true },
     ...shells.filter((s) => s.kind && s.kind !== "auto"),
   ];
+
+  const runInstall = async (mode: "silent" | "ui") => {
+    setDiagBusy("install");
+    setUpdateError(null);
+    let off: (() => void) | undefined;
+    try {
+      off = getHfq().onUpdateDownload?.((st) => {
+        const s = st as UpdateDownloadStatus;
+        if (s?.status === "downloading" && s?.percent != null) {
+          setDlPercent(s.percent);
+          toast.message(`正在下载安装包… ${Math.round(s.percent)}%`, { id: "upd-dl" });
+        }
+        if (s?.status === "failed") {
+          toast.error(String(s.error || "自动下载失败"), { id: "upd-dl" });
+        }
+      });
+      const r = (await getHfq().installUpdate(
+        mode === "silent" ? ({ mode } as Record<string, unknown>) : {},
+      )) as InstallUpdateResult;
+      if (r?.cancelled) {
+        toast.message("已取消安装");
+      } else if (r?.ok === false) {
+        const msg = humanizeInstallError(String(r.error || "安装失败"));
+        setUpdateError(msg);
+        toast.error(msg);
+      } else if (r?.quitSuggested) {
+        toast.success(mode === "silent" ? "安装完成，应用将自动重启" : "安装程序已打开，完成后可关闭本窗口");
+      } else {
+        toast.success("安装程序已打开");
+      }
+    } catch (e) {
+      const msg = humanizeInstallError(e instanceof Error ? e.message : String(e));
+      setUpdateError(msg);
+      toast.error(msg);
+    } finally {
+      off?.();
+      setDiagBusy(null);
+    }
+  };
 
   return (
     <PageScaffold
@@ -563,48 +604,12 @@ export function SettingsPage() {
                       size="sm"
                       variant="default"
                       disabled={!!diagBusy}
-                      onClick={async () => {
+                      onClick={() => {
                         if (running) {
-                          const ok = window.confirm(
-                            "Agent 正在运行，安装将停止当前任务并退出应用。确定继续？",
-                          );
-                          if (!ok) return;
+                          setPendingInstall("silent");
+                          return;
                         }
-                        setDiagBusy("install");
-                        setUpdateError(null);
-                        let off: (() => void) | undefined;
-                        try {
-                          off = getHfq().onUpdateDownload?.((st) => {
-                            const s = st as UpdateDownloadStatus;
-                            if (s?.status === "downloading" && s?.percent != null) {
-                              setDlPercent(s.percent);
-                              toast.message(`正在下载安装包… ${Math.round(s.percent)}%`, { id: "upd-dl" });
-                            }
-                            if (s?.status === "failed") {
-                              toast.error(String(s.error || "自动下载失败"), { id: "upd-dl" });
-                            }
-                          });
-                          const mode = silentInstall ? "silent" : "ui";
-                          const r = (await getHfq().installUpdate({ mode } as Record<string, unknown>)) as InstallUpdateResult;
-                          if (r?.cancelled) {
-                            toast.message("已取消安装");
-                          } else if (r?.ok === false) {
-                            const msg = humanizeInstallError(String(r.error || "安装失败"));
-                            setUpdateError(msg);
-                            toast.error(msg);
-                          } else if (r?.quitSuggested) {
-                            toast.success(silentInstall ? "安装完成，应用将自动重启" : "安装程序已打开，完成后可关闭本窗口");
-                          } else {
-                            toast.success("安装程序已打开");
-                          }
-                        } catch (e) {
-                          const msg = humanizeInstallError(e instanceof Error ? e.message : String(e));
-                          setUpdateError(msg);
-                          toast.error(msg);
-                        } finally {
-                          off?.();
-                          setDiagBusy(null);
-                        }
+                        void runInstall("silent");
                       }}
                     >
                       {diagBusy === "install" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
@@ -614,29 +619,12 @@ export function SettingsPage() {
                       size="sm"
                       variant="outline"
                       disabled={!!diagBusy}
-                      onClick={async () => {
+                      onClick={() => {
                         if (running) {
-                          const ok = window.confirm(
-                            "Agent 正在运行，安装将停止当前任务并退出应用。确定继续？",
-                          );
-                          if (!ok) return;
+                          setPendingInstall("ui");
+                          return;
                         }
-                        setDiagBusy("install");
-                        setUpdateError(null);
-                        try {
-                          const r = (await getHfq().installUpdate({})) as InstallUpdateResult;
-                          if (r?.cancelled) {
-                            toast.message("已取消安装");
-                          } else if (r?.ok === false) {
-                            toast.error(humanizeInstallError(String(r.error || "安装失败")));
-                          } else {
-                            toast.success("安装程序已打开，完成后可关闭本窗口");
-                          }
-                        } catch (e) {
-                          toast.error(humanizeInstallError(e instanceof Error ? e.message : String(e)));
-                        } finally {
-                          setDiagBusy(null);
-                        }
+                        void runInstall("ui");
                       }}
                     >
                       打开安装向导
@@ -803,6 +791,21 @@ export function SettingsPage() {
           </Card>
         </div>
       )}
+
+      <ConfirmDialog
+        open={pendingInstall != null}
+        title="Agent 正在运行"
+        description="安装将停止当前任务并退出应用。确定继续？"
+        confirmText="继续安装"
+        onOpenChange={(o) => {
+          if (!o) setPendingInstall(null);
+        }}
+        onConfirm={() => {
+          const mode = pendingInstall;
+          setPendingInstall(null);
+          if (mode) void runInstall(mode);
+        }}
+      />
     </PageScaffold>
   );
 }

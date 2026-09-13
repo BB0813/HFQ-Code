@@ -7,6 +7,7 @@ import {
   EmptyState,
   ErrorBanner,
   LoadingBlock,
+  MetricStrip,
   RefreshButton,
 } from "@/components/ui/page-states";
 import { getHfq, hasHfq } from "@/lib/hfq";
@@ -119,20 +120,15 @@ export function UsagePage() {
         />
       ) : (
         <>
-          <div className="mb-3 grid gap-2 sm:grid-cols-4">
-            {[
-              ["Input", formatTokens(input)],
-              ["Output", formatTokens(output)],
-              ["Total", formatTokens(total)],
-              ["Cost", cost != null ? `$${cost.toFixed(4)}` : "—"],
-            ].map(([label, value]) => (
-              <Card key={label} className="border-border/70 bg-card/70 shadow-none">
-                <CardContent className="p-3">
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
-                  <div className="mt-1 font-mono text-sm font-medium tabular-nums">{value}</div>
-                </CardContent>
-              </Card>
-            ))}
+          <div className="mb-3">
+            <MetricStrip
+              items={[
+                { label: "输入 tokens", value: formatTokens(input) },
+                { label: "输出 tokens", value: formatTokens(output) },
+                { label: "合计", value: formatTokens(total) },
+                { label: "预估费用", value: cost != null ? `$${cost.toFixed(4)}` : "—" },
+              ]}
+            />
           </div>
 
           <Card className="mb-3 border-border/70 bg-card/70 shadow-none">

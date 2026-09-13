@@ -42,6 +42,17 @@ function statusVariant(
   return "secondary";
 }
 
+/** Backend status verb → short Chinese label for badges. */
+function statusLabel(status?: string): string {
+  const s = (status ?? "").toLowerCase();
+  if (s === "idle") return "空闲";
+  if (s === "running" || s === "active" || s === "streaming" || s === "busy") return "运行中";
+  if (s === "completed" || s === "done") return "已完成";
+  if (s === "failed" || s === "error") return "失败";
+  if (s === "aborted" || s === "cancelled") return "已取消";
+  return status ?? "—";
+}
+
 /** B3-3: map backend errorCode to short Chinese label. */
 function errorCodeLabel(code?: string | null): string | null {
   if (!code) return null;
@@ -64,8 +75,8 @@ function GoalCard({ task: t, compact, sub }: { task: UiTask; compact?: boolean; 
         <span className="min-w-0 flex-1 truncate font-medium">
           {t.objective || t.title}
         </span>
-        <Badge variant={statusVariant(t.status)} className="shrink-0 font-normal capitalize">
-          {t.status}
+        <Badge variant={statusVariant(t.status)} className="shrink-0 font-normal">
+          {statusLabel(t.status)}
         </Badge>
       </div>
       {typeof t.progress === "number" && (
@@ -534,9 +545,9 @@ export function TasksPanel({ compact = false }: { compact?: boolean }) {
                   {activeSession?.status && (
                     <Badge
                       variant={statusVariant(activeSession.status)}
-                      className="font-normal capitalize"
+                      className="font-normal"
                     >
-                      {activeSession.status}
+                      {statusLabel(activeSession.status)}
                     </Badge>
                   )}
                 </div>
@@ -692,9 +703,9 @@ export function TasksPanel({ compact = false }: { compact?: boolean }) {
                                   {c.status && (
                                     <Badge
                                       variant={statusVariant(c.status)}
-                                      className="font-normal capitalize"
+                                      className="font-normal"
                                     >
-                                      {c.status}
+                                      {statusLabel(c.status)}
                                     </Badge>
                                   )}
                                   <Button

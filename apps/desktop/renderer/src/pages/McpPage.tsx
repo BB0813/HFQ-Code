@@ -15,6 +15,8 @@ import {
 } from "@/components/ui/dialog";
 import {
   CapabilityCard,
+  ChipButton,
+  ConfirmDialog,
   EmptyState,
   ErrorBanner,
   LoadingBlock,
@@ -79,6 +81,7 @@ export function McpPage() {
     url: "",
   });
   const [saving, setSaving] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState<{ id: string; name: string } | null>(null);
 
   const refresh = async () => {
     if (!hasHfq()) {
@@ -258,19 +261,7 @@ export function McpPage() {
                         disabled={busy}
                         title="移除服务器"
                         aria-label={`移除 ${s.name || id}`}
-                        onClick={async () => {
-                          if (!window.confirm(`移除 MCP「${s.name || id}」？`)) return;
-                          setBusyId(id);
-                          try {
-                            await getHfq().removeMcp({ id });
-                            await refresh();
-                            toast.success("已移除");
-                          } catch (e) {
-                            toast.error(e instanceof Error ? e.message : String(e));
-                          } finally {
-                            setBusyId(null);
-                          }
-                        }}
+                        onClick={() => setRemoveTarget({ id, name: String(s.name || id) })}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
@@ -289,56 +280,64 @@ export function McpPage() {
             <DialogTitle>添加 MCP 服务器</DialogTitle>
             <DialogDescription>stdio 填 command/args；http 填 URL。</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-2 text-sm">
-            <Input
-              placeholder="显示名称"
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            />
-            <Input
-              placeholder="id（可选）"
-              className="font-mono text-xs"
-              value={form.id}
-              onChange={(e) => setForm((f) => ({ ...f, id: e.target.value }))}
-            />
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant={form.transport === "stdio" ? "secondary" : "outline"}
-                onClick={() => setForm((f) => ({ ...f, transport: "stdio" }))}
-              >
-                stdio
-              </Button>
-              <Button
-                size="sm"
-                variant={form.transport === "http" ? "secondary" : "outline"}
-                onClick={() => setForm((f) => ({ ...f, transport: "http" }))}
-              >
-                http
-              </Button>
-            </div>
+          <div className="grid gap-2.5 text-sm">
+            <label className="grid grid-cols-[88px_1fr] items-center gap-2">
+              <span className="text-xs text-muted-foreground">名称</span>
+              <Input
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              />
+            </label>
+            <label className="grid grid-cols-[88px_1fr] items-center gap-2">
+              <span className="text-xs text-muted-foreground">ID（可选）</span>
+              <Input
+                className="font-mono text-xs"
+                value={form.id}
+                onChange={(e) => setForm((f) => ({ ...f, id: e.target.value }))}
+              />
+            </label>
+            <label className="grid grid-cols-[88px_1fr] items-center gap-2">
+              <span className="text-xs text-muted-foreground">传输</span>
+              <span className="flex gap-1.5">
+                <ChipButton active={form.transport === "stdio"} onClick={() => setForm((f) => ({ ...f, transport: "stdio" }))}>
+                  stdio
+                </ChipButton>
+                <ChipButton active={form.transport === "http"} onClick={() => setForm((f) => ({ ...f, transport: "http" }))}>
+                  http
+                </ChipButton>
+              </span>
+            </label>
             {form.transport === "stdio" ? (
               <>
-                <Input
-                  placeholder="command（如 npx）"
-                  className="font-mono text-xs"
-                  value={form.command}
-                  onChange={(e) => setForm((f) => ({ ...f, command: e.target.value }))}
-                />
-                <Input
-                  placeholder="args 空格分隔"
-                  className="font-mono text-xs"
-                  value={form.argsText}
-                  onChange={(e) => setForm((f) => ({ ...f, argsText: e.target.value }))}
-                />
+                <label className="grid grid-cols-[88px_1fr] items-center gap-2">
+                  <span className="text-xs text-muted-foreground">command</span>
+                  <Input
+                    placeholder="如 npx"
+                    className="font-mono text-xs"
+                    value={form.command}
+                    onChange={(e) => setForm((f) => ({ ...f, command: e.target.value }))}
+                  />
+                </label>
+                <label className="grid grid-cols-[88px_1fr] items-center gap-2">
+                  <span className="text-xs text-muted-foreground">args</span>
+                  <Input
+                    placeholder="空格分隔"
+                    className="font-mono text-xs"
+                    value={form.argsText}
+                    onChange={(e) => setForm((f) => ({ ...f, argsText: e.target.value }))}
+                  />
+                </label>
               </>
             ) : (
-              <Input
-                placeholder="https://…"
-                className="font-mono text-xs"
-                value={form.url}
-                onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
-              />
+              <label className="grid grid-cols-[88px_1fr] items-center gap-2">
+                <span className="text-xs text-muted-foreground">URL</span>
+                <Input
+                  placeholder="https://…"
+                  className="font-mono text-xs"
+                  value={form.url}
+                  onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
+                />
+              </label>
             )}
           </div>
           <DialogFooter>
@@ -384,6 +383,32 @@ export function McpPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={removeTarget != null}
+        title={`移除 MCP「${removeTarget?.name ?? ""}」？`}
+        description="将从配置中移除该服务器。"
+        confirmText="移除"
+        destructive
+        onOpenChange={(o) => {
+          if (!o) setRemoveTarget(null);
+        }}
+        onConfirm={async () => {
+          const t = removeTarget;
+          if (!t) return;
+          setBusyId(t.id);
+          try {
+            await getHfq().removeMcp({ id: t.id });
+            await refresh();
+            toast.success("已移除");
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : String(e));
+          } finally {
+            setBusyId(null);
+            setRemoveTarget(null);
+          }
+        }}
+      />
     </PageScaffold>
   );
 }
