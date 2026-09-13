@@ -76,22 +76,22 @@ export function CommandPalette() {
         },
       },
       {
-        id: "open-ws",
-        label: "打开工作区",
-        group: "工作区",
-        icon: FolderOpen,
-        run: async () => {
-          await openWorkspace();
-          setCommandOpen(false);
-        },
-      },
-      {
         id: "stop",
         label: "停止 Agent",
         group: "会话",
         icon: Square,
         run: async () => {
           if (running) await abortSession();
+          setCommandOpen(false);
+        },
+      },
+      {
+        id: "open-ws",
+        label: "打开工作区",
+        group: "工作区",
+        icon: FolderOpen,
+        run: async () => {
+          await openWorkspace();
           setCommandOpen(false);
         },
       },
@@ -273,17 +273,17 @@ export function CommandPalette() {
 
   return (
     <Dialog open={open} onOpenChange={setCommandOpen}>
-      <DialogContent className="gap-0 overflow-hidden border-border/80 bg-[hsl(var(--dialog-surface))] p-0 shadow-2xl sm:max-w-md [&>button]:right-2.5 [&>button]:top-2.5">
+      <DialogContent className="gap-0 overflow-hidden border-border/60 bg-[hsl(var(--dialog-surface))] p-0 shadow-2xl sm:max-w-md [&>button]:right-2.5 [&>button]:top-2">
         <DialogHeader className="sr-only">
           <DialogTitle>命令面板</DialogTitle>
         </DialogHeader>
-        <div className="border-b border-border/70 px-3 py-2 pr-10">
+        <div className="border-b border-border/40 px-3 py-1.5 pr-10">
           <Input
             autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="输入命令或跳转…"
-            className="h-9 border-0 bg-transparent shadow-none focus-visible:ring-0"
+            className="h-8 border-0 bg-transparent text-[13px] shadow-none focus-visible:ring-0"
             onKeyDown={(e) => {
               if (e.key === "ArrowDown") {
                 e.preventDefault();
@@ -315,7 +315,7 @@ export function CommandPalette() {
             return (
               <div key={cmd.id}>
                 {showHeader && (
-                  <div className="px-3 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+                  <div className="px-3 pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
                     {cmd.group}
                   </div>
                 )}
@@ -325,17 +325,17 @@ export function CommandPalette() {
                   role="option"
                   aria-selected={i === active}
                   className={cn(
-                    "interactive flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm",
+                    "interactive flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px]",
                     i === active
-                      ? "bg-white/[0.08] text-foreground"
+                      ? "bg-white/[0.07] text-foreground"
                       : "text-foreground/90 hover:bg-white/[0.04]",
                   )}
                   onMouseEnter={() => setActive(i)}
                   onClick={() => void cmd.run()}
                 >
-                  <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1 truncate">{cmd.label}</span>
-                  <span className="shrink-0 text-xs text-muted-foreground/70">
+                  <span className="shrink-0 font-mono text-[10px] text-muted-foreground/70">
                     {cmd.hint}
                   </span>
                 </button>
@@ -343,7 +343,7 @@ export function CommandPalette() {
             );
           })}
         </div>
-        <div className="border-t border-border px-3 py-1.5 text-xs text-muted-foreground">
+        <div className="border-t border-border/40 px-3 py-1 text-[11px] text-muted-foreground/80">
           ↑↓ 选择 · Enter 执行 · Esc 关闭
         </div>
       </DialogContent>

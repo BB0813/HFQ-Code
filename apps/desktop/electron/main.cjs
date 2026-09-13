@@ -1611,7 +1611,9 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1360,
     height: 900,
-    minWidth: 1000,
+    // Below 900 the shell auto-collapses the drawer, below 700 the sidebar —
+    // keep the window able to reach those thresholds.
+    minWidth: 680,
     minHeight: 680,
     title: "HFQ Code",
     backgroundColor: "#09090b",
