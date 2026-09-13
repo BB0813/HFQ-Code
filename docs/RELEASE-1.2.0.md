@@ -31,9 +31,9 @@
 ## Verify（发版自检）
 
 - [x] `pnpm release:check` 绿（build + 193 tests + smoke + eval 10/10）
-- [ ] **Electron V8**：冷启整壳一眼升级（活动栏/顶栏/侧栏/Chat/底栏）
-- [ ] **Electron T1**：Terminal 标记输出 → Chat ≥3s → 回 Terminal 仍可见
-- [ ] StatusBar 版本显示 **1.2.0**；运行中/空闲 · 有改动/干净
+- [x] **Electron V8**：冷启整壳一眼升级（活动栏/顶栏/侧栏/Chat/底栏）— 屏测 PASS：主页钮 rail 化、顶栏 h-7+「完全访问/模型」、底栏「HFQ v1.2.0 · 非 Git · 空闲 · grok-4.5」、抽屉中文 tabs、消息角色「你/Agent」
+- [x] **Electron T1**：Terminal 标记输出 → 切「改动」页 ~10s → 回「终端」tab → ring 回放完整（`echo HFQ-1.2.0-REATTACH-MARKER` + 输出 + prompt 均在屏，PTY 未重spawn）
+- [x] StatusBar 版本显示 **1.2.0**；运行中/空闲 · 有改动/干净（非 Git 时显示「非 Git」）
 - [x] L3 `silentInstall` 默认仍关（抽检 `updatePolicy` schema）
 - [x] Layout 仍为右抽屉终端；无底栏终端
 - [x] Changes ask-agent 不自动发送；空 message 不能 commit（1.1.9 逻辑未动，走读）

@@ -2,7 +2,7 @@
 
 Status: **active plan**  
 Baseline: product **1.1.9** (`v1.1.9`) · 2026-07-21  
-Last updated: 2026-09-13 · **1.1.9 shipped** · **In flight: release 1.2.0 (Slice A · gates green, screen tests pending)** — [prompts/release-1.2.0.md](./prompts/release-1.2.0.md) · [RELEASE-1.2.0.md](./RELEASE-1.2.0.md)
+Last updated: 2026-09-13 · **1.2.0 shipped**（Slice A · V8+T1 PASS）· **Next: Slice B/C** — [prompts/1.2-ui-handoff.md](./prompts/1.2-ui-handoff.md) · [RELEASE-1.2.0.md](./RELEASE-1.2.0.md)
 
 ## Positioning (frozen)
 
