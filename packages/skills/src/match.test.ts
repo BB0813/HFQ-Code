@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SkillRecord } from "@hfq/shared";
+import { applyDisabledSkills } from "./loader.js";
 import { formatMatchedSkillBodies, matchSkills } from "./match.js";
 
 function skill(partial: Partial<SkillRecord> & Pick<SkillRecord, "name" | "description">): SkillRecord {
@@ -54,5 +55,31 @@ describe("matchSkills", () => {
     const text = formatMatchedSkillBodies(hits, 500);
     expect(text).toMatch(/Matched skill details/);
     expect(text).toMatch(/diagram/);
+  });
+});
+
+describe("applyDisabledSkills", () => {
+  const skills = [
+    skill({ name: "diagram", description: "d" }),
+    skill({ name: "hello-workspace", description: "h" }),
+  ];
+
+  it("marks listed skills disabled, keeps others", async () => {
+    const out = applyDisabledSkills(skills, ["diagram"]);
+    expect(out.find((s) => s.name === "diagram")?.enabled).toBe(false);
+    expect(out.find((s) => s.name === "hello-workspace")?.enabled).toBe(true);
+  });
+
+  it("no-ops on empty / missing list and trims names", async () => {
+    expect(applyDisabledSkills(skills, [])).toBe(skills);
+    expect(applyDisabledSkills(skills, undefined)).toBe(skills);
+    const out = applyDisabledSkills(skills, [" diagram "]);
+    expect(out.find((s) => s.name === "diagram")?.enabled).toBe(false);
+  });
+
+  it("disabled skills are excluded from matchSkills", async () => {
+    const out = applyDisabledSkills(skills, ["diagram"]);
+    const matches = matchSkills("draw architecture diagram", out);
+    expect(matches.some((m) => m.skill.name === "diagram")).toBe(false);
   });
 });

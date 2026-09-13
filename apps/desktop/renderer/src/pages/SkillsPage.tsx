@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Eye, FolderPlus, Loader2, Package, Search, Sparkles } from "lucide-react";
+import { Eye, FolderPlus, Loader2, Package, Search, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -14,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   CapabilityCard,
+  ConfirmDialog,
   EmptyState,
   ErrorBanner,
   LoadingBlock,
@@ -61,6 +63,49 @@ export function SkillsPage() {
   const [pkgUrl, setPkgUrl] = useState("");
   const [preview, setPreview] = useState<{ name?: string; body?: string } | null>(null);
   const [q, setQ] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<string | null>(null);
+
+  const toggleSkill = async (name: string, enabled: boolean) => {
+    setBusyId(name);
+    try {
+      const r = (await getHfq().toggleSkill({ name, enabled })) as {
+        ok?: boolean;
+        error?: string;
+      };
+      if (r && r.ok === false) {
+        toast.error(r.error || "操作失败");
+        return;
+      }
+      await refresh();
+      toast.success(enabled ? `已启用 ${name}` : `已停用 ${name}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const uninstallSkill = async (name: string) => {
+    setBusyId(name);
+    try {
+      const r = (await getHfq().removeSkill({ name })) as {
+        ok?: boolean;
+        error?: string;
+      };
+      if (r && r.ok === false) {
+        toast.error(r.error || "卸载失败");
+        return;
+      }
+      await refresh();
+      toast.success(`已卸载 ${name}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId(null);
+      setRemoveTarget(null);
+    }
+  };
 
   const refresh = async () => {
     if (!hasHfq()) {
@@ -234,36 +279,58 @@ export function SkillsPage() {
                       </>
                     }
                     trailing={
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        title="预览 SKILL.md"
-                        onClick={async () => {
-                          try {
-                            const r = (await getHfq().previewSkill({ name: String(name) })) as {
-                              ok?: boolean;
-                              markdown?: string;
-                              content?: string;
-                              text?: string;
-                              error?: string;
-                              name?: string;
-                            };
-                            if (r && r.ok === false) {
-                              toast.error(r.error || "预览失败");
-                              return;
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Switch
+                          checked={on}
+                          disabled={busyId === String(name)}
+                          title={on ? "停用技能" : "启用技能"}
+                          aria-label={`${on ? "停用" : "启用"} ${String(name)}`}
+                          onCheckedChange={(v) => void toggleSkill(String(name), v)}
+                        />
+                        {String(s.source ?? "") !== "bundled" && (
+                          <Button
+                            size="icon-sm"
+                            variant="ghost"
+                            disabled={busyId === String(name)}
+                            title="卸载技能"
+                            aria-label={`卸载 ${String(name)}`}
+                            className="text-muted-foreground hover:text-destructive"
+                            onClick={() => setRemoveTarget(String(name))}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title="预览 SKILL.md"
+                          onClick={async () => {
+                            try {
+                              const r = (await getHfq().previewSkill({ name: String(name) })) as {
+                                ok?: boolean;
+                                markdown?: string;
+                                content?: string;
+                                text?: string;
+                                error?: string;
+                                name?: string;
+                              };
+                              if (r && r.ok === false) {
+                                toast.error(r.error || "预览失败");
+                                return;
+                              }
+                              const body = String(
+                                r?.markdown ?? r?.content ?? r?.text ?? JSON.stringify(r, null, 2),
+                              );
+                              setPreview({ name: String(name), body });
+                            } catch (e) {
+                              toast.error(e instanceof Error ? e.message : String(e));
                             }
-                            const body = String(
-                              r?.markdown ?? r?.content ?? r?.text ?? JSON.stringify(r, null, 2),
-                            );
-                            setPreview({ name: String(name), body });
-                          } catch (e) {
-                            toast.error(e instanceof Error ? e.message : String(e));
-                          }
-                        }}
-                      >
-                        <Eye className="h-3.5 w-3.5" />
-                        预览
-                      </Button>
+                          }}
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          预览
+                        </Button>
+                      </div>
                     }
                   />
                 );
@@ -273,8 +340,7 @@ export function SkillsPage() {
 
           {catalog.length > 0 && (
             <>
-              <SectionHeader title="可发现目录" count={catalog.length} />
-              <div className="grid gap-2.5 sm:grid-cols-2">
+              <SectionHeader title="可发现目录" count={catalog.length} />              <div className="grid gap-2.5 sm:grid-cols-2">
                 {catalog.map((s, i) => (
                   <CapabilityCard
                     key={`c-${s.id ?? s.name ?? i}`}
@@ -359,6 +425,20 @@ export function SkillsPage() {
           </pre>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={removeTarget != null}
+        title={`卸载技能「${removeTarget ?? ""}」？`}
+        description="将从技能目录删除该 skill（bundled 内置技能不可卸载，仅可停用）。"
+        confirmText="卸载"
+        destructive
+        onOpenChange={(o) => {
+          if (!o) setRemoveTarget(null);
+        }}
+        onConfirm={() => {
+          if (removeTarget) void uninstallSkill(removeTarget);
+        }}
+      />
     </PageScaffold>
   );
 }

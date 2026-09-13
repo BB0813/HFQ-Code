@@ -384,7 +384,9 @@ await hfq.removeProvider({ id: "mock" });
 | `listProviderModels` | `{ ok, providerId, source, models, error?, warning? }` **no throw** on soft fail | use `models`; show `warning` when source is config after remote fail |
 | `getSessionAllows` | `{ sessionId, sessionAllows: string[] }` | `sessionAllows` |
 | `installSkillFromDir` | `{ ok: false, cancelled: true }` on dialog cancel | branch `cancelled` / `ok` |
-| `listSkills` | **array** of skill records | `asList` ok |
+| `listSkills` | **array** of skill records (`enabled` reflects config `skillMatch.disabled`) | `asList` ok |
+| `toggleSkill` | `{ name, enabled } → { ok, name, enabled, skills[] }`；未知名 → `{ ok:false, error }` | 1.2 · skills-as-plugins 启停 |
+| `removeSkill` | `{ name } → { ok, name, skills[] }`；bundled 拒绝、workspace/project 拒绝、其余删目录 | 1.2 · ConfirmDialog 前置 |
 | `skillsCatalog` | `{ items, source, … }` | `items` |
 | `listMemory` / `searchMemory` | **array** of `{ id, text, … }` | array; body field is `text` |
 | `usageSummary` | `{ sessions, daily, totals: { inputTokens, … } }` | nested `totals` |

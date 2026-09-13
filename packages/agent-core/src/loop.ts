@@ -12,7 +12,7 @@ import {
 } from "@hfq/policy";
 import { toAssistantToolCalls, type ChatMessage, type ModelProvider } from "@hfq/providers";
 import type { SessionEvent, SessionInfo } from "@hfq/shared";
-import { formatMatchedSkillBodies, loadSkills, matchSkills } from "@hfq/skills";
+import { applyDisabledSkills, formatMatchedSkillBodies, loadSkills, matchSkills } from "@hfq/skills";
 import { createToolHub, type ToolHub } from "@hfq/tools";
 import type { ToolDefinition } from "@hfq/shared";
 import type { ToolHandler } from "@hfq/tools";
@@ -145,6 +145,8 @@ export interface AgentSessionOptions {
     enabled?: boolean;
     maxBodies?: number;
     maxBodyChars?: number;
+    /** Skill names disabled by the user — excluded from index + match. */
+    disabled?: string[];
   };
   /**
    * Optional title model role (Kivio-style). When set, first-message title may use this
@@ -477,12 +479,15 @@ export class AgentSession {
 
   private async rebuildSystemPrompt(): Promise<void> {
     const dirs = await ensureDataDirs();
-    const skills = await loadSkills({
-      workspacePath: this.opts.workspacePath,
-      userSkillsDir: dirs.skills,
-      sharedAgentsDir: this.opts.sharedAgentsDir,
-      bundledDir: this.opts.bundledSkillsDir,
-    });
+    const skills = applyDisabledSkills(
+      await loadSkills({
+        workspacePath: this.opts.workspacePath,
+        userSkillsDir: dirs.skills,
+        sharedAgentsDir: this.opts.sharedAgentsDir,
+        bundledDir: this.opts.bundledSkillsDir,
+      }),
+      this.opts.skillMatch?.disabled,
+    );
     const projectRules = await loadProjectRules(this.opts.workspacePath);
     let memoryBlock = "";
     if (this.opts.memoryEnabled !== false) {

@@ -730,7 +730,7 @@ async function sessionPrefs() {
   let compactMaxChars = 48_000;
   let codingProfileAddon = "";
   let codingProfileSkillIds = [];
-  let skillMatch = { enabled: true, maxBodies: 2, maxBodyChars: 6_000 };
+  let skillMatch = { enabled: true, maxBodies: 2, maxBodyChars: 6_000, disabled: [] };
   let titleModelRole;
   let compressionModelRole;
   let permissionModeFromProfile;
@@ -742,6 +742,9 @@ async function sessionPrefs() {
       enabled: cfg.prefs?.skillMatch?.enabled !== false,
       maxBodies: cfg.prefs?.skillMatch?.maxBodies ?? 2,
       maxBodyChars: cfg.prefs?.skillMatch?.maxBodyChars ?? 6_000,
+      disabled: Array.isArray(cfg.prefs?.skillMatch?.disabled)
+        ? cfg.prefs.skillMatch.disabled.map((n) => String(n || "").trim()).filter(Boolean)
+        : [],
     };
     const profiles = Array.isArray(cfg.prefs?.codingProfiles) ? cfg.prefs.codingProfiles : [];
     const activeId = String(cfg.prefs?.activeCodingProfileId || "").trim();
@@ -3519,7 +3522,16 @@ function registerIpc() {
       sharedAgentsDir: path.join(os.homedir(), ".agents", "skills"),
       bundledDir: bundledSkillsDir(),
     });
-    return records.map((s) => ({
+    let disabled = [];
+    try {
+      const cfg = await readConfig();
+      disabled = Array.isArray(cfg.prefs?.skillMatch?.disabled)
+        ? cfg.prefs.skillMatch.disabled.map((n) => String(n || "").trim()).filter(Boolean)
+        : [];
+    } catch {
+      disabled = [];
+    }
+    return skillsMod.applyDisabledSkills(records, disabled).map((s) => ({
       name: s.name,
       description: s.description,
       source: s.source,
@@ -3528,6 +3540,119 @@ function registerIpc() {
       ineligibleReason: s.ineligibleReason,
       dir: s.dir,
     }));
+  });
+
+  /** Toggle a skill on/off (config skillMatch.disabled). 1.2 skills-as-plugins. */
+  ipcMain.handle("skills:toggle", async (_evt, payload = {}) => {
+    const name = String(payload?.name || "").trim();
+    const enabled = payload?.enabled !== false;
+    if (!name) return { ok: false, error: "缺少技能名" };
+    const { agentCore, skillsMod } = await loadModules();
+    const dirs = await agentCore.ensureDataDirs();
+    const records = await skillsMod.loadSkills({
+      workspacePath: workspacePath || undefined,
+      userSkillsDir: dirs.skills,
+      sharedAgentsDir: path.join(os.homedir(), ".agents", "skills"),
+      bundledDir: bundledSkillsDir(),
+    });
+    if (!records.some((s) => s.name === name)) {
+      return { ok: false, error: `未找到技能 ${name}` };
+    }
+    const cfg = await readConfig();
+    const prefs = cfg.prefs || {};
+    const sm = prefs.skillMatch || {};
+    const disabled = new Set(
+      Array.isArray(sm.disabled) ? sm.disabled.map((n) => String(n || "").trim()).filter(Boolean) : [],
+    );
+    if (enabled) disabled.delete(name);
+    else disabled.add(name);
+    const next = {
+      ...cfg,
+      prefs: {
+        ...prefs,
+        skillMatch: {
+          ...sm,
+          enabled: sm.enabled !== false,
+          maxBodies: sm.maxBodies ?? 2,
+          maxBodyChars: sm.maxBodyChars ?? 6_000,
+          disabled: [...disabled],
+        },
+      },
+    };
+    await writeConfig(next);
+    const refreshed = skillsMod
+      .applyDisabledSkills(records, [...disabled])
+      .map((s) => ({
+        name: s.name,
+        description: s.description,
+        source: s.source,
+        enabled: s.enabled,
+        eligible: s.eligible,
+        ineligibleReason: s.ineligibleReason,
+        dir: s.dir,
+      }));
+    return { ok: true, name, enabled, skills: refreshed };
+  });
+
+  /** Uninstall a user-installed skill (delete its directory). bundled 拒绝。 */
+  ipcMain.handle("skills:remove", async (_evt, payload = {}) => {
+    const name = String(payload?.name || "").trim();
+    if (!name) return { ok: false, error: "缺少技能名" };
+    const { agentCore, skillsMod } = await loadModules();
+    const dirs = await agentCore.ensureDataDirs();
+    const records = await skillsMod.loadSkills({
+      workspacePath: workspacePath || undefined,
+      userSkillsDir: dirs.skills,
+      sharedAgentsDir: path.join(os.homedir(), ".agents", "skills"),
+      bundledDir: bundledSkillsDir(),
+    });
+    const record = records.find((s) => s.name === name);
+    if (!record) return { ok: false, error: `未找到技能 ${name}` };
+    if (record.source === "bundled") {
+      return { ok: false, error: "内置技能不可卸载（可停用）" };
+    }
+    if (record.source === "workspace" || record.source === "project_agents") {
+      return { ok: false, error: "工作区内技能由仓库管理，请勿在此卸载" };
+    }
+    try {
+      await fs.rm(record.dir, { recursive: true, force: true });
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+    // Cleanup: un-disable a removed skill so reinstalling starts enabled.
+    const cfg = await readConfig();
+    const prefs = cfg.prefs || {};
+    const sm = prefs.skillMatch || {};
+    const disabled = new Set(
+      Array.isArray(sm.disabled) ? sm.disabled.map((n) => String(n || "").trim()).filter(Boolean) : [],
+    );
+    disabled.delete(name);
+    const next = {
+      ...cfg,
+      prefs: {
+        ...prefs,
+        skillMatch: {
+          ...sm,
+          enabled: sm.enabled !== false,
+          maxBodies: sm.maxBodies ?? 2,
+          maxBodyChars: sm.maxBodyChars ?? 6_000,
+          disabled: [...disabled],
+        },
+      },
+    };
+    await writeConfig(next);
+    const refreshed = records
+      .filter((s) => s.name !== name)
+      .map((s) => ({
+        name: s.name,
+        description: s.description,
+        source: s.source,
+        enabled: s.enabled,
+        eligible: s.eligible,
+        ineligibleReason: s.ineligibleReason,
+        dir: s.dir,
+      }));
+    return { ok: true, name, skills: refreshed };
   });
 
   /**

@@ -187,6 +187,24 @@ export async function loadSkills(roots: SkillLoadRoots): Promise<SkillRecord[]> 
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * Apply the user's disabled-skill list (config `skillMatch.disabled`).
+ * Disabled skills stay visible in management UI (enabled=false) but are
+ * excluded from the prompt index and progressive match (both filter on enabled).
+ */
+export function applyDisabledSkills(
+  skills: SkillRecord[],
+  disabled?: string[],
+): SkillRecord[] {
+  const set = new Set(
+    (disabled ?? []).map((n) => String(n ?? "").trim()).filter(Boolean),
+  );
+  if (set.size === 0) return skills;
+  return skills.map((s) =>
+    set.has(s.name) ? { ...s, enabled: false } : s,
+  );
+}
+
 export function skillsPromptIndex(skills: SkillRecord[], maxChars = 4000): string {
   const eligible = skills.filter((s) => s.enabled && s.eligible);
   const lines = eligible.map(

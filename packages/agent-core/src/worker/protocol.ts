@@ -60,6 +60,7 @@ export interface WorkerCreateParams {
     enabled?: boolean;
     maxBodies?: number;
     maxBodyChars?: number;
+    disabled?: string[];
   };
   /** Title role as serializable provider spec + model. */
   titleModelRole?: { provider?: WorkerProviderSpec; model?: string };
@@ -81,6 +82,7 @@ export interface WorkerOpenParams {
     enabled?: boolean;
     maxBodies?: number;
     maxBodyChars?: number;
+    disabled?: string[];
   };
   titleModelRole?: { provider?: WorkerProviderSpec; model?: string };
   compressionModelRole?: { provider?: WorkerProviderSpec; model?: string };

@@ -88,6 +88,8 @@ export const SkillMatchPrefsSchema = z.object({
   /** Max full skill bodies injected under the index. */
   maxBodies: z.number().int().min(0).max(8).default(2),
   maxBodyChars: z.number().int().min(500).max(40_000).default(6_000),
+  /** Skill names disabled by the user — excluded from index + progressive match. */
+  disabled: z.array(z.string()).default([]),
 });
 
 export type SkillMatchPrefs = z.infer<typeof SkillMatchPrefsSchema>;
@@ -293,7 +295,7 @@ export const AppConfigSchema = z.object({
     codingProfiles: [],
     activeCodingProfileId: "",
     modelRoles: {},
-    skillMatch: { enabled: true, maxBodies: 2, maxBodyChars: 6_000 },
+    skillMatch: { enabled: true, maxBodies: 2, maxBodyChars: 6_000, disabled: [] },
     updatePolicy: {
       autoCheck: true,
       autoDownload: false,
@@ -329,7 +331,7 @@ export function defaultAppConfig(): AppConfig {
       codingProfiles: defaultCodingProfiles(),
       activeCodingProfileId: "",
       modelRoles: {},
-      skillMatch: { enabled: true, maxBodies: 2, maxBodyChars: 6_000 },
+      skillMatch: { enabled: true, maxBodies: 2, maxBodyChars: 6_000, disabled: [] },
       updatePolicy: {
         autoCheck: true,
         autoDownload: false,

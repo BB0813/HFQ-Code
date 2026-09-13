@@ -50,6 +50,7 @@ export interface CreateSessionParams {
     enabled?: boolean;
     maxBodies?: number;
     maxBodyChars?: number;
+    disabled?: string[];
   };
   /** Optional title model role (live provider + model id). */
   titleModelRole?: { provider?: ModelProvider; model?: string };
@@ -86,6 +87,7 @@ export interface OpenSessionParams {
     enabled?: boolean;
     maxBodies?: number;
     maxBodyChars?: number;
+    disabled?: string[];
   };
   titleModelRole?: { provider?: ModelProvider; model?: string };
   compressionModelRole?: { provider?: ModelProvider; model?: string };

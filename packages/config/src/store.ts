@@ -322,6 +322,8 @@ export function withPrefs(cfg: AppConfig, patch: PrefsPatch): AppConfig {
           patch.skillMatch?.maxBodyChars ??
           cfg.prefs?.skillMatch?.maxBodyChars ??
           6_000,
+        disabled:
+          patch.skillMatch?.disabled ?? cfg.prefs?.skillMatch?.disabled ?? [],
       },
       updatePolicy: mergeUpdatePolicy(cfg.prefs?.updatePolicy, patch.updatePolicy),
     },

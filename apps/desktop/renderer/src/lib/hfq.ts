@@ -378,6 +378,8 @@ export interface HfqApi {
   getAppPaths: () => Promise<AppPaths>;
   listSkills: (payload?: Record<string, unknown>) => Promise<unknown>;
   skillsCatalog: (payload?: Record<string, unknown>) => Promise<unknown>;
+  toggleSkill: (payload: { name: string; enabled: boolean }) => Promise<unknown>;
+  removeSkill: (payload: { name: string }) => Promise<unknown>;
   installSkillFromDir: (payload?: Record<string, unknown>) => Promise<unknown>;
   installSkillFromPackage: (payload?: Record<string, unknown>) => Promise<unknown>;
   previewSkill: (payload?: Record<string, unknown>) => Promise<unknown>;

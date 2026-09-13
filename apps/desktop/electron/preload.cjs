@@ -79,6 +79,8 @@ contextBridge.exposeInMainWorld("hfq", {
   getAppPaths: () => ipcRenderer.invoke("app:paths"),
   listSkills: (payload) => ipcRenderer.invoke("skills:list", payload ?? {}),
   skillsCatalog: (payload) => ipcRenderer.invoke("skills:catalog", payload ?? {}),
+  toggleSkill: (payload) => ipcRenderer.invoke("skills:toggle", payload ?? {}),
+  removeSkill: (payload) => ipcRenderer.invoke("skills:remove", payload ?? {}),
   installSkillFromDir: (payload) => ipcRenderer.invoke("skills:installFromDir", payload ?? {}),
   installSkillFromPackage: (payload) =>
     ipcRenderer.invoke("skills:installFromPackage", payload ?? {}),
